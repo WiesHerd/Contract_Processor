@@ -1,0 +1,121 @@
+# Cursor Project Rules: ContractEngine (Schedule A/B Generator)
+
+## 🔍 Project Purpose
+This app is used by physician compensation administrators to generate Schedule A/B legal contract addendums. It dynamically merges structured provider data into template documents (Word/PDF), supporting advanced compensation structures such as productivity models, stipends, retention bonuses, and long-term incentives.
+
+The system must handle:
+- Single and bulk contract creation (1000+)
+- DOCX + PDF generation using template-based logic
+- Clause-level control and FMV override audit logging
+
+## 🛠 Tech Stack & Tools
+- React 18+ with TypeScript
+- Redux Toolkit for global state management
+- Tailwind CSS + shadcn/ui for styling
+- react-hook-form + zod for form handling and validation
+- docx (for Word document generation)
+- pdf-lib or react-pdf (for PDF output)
+- papaparse (for CSV uploads)
+- JSZip (for ZIP archive downloads of multiple contracts)
+
+## 📁 Folder Structure
+All features must be structured modularly under `/src/features`:
+
+src/
+├── components/       # Shared UI widgets (e.g., Button, Dialog, Table)
+├── features/
+│   ├── templates/     # Template editor, placeholder schema, clause system
+│   ├── providers/     # CSV upload, provider data manager
+│   ├── generator/     # DOCX/PDF generation logic
+│   ├── audit/         # FMV override logs, metadata
+├── store/             # Redux store config and slices
+├── types/             # Shared TypeScript models
+├── utils/             # Merge engines, formatting helpers
+
+Do not place feature-specific code directly in `src/` root.
+
+## 📄 Functional Workflow Overview
+
+### 1. Upload Provider Data
+- User uploads a CSV via the Provider Data Manager UI
+- The app parses data using PapaParse and validates expected fields
+- Providers are stored in Redux
+- Each provider row shows inferred contract model and matched template status
+
+### 2. Manage Templates
+- User creates or uploads templates tagged by compensation model
+- Uploading a .docx auto-extracts {{placeholders}}
+- Templates are versioned and classified as Base, Productivity, Hybrid, Hospitalist, or Leadership
+
+### 3. Template Matching
+Each provider is routed to a template by:
+- templateTag match, or
+- Logical inference from data (e.g., wRVU fields → Productivity model)
+- Match results are visible in the provider table
+
+### 4. Single Contract Generation
+- User clicks "Generate" on one provider row
+- Template is merged with provider data (placeholders replaced)
+- DOCX is generated and downloaded
+
+### 5. Bulk Contract Generation
+- User selects multiple providers
+- System processes each:
+  - Skips if no template match
+  - Merges data and generates DOCX
+- Files are zipped and downloaded
+- A modal summarizes:
+  - Total success
+  - Total skipped
+  - Per-provider result
+  - Optional CSV log export
+
+## 🧩 Placeholder Convention
+- Use `{{double_curly}}` tags for all merge fields
+- Common placeholders:
+  - `{{ProviderName}}`, `{{StartDate}}`, `{{BaseSalary}}`, `{{FTE}}`
+  - `{{FTEBreakdown}}` (renders dynamic table)
+  - `{{wRVUTarget}}`, `{{ConversionFactor}}`
+  - `{{RetentionBonus}}`, `{{LongTermIncentive}}`
+- Placeholders are replaced at render time using provider input and template schema
+- All contracts must validate that **all required placeholders** are resolved before export
+
+## 🧱 Template System Rules
+- Templates consist of a `.docx` shell and a `.json` schema file
+- Templates can include static text and dynamic clauses (see below)
+- Templates must support clause toggling or conditional insertion
+  - e.g., `includeIf: provider.hasProductivity === true`
+
+## 🧩 Clause Engine (Dynamic Text Blocks)
+- Clauses are modular text blocks injected into templates at runtime
+- Clauses must be tagged by:
+  - applicable provider type
+  - compensation model (base, productivity, hybrid)
+  - conditional logic field (e.g., "if retentionBonus.amount > 0")
+- Clause content may contain placeholders (same tag rules apply)
+
+## 🧾 Document Output Rules
+- All generated contracts must support:
+  - Individual download as `.docx` or `.pdf`
+  - Bulk ZIP archive of all generated files
+- Signature blocks, watermarking, and version tagging are optional but supported via `{{SignatureBlock}}`, `{{VersionTag}}`, etc.
+- FMV warnings must trigger a justification field if exceeded
+- Every override action must be logged in `auditSlice`
+
+## ⚙️ Code Practices
+- Use Redux Toolkit with typed slices
+- Never hardcode compensation logic into UI components
+- Use `zod` schemas to validate provider input and resolve contract templates
+- Render complex sections (e.g., FTE tables, incentive summaries) through reusable utility functions
+
+## 📚 File Naming Conventions
+- Use camelCase for variables and functions
+- Use PascalCase for components
+- Use kebab-case for filenames
+  - e.g., `provider-upload-form.tsx`
+- Use `.tsx` only for files that contain JSX
+- Use `.ts` for pure logic (e.g., PDF generation, merge engine)
+
+## 🧪 Testing Guidance (Optional)
+- All merge engines should have unit tests using dummy provider data
+- Validate template inputs using zod schema before contract generation 

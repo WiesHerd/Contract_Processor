@@ -1,0 +1,59 @@
+PHYSICIAN COMPENSATION AGREEMENT
+Schedule B - Productivity Based Compensation
+
+This Schedule B is attached to and made part of the Physician Employment Agreement (the "Agreement") between {{ProviderName}} ("Physician") and {{HospitalName}} ("Hospital").
+
+1. COMPENSATION STRUCTURE
+
+Physician's compensation shall be based on productivity as follows:
+
+a) Base Salary: ${{BaseSalary}} per year
+b) FTE: {{FTE}} ({{FTEBreakdown}})
+c) Productivity Target: {{wRVUTarget}} wRVUs per year
+d) Conversion Factor: ${{ConversionFactor}} per wRVU
+
+2. PRODUCTIVITY BONUS
+
+Physician shall be eligible for a productivity bonus based on wRVUs generated above the target:
+
+a) For wRVUs between {{wRVUTarget}} and {{wRVUThreshold1}}: ${{BonusRate1}} per wRVU
+b) For wRVUs above {{wRVUThreshold1}}: ${{BonusRate2}} per wRVU
+
+3. QUALITY METRICS
+
+Physician shall be eligible for quality bonuses based on the following metrics:
+
+a) Patient Satisfaction: {{PatientSatisfactionTarget}}%
+b) Documentation Compliance: {{DocumentationTarget}}%
+c) Quality Score: {{QualityScoreTarget}} points
+
+4. RETENTION BONUS
+
+{{#if RetentionBonus}}
+Physician shall receive a retention bonus of ${{RetentionBonus}} payable as follows:
+{{RetentionBonusSchedule}}
+{{/if}}
+
+5. LONG-TERM INCENTIVE
+
+{{#if LongTermIncentive}}
+Physician shall be eligible for a long-term incentive payment of up to ${{LongTermIncentive}} based on the following criteria:
+{{LongTermIncentiveCriteria}}
+{{/if}}
+
+6. BENEFITS
+
+Physician shall be eligible for the following benefits:
+{{BenefitsList}}
+
+7. TERM AND TERMINATION
+
+This Schedule B shall be effective as of {{StartDate}} and shall continue until terminated in accordance with the Agreement.
+
+8. SIGNATURES
+
+Hospital: ________________________
+Date: ________________________
+
+Physician: ________________________
+Date: ________________________ 
