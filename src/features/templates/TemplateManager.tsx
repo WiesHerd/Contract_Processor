@@ -22,16 +22,16 @@ import TemplatePreviewModal from './components/TemplatePreviewModal';
 export default function TemplateManager() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const templates = useSelector((state: RootState) => state.templates.templates);
+  const templates = useSelector((state: RootState) => state.templates.templates || []);
   const [isCreating, setIsCreating] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Memoize provider fields selector
-  const providers = useSelector((state: RootState) => state.providers.providers);
+  const providers = useSelector((state: RootState) => state.providers.providers || []);
   const providerFields = useMemo(() => 
-    providers[0] ? Object.keys(providers[0]) : [],
+    Array.isArray(providers) && providers.length > 0 ? Object.keys(providers[0]) : [],
     [providers]
   );
   
@@ -205,7 +205,7 @@ export default function TemplateManager() {
       </div>
 
       <div className="space-y-4">
-        {templates.length === 0 ? (
+        {Array.isArray(templates) && templates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-gray-400">
             <span className="text-3xl mb-2">📄</span>
             <span className="text-lg font-medium">No templates found</span>
