@@ -20,6 +20,7 @@ import { Provider } from '@/types/provider';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import localforage from 'localforage';
 
 export default function ContractGenerator() {
   const dispatch = useDispatch();
@@ -32,11 +33,20 @@ export default function ContractGenerator() {
   const error = useSelector((state: RootState) => state.generator.error);
   const generatedFiles = useSelector((state: RootState) => state.generator.generatedFiles);
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => {
+    const saved = localStorage.getItem('selectedTemplateId');
+    return saved || '';
+  });
   const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
   const [testMergeOpen, setTestMergeOpen] = useState(false);
   const [testMergeResult, setTestMergeResult] = useState<{ success: boolean; unresolved?: string[]; error?: string } | null>(null);
   const [testMergeLoading, setTestMergeLoading] = useState(false);
+  const [testMergePreviewText, setTestMergePreviewText] = useState<string>('');
+
+  // Persist selectedTemplateId in localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('selectedTemplateId', selectedTemplateId);
+  }, [selectedTemplateId]);
 
   // Update selected template when ID changes
   useEffect(() => {
@@ -141,6 +151,7 @@ export default function ContractGenerator() {
     }
     setTestMergeLoading(true);
     setTestMergeResult(null);
+    setTestMergePreviewText('');
     try {
       if (!selectedTemplate.docxTemplate || typeof selectedTemplate.docxTemplate !== 'string') throw new Error('Invalid docxTemplate key');
       const blob = await localforage.getItem<Blob>(selectedTemplate.docxTemplate as string);
@@ -156,6 +167,11 @@ export default function ContractGenerator() {
       doc.setData(data);
       doc.render();
       const text = doc.getFullText();
+      if (typeof text === 'string') {
+        setTestMergePreviewText(text);
+      } else {
+        setTestMergePreviewText('');
+      }
       const unresolved = Array.from(text.matchAll(/{{([^}]+)}}/g)).map(m => m[1]);
       if (unresolved.length > 0) {
         setTestMergeResult({ success: false, unresolved });
@@ -176,7 +192,7 @@ export default function ContractGenerator() {
       {selectedTemplate && (
         <div className="mb-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
           <div><b>Selected Template:</b> {selectedTemplate.name}</div>
-          <div><b>DOCX Key:</b> {selectedTemplate.docxTemplate}</div>
+          <div><b>DOCX Key:</b> {typeof selectedTemplate.docxTemplate === 'string' ? selectedTemplate.docxTemplate : 'N/A'}</div>
         </div>
       )}
       {/* Action Buttons at the Top */}
@@ -343,7 +359,15 @@ export default function ContractGenerator() {
             This dialog shows the result of a test merge, including any unresolved placeholders or errors.
           </div>
           {testMergeResult?.success ? (
-            <div className="text-green-700 font-semibold py-4">All placeholders are resolvable! Your contract is ready for generation.</div>
+            <>
+              <div className="text-green-700 font-semibold py-2">All placeholders are resolvable! Your contract is ready for generation.</div>
+              {typeof testMergePreviewText === 'string' && testMergePreviewText.length > 0 ? (
+                <>
+                  <div className="text-gray-700 font-semibold mt-4 mb-1">Preview of filled contract:</div>
+                  <pre className="bg-gray-100 rounded p-2 max-h-64 overflow-auto text-xs whitespace-pre-wrap">{testMergePreviewText}</pre>
+                </>
+              ) : null}
+            </>
           ) : testMergeResult?.unresolved ? (
             <div className="text-red-600 py-2">
               <div className="font-semibold mb-2">Unresolved Placeholders:</div>

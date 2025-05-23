@@ -1,4 +1,4 @@
-import { configureStore } from '@reduxjs/toolkit';
+import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import templatesReducer from '@/features/templates/templatesSlice';
 import providersReducer from '@/features/providers/providersSlice';
 import mappingsReducer from '@/features/templates/mappingsSlice';
@@ -6,23 +6,23 @@ import generatorReducer from '@/features/generator/generatorSlice';
 import { persistStore, persistReducer } from 'redux-persist';
 import storage from 'redux-persist/lib/storage';
 
+const rootReducer = combineReducers({
+  templates: templatesReducer,
+  providers: providersReducer,
+  mappings: mappingsReducer,
+  generator: generatorReducer,
+});
+
 const persistConfig = {
   key: 'root',
   storage,
-  whitelist: ['templates', 'providers', 'mappings'] // persist mappings too
+  whitelist: ['templates', 'providers', 'mappings'],
 };
 
-const persistedTemplatesReducer = persistReducer(persistConfig, templatesReducer);
-const persistedProvidersReducer = persistReducer(persistConfig, providersReducer);
-const persistedMappingsReducer = persistReducer(persistConfig, mappingsReducer);
+const persistedReducer = persistReducer(persistConfig, rootReducer);
 
 export const store = configureStore({
-  reducer: {
-    templates: persistedTemplatesReducer,
-    providers: persistedProvidersReducer,
-    mappings: persistedMappingsReducer,
-    generator: generatorReducer,
-  },
+  reducer: persistedReducer,
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
