@@ -1,49 +1,32 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import { Template } from '@/types/template';
+import localforage from 'localforage';
 
 interface TemplatesState {
   templates: Template[];
+  selectedTemplate: Template | null;
+  loading: boolean;
+  error: string | null;
 }
 
 const initialState: TemplatesState = {
-  templates: [
-    {
-      id: '1',
-      name: 'Standard Base Contract',
-      version: '2024.1',
-      type: 'Base',
-      lastModified: '2024-03-15',
-      placeholders: ['ProviderName', 'StartDate', 'BaseSalary', 'FTE'],
-      clauseIds: ['standard_terms', 'confidentiality'],
-      docxTemplate: 'base_contract_2024.docx',
-    },
-    {
-      id: '2',
-      name: 'Productivity Model A',
-      version: '2024.1',
-      type: 'Productivity',
-      lastModified: '2024-03-14',
-      placeholders: ['ProviderName', 'StartDate', 'BaseSalary', 'wRVUTarget', 'ConversionFactor'],
-      clauseIds: ['productivity_terms', 'bonus_schedule'],
-      docxTemplate: 'productivity_contract_2024.docx',
-    },
-    {
-      id: '3',
-      name: 'Hospital-based Specialist',
-      version: '2024.1',
-      type: 'Hospital-based',
-      lastModified: '2024-03-13',
-      placeholders: ['ProviderName', 'StartDate', 'BaseSalary', 'Department', 'CallSchedule'],
-      clauseIds: ['hospital_terms', 'call_coverage'],
-      docxTemplate: 'hospital_contract_2024.docx',
-    },
-  ],
+  templates: [],
+  selectedTemplate: null,
+  loading: false,
+  error: null,
 };
 
 const templatesSlice = createSlice({
   name: 'templates',
   initialState,
   reducers: {
+    setTemplates: (state, action: PayloadAction<Template[]>) => {
+      state.templates = action.payload;
+    },
+    clearTemplates: (state) => {
+      state.templates = [];
+      state.selectedTemplate = null;
+    },
     addTemplate: (state, action: PayloadAction<Template>) => {
       state.templates.push(action.payload);
     },
@@ -56,8 +39,37 @@ const templatesSlice = createSlice({
     deleteTemplate: (state, action: PayloadAction<string>) => {
       state.templates = state.templates.filter(t => t.id !== action.payload);
     },
+    setSelectedTemplate: (state, action: PayloadAction<Template | null>) => {
+      state.selectedTemplate = action.payload;
+    },
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+    setError: (state, action: PayloadAction<string | null>) => {
+      state.error = action.payload;
+    },
   },
 });
 
-export const { addTemplate, updateTemplate, deleteTemplate } = templatesSlice.actions;
+// Thunk for hydrating templates from redux-persist (no longer from localforage)
+export const hydrateTemplates = createAsyncThunk(
+  'templates/hydrate',
+  async () => {
+    // No-op: redux-persist will rehydrate automatically
+    // Optionally, you can trigger any post-hydration logic here
+    return;
+  }
+);
+
+export const {
+  setTemplates,
+  clearTemplates,
+  addTemplate,
+  updateTemplate,
+  deleteTemplate,
+  setSelectedTemplate,
+  setLoading,
+  setError,
+} = templatesSlice.actions;
+
 export default templatesSlice.reducer; 

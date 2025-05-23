@@ -1,18 +1,15 @@
 import { saveAs } from 'file-saver';
 import { z } from 'zod';
+import { Template, TemplateType } from '@/types/template';
 
 export const templateSchema = z.object({
   name: z.string().min(1, "Template name is required"),
   version: z.string().regex(/^\d+\.\d+\.\d+$/, "Version must be in format x.y.z"),
-  type: z.enum(["Schedule A", "Schedule B", "Hybrid", "Hospitalist", "Leadership"]),
+  type: z.enum(['Base', 'Productivity', 'Hybrid', 'Hospital-based'] as const),
   content: z.string(),
+  docxTemplate: z.string(),
+  clauseIds: z.array(z.string()),
 });
-
-export type Template = z.infer<typeof templateSchema> & {
-  id: string;
-  lastModified: string;
-  placeholders: string[];
-};
 
 export function extractPlaceholders(content: string): string[] {
   const placeholderRegex = /{{([^}]+)}}/g;

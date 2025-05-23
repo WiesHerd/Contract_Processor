@@ -2,10 +2,67 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useDispatch } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
-import { X } from 'lucide-react';
+import { X, CheckCircle } from 'lucide-react';
 import { addTemplate } from '../templatesSlice';
 import { NewTemplateFormData, newTemplateSchema } from '../schemas';
 import { TemplateType } from '@/types/template';
+import localforage from 'localforage';
+import { useState } from 'react';
+import PizZip from 'pizzip';
+
+// Enhanced DOCX validation utility
+async function validateDocxTemplate(file: File): Promise<{ issues: string[]; placeholders: string[] }> {
+  const issues: string[] = [];
+  let placeholders: string[] = [];
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const zip = new PizZip(arrayBuffer);
+    const xml = zip.file('word/document.xml')?.asText();
+    if (!xml) {
+      issues.push('Could not read document.xml from DOCX. The file may be corrupt or not a valid Word document.');
+      return { issues, placeholders };
+    }
+
+    // 1. Check for split placeholders
+    const runs = Array.from(xml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)).map(m => m[1]);
+    let buffer = '';
+    for (let i = 0; i < runs.length; i++) {
+      buffer += runs[i];
+      if (buffer.includes('{{') && !buffer.includes('}}')) continue;
+      if (buffer.includes('{{') && buffer.includes('}}')) {
+        const openIndex = buffer.indexOf('{{');
+        const closeIndex = buffer.indexOf('}}');
+        if (closeIndex - openIndex > 50) {
+          issues.push(`Potentially split tag: ${buffer.slice(openIndex, closeIndex + 2)}`);
+        }
+        buffer = '';
+      }
+      if (buffer.length > 200) buffer = '';
+    }
+
+    // 2. Check for mismatched tags
+    const openTags = (xml.match(/\{\{/g) || []).length;
+    const closeTags = (xml.match(/\}\}/g) || []).length;
+    if (openTags !== closeTags) {
+      issues.push(`Mismatched number of opening ({{) and closing (}}) tags: ${openTags} vs ${closeTags}`);
+    }
+
+    // 3. Extract and check for duplicate placeholders
+    const placeholderRegex = /\{\{([^}]+)\}\}/g;
+    const allPlaceholders = Array.from(xml.matchAll(placeholderRegex)).map(m => m[1].trim());
+    placeholders = Array.from(new Set(allPlaceholders));
+    const duplicates = allPlaceholders.filter((item, idx) => allPlaceholders.indexOf(item) !== idx);
+    if (duplicates.length > 0) {
+      issues.push(`Duplicate placeholders found: ${[...new Set(duplicates)].join(', ')}`);
+    }
+    if (placeholders.length === 0) {
+      issues.push('No placeholders ({{...}}) found in the DOCX file.');
+    }
+  } catch (err) {
+    issues.push('Failed to parse DOCX file. It may be corrupt or not a valid Word document.');
+  }
+  return { issues, placeholders };
+}
 
 interface NewTemplateModalProps {
   isOpen: boolean;
@@ -32,17 +89,56 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
 
   const placeholders = watch('placeholders');
   const clauseIds = watch('clauseIds');
+  const [docxFile, setDocxFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [scanIssues, setScanIssues] = useState<string[]>([]);
 
-  const onSubmit = (data: NewTemplateFormData) => {
-    dispatch(
-      addTemplate({
-        id: uuidv4(),
-        ...data,
-        lastModified: new Date().toISOString().split('T')[0],
-      })
-    );
-    onClose();
+  // Handle file input and scan for issues
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setDocxFile(file);
+    setScanIssues([]);
+    setFileError(null);
+    if (file) {
+      const { issues, placeholders } = await validateDocxTemplate(file);
+      setScanIssues(issues);
+      setValue('placeholders', placeholders);
+      if (issues.length > 0) {
+        setFileError('Template has formatting issues. Please review the error report below.');
+      }
+    }
   };
+
+  const onSubmit = async (data: NewTemplateFormData) => {
+    if (!docxFile) {
+      setFileError('Please upload a DOCX template file.');
+      return;
+    }
+    if (scanIssues.length > 0) {
+      setFileError('Template has formatting issues. Please fix and re-upload.');
+      return;
+    }
+    setFileError(null);
+    try {
+      await localforage.setItem(docxFile.name, docxFile);
+      dispatch(
+        addTemplate({
+          id: uuidv4(),
+          ...data,
+          docxTemplate: docxFile.name,
+          lastModified: new Date().toISOString().split('T')[0],
+          description: '',
+          content: '',
+        })
+      );
+      onClose();
+    } catch (err) {
+      setFileError('Failed to save DOCX file.');
+    }
+  };
+
+  // Enhanced: Determine if the file is ready for mapping
+  const isReadyForMapping = docxFile && scanIssues.length === 0 && placeholders.length > 0;
 
   if (!isOpen) return null;
 
@@ -200,20 +296,32 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
             </div>
           </div>
 
-          {/* Docx Template */}
+          {/* Docx Template File Upload */}
           <div>
             <label className="block text-sm font-medium mb-1">
               Docx Template File
             </label>
             <input
-              {...register('docxTemplate')}
+              type="file"
+              accept=".docx"
+              onChange={handleFileChange}
               className="w-full p-2 border rounded-md"
-              placeholder="Enter template filename"
             />
-            {errors.docxTemplate && (
-              <p className="text-red-500 text-sm mt-1">
-                {errors.docxTemplate.message}
-              </p>
+            {fileError && (
+              <p className="text-red-500 text-sm mt-1 font-semibold">{fileError}</p>
+            )}
+            {scanIssues.length > 0 && (
+              <ul className="text-red-500 text-sm mt-1 list-disc ml-6">
+                {scanIssues.map((issue, idx) => (
+                  <li key={idx}>{issue}</li>
+                ))}
+              </ul>
+            )}
+            {isReadyForMapping && (
+              <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm font-semibold flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                Template is valid and ready for mapping!
+              </div>
             )}
           </div>
 
@@ -229,6 +337,7 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
             <button
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              disabled={!isReadyForMapping}
             >
               Create Template
             </button>

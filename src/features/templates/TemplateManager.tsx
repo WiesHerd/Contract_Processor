@@ -1,39 +1,64 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '@/store';
-import {
-  addTemplate,
-  updateTemplate,
-  deleteTemplate,
-  setSelectedTemplate,
-} from '@/store/slices/templateSlice';
-import { Template, validateTemplate, generateTestData, downloadDocument } from '@/utils/template-processor';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Trash2, Edit, Download, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Edit } from 'lucide-react';
 import mammoth from 'mammoth';
+import { addTemplate, updateTemplate, deleteTemplate, setTemplates, clearTemplates, hydrateTemplates } from './templatesSlice';
+import { Template, TemplateType } from '@/types/template';
+import { RootState } from '@/store';
+import { useNavigate } from 'react-router-dom';
+import { v4 as uuidv4 } from 'uuid';
+import { TemplateUploadModal } from './components/TemplateUploadModal';
+import type { UploadFormData } from './components/TemplateUploadModal';
+import { saveDocxFile } from '@/utils/docxStorage';
+import localforage from 'localforage';
+import TemplatePreviewModal from './components/TemplatePreviewModal';
 
 export default function TemplateManager() {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const templates = useSelector((state: RootState) => state.templates.templates);
   const [isCreating, setIsCreating] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Memoize provider fields selector
+  const providers = useSelector((state: RootState) => state.providers.providers);
+  const providerFields = useMemo(() => 
+    providers[0] ? Object.keys(providers[0]) : [],
+    [providers]
+  );
+  
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPlaceholders, setUploadPlaceholders] = useState<string[]>([]);
+  const [uploadArrayBuffer, setUploadArrayBuffer] = useState<ArrayBuffer | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
+
+  // Hydrate templates from localforage on mount
+  useEffect(() => {
+    dispatch(hydrateTemplates());
+  }, [dispatch]);
 
   const handleCreateTemplate = () => {
     const newTemplate: Template = {
       id: crypto.randomUUID(),
       name: '',
+      description: '',
       version: '1.0.0',
-      type: 'Schedule A',
+      type: 'Base',
       content: '',
       lastModified: new Date().toISOString().split('T')[0],
       placeholders: [],
+      docxTemplate: '',
+      clauseIds: [],
     };
     setEditingTemplate(newTemplate);
     setIsCreating(true);
@@ -51,9 +76,14 @@ export default function TemplateManager() {
   const handleSaveTemplate = () => {
     if (!editingTemplate) return;
 
-    const { isValid, errors: validationErrors } = validateTemplate(editingTemplate);
-    if (!isValid) {
-      setErrors(validationErrors);
+    // Validate template
+    if (!editingTemplate.name) {
+      setErrors({ name: 'Template name is required' });
+      return;
+    }
+
+    if (!editingTemplate.content) {
+      setErrors({ content: 'Template content is required' });
       return;
     }
 
@@ -67,23 +97,6 @@ export default function TemplateManager() {
     setErrors({});
   };
 
-  const handleTestTemplate = (template: Template) => {
-    const testData = generateTestData(template);
-    const content = template.content;
-
-    // Replace placeholders with test data
-    let testContent = content;
-    template.placeholders.forEach(placeholder => {
-      const value = testData[placeholder] ?? '';
-      testContent = testContent.replace(
-        new RegExp(`{{${placeholder}}}`, 'g'),
-        String(value)
-      );
-    });
-
-    downloadDocument(testContent, `${template.name}-test.txt`);
-  };
-
   // Handle DOCX upload and extract placeholders
   const handleDocxUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -91,28 +104,82 @@ export default function TemplateManager() {
       alert('Please select a .docx file.');
       return;
     }
+
     try {
       const arrayBuffer = await file.arrayBuffer();
       const { value: text } = await mammoth.extractRawText({ arrayBuffer });
-      // Find all {{placeholders}}
       const placeholderRegex = /{{([^}]+)}}/g;
       const placeholders = Array.from(text.matchAll(placeholderRegex))
         .map(match => match[1])
         .filter((value, index, self) => self.indexOf(value) === index);
-      // Open template editor with extracted data
-      setEditingTemplate({
-        id: crypto.randomUUID(),
-        name: file.name.replace(/\.docx$/, ''),
-        version: '1.0.0',
-        type: 'Schedule A',
-        content: text,
-        lastModified: new Date().toISOString().split('T')[0],
-        placeholders,
-      });
-      setIsCreating(true);
+
+      // Set all state before opening modal
+      setUploadFile(file);
+      setUploadPlaceholders(placeholders);
+      setUploadArrayBuffer(arrayBuffer);
+      setUploadModalOpen(true);
     } catch (err) {
       alert('Failed to parse DOCX file. Please ensure it is a valid Word document.');
+      // Reset state on error
+      setUploadFile(null);
+      setUploadPlaceholders([]);
+      setUploadArrayBuffer(null);
     }
+  };
+
+  const handleUploadModalSubmit = async (data: UploadFormData) => {
+    if (!uploadFile || !uploadArrayBuffer) return;
+    
+    const templateId = uuidv4();
+    // Store the file using the pluggable storage utility (localforage by default, swap for S3/cloud as needed)
+    const docxKey = await saveDocxFile(new File([uploadArrayBuffer], uploadFile.name), templateId);
+    
+    const newTemplate = {
+      id: templateId,
+      name: data.name,
+      description: data.description,
+      version: data.version,
+      type: data.type as TemplateType,
+      content: '', // Will be filled with extracted text if needed
+      lastModified: new Date().toISOString().split('T')[0],
+      placeholders: uploadPlaceholders,
+      docxTemplate: docxKey,
+      clauseIds: [],
+    };
+    
+    dispatch(addTemplate(newTemplate));
+    
+    // Reset all upload state
+    setUploadModalOpen(false);
+    setUploadFile(null);
+    setUploadPlaceholders([]);
+    setUploadArrayBuffer(null);
+    
+    navigate(`/map-fields/${templateId}`);
+  };
+
+  const handleCloseUploadModal = () => {
+    setUploadModalOpen(false);
+    setUploadFile(null);
+    setUploadPlaceholders([]);
+    setUploadArrayBuffer(null);
+  };
+
+  // Delete all templates handler
+  const handleDeleteAllTemplates = () => {
+    if (window.confirm('Are you sure you want to delete ALL templates? This cannot be undone.')) {
+      dispatch(clearTemplates());
+      localforage.removeItem('templates').then(() => {
+        alert('All templates and files have been deleted.');
+        window.location.reload();
+      });
+    }
+  };
+
+  // Handler to open preview modal
+  const handlePreviewTemplate = (template: Template) => {
+    setPreviewTemplate(template);
+    setPreviewOpen(true);
   };
 
   return (
@@ -123,10 +190,8 @@ export default function TemplateManager() {
           <p className="text-gray-500 text-sm mt-1">Manage your contract templates. Upload a DOCX to extract placeholders, or create a new template from scratch.</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-          >
+          <Button variant="outline" onClick={handleDeleteAllTemplates} className="text-red-600 border-red-300">Delete All Templates</Button>
+          <Button onClick={() => fileInputRef.current?.click()}>
             Upload DOCX
           </Button>
           <input
@@ -136,14 +201,10 @@ export default function TemplateManager() {
             className="hidden"
             onChange={handleDocxUpload}
           />
-          <Button onClick={handleCreateTemplate}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Template
-          </Button>
         </div>
       </div>
 
-      <div className="grid gap-4">
+      <div className="space-y-4">
         {templates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-gray-400">
             <span className="text-3xl mb-2">📄</span>
@@ -154,33 +215,30 @@ export default function TemplateManager() {
           templates.map(template => (
             <div
               key={template.id}
-              className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm"
+              className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm cursor-pointer hover:bg-blue-50 transition"
+              onClick={() => handlePreviewTemplate(template)}
             >
               <div>
                 <h3 className="font-medium">{template.name}</h3>
                 <p className="text-sm text-gray-500">
                   Version {template.version} • {template.type} • Last modified {template.lastModified}
                 </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {template.placeholders.length} placeholders • {template.clauseIds.length} clauses
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => handleTestTemplate(template)}
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => handleEditTemplate(template)}
+                  onClick={e => { e.stopPropagation(); handleEditTemplate(template); }}
                 >
                   <Edit className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => handleDeleteTemplate(template.id)}
+                  onClick={e => { e.stopPropagation(); handleDeleteTemplate(template.id); }}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -222,31 +280,27 @@ export default function TemplateManager() {
                       value={editingTemplate.version}
                       onChange={e => setEditingTemplate(prev => prev ? { ...prev, version: e.target.value } : null)}
                     />
-                    {errors.version && (
-                      <p className="text-sm text-red-500">{errors.version}</p>
-                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="type">Type</Label>
                     <Select
                       value={editingTemplate.type}
-                      onValueChange={(value: Template['type']) => setEditingTemplate(prev => prev ? { ...prev, type: value } : null)}
+                      onValueChange={(value: TemplateType) => setEditingTemplate(prev => prev ? { ...prev, type: value } : null)}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Schedule A">Schedule A</SelectItem>
-                        <SelectItem value="Schedule B">Schedule B</SelectItem>
+                        <SelectItem value="Base">Base</SelectItem>
+                        <SelectItem value="Productivity">Productivity</SelectItem>
                         <SelectItem value="Hybrid">Hybrid</SelectItem>
-                        <SelectItem value="Hospitalist">Hospitalist</SelectItem>
-                        <SelectItem value="Leadership">Leadership</SelectItem>
+                        <SelectItem value="Hospital-based">Hospital-based</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
                 {/* Right side - Content editor */}
-                <div className="col-span-2 flex flex-col space-y-2 h-full">
+                <div className="col-span-2 space-y-4">
                   <Label>Content</Label>
                   <div className="flex-1">
                     <ScrollArea className="h-full max-h-[420px] rounded-md border bg-white">
@@ -278,6 +332,20 @@ export default function TemplateManager() {
           </DialogContent>
         </Dialog>
       )}
+      {uploadModalOpen && uploadFile && (
+        <TemplateUploadModal
+          isOpen={uploadModalOpen}
+          onClose={handleCloseUploadModal}
+          file={uploadFile}
+          placeholders={uploadPlaceholders}
+          onSubmit={handleUploadModalSubmit}
+        />
+      )}
+      <TemplatePreviewModal
+        open={previewOpen}
+        template={previewTemplate}
+        onClose={() => setPreviewOpen(false)}
+      />
     </div>
   );
 } 
