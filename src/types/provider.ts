@@ -11,4 +11,5 @@ export interface Provider {
   retentionBonus?: number;
   templateTag?: string;
   lastModified: string;
+  [key: string]: string | number | undefined; // Allow dynamic fields from CSV
 } 

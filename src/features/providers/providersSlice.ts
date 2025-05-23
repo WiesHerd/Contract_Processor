@@ -1,28 +1,43 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { Provider } from '../../types/provider';
+import { Provider } from '@/types/provider';
 import { v4 as uuidv4 } from 'uuid';
 import { RootState } from '../../store';
 import { Template } from '../../types/template';
 
 interface ProvidersState {
   providers: Provider[];
+  uploadedColumns: string[];
 }
 
 const initialState: ProvidersState = {
   providers: [],
+  uploadedColumns: [],
 };
 
 const providersSlice = createSlice({
   name: 'providers',
   initialState,
   reducers: {
-    addProvidersFromCSV: (state, action: PayloadAction<Omit<Provider, 'id' | 'lastModified'>[]>) => {
+    addProvidersFromCSV: (state, action: PayloadAction<Record<string, string>[]>) => {
       const newProviders = action.payload.map(provider => ({
-        ...provider,
         id: uuidv4(),
+        name: provider.name || '',
+        credentials: provider.credentials || '',
+        specialty: provider.specialty || '',
+        startDate: provider.startDate || '',
+        fte: isNaN(parseFloat(provider.fte)) ? 0 : parseFloat(provider.fte),
+        baseSalary: parseFloat(provider.baseSalary) || 0,
+        wRVUTarget: provider.wRVUTarget ? parseFloat(provider.wRVUTarget) : undefined,
+        conversionFactor: provider.conversionFactor ? parseFloat(provider.conversionFactor) : undefined,
+        retentionBonus: provider.retentionBonus ? parseFloat(provider.retentionBonus) : undefined,
+        templateTag: provider.templateTag,
         lastModified: new Date().toISOString().split('T')[0],
+        ...provider, // Keep any additional fields from CSV
       }));
-      state.providers.push(...newProviders);
+      state.providers = newProviders;
+    },
+    setUploadedColumns: (state, action: PayloadAction<string[]>) => {
+      state.uploadedColumns = action.payload;
     },
     updateProvider: (state, action: PayloadAction<Provider>) => {
       const index = state.providers.findIndex(p => p.id === action.payload.id);
@@ -35,6 +50,9 @@ const providersSlice = createSlice({
     },
     deleteProvider: (state, action: PayloadAction<string>) => {
       state.providers = state.providers.filter(p => p.id !== action.payload);
+    },
+    clearProviders: (state) => {
+      state.providers = [];
     },
   },
 });
@@ -67,5 +85,5 @@ export const selectProviderWithMatchedTemplate = (providerId: string) => (state:
   return { provider, template };
 };
 
-export const { addProvidersFromCSV, updateProvider, deleteProvider } = providersSlice.actions;
+export const { addProvidersFromCSV, setUploadedColumns, updateProvider, deleteProvider, clearProviders } = providersSlice.actions;
 export default providersSlice.reducer; 
