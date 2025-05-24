@@ -11,4 +11,7 @@ export interface Template {
   docxTemplate: string | File | null;
   clauseIds: string[];
   content: string;
+  htmlPreviewContent?: string;
+  editedHtmlContent?: string;
+  versionHistory?: Array<{ timestamp: string; html: string }>;
 } 

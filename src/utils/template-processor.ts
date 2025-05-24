@@ -1,6 +1,8 @@
 import { saveAs } from 'file-saver';
 import { z } from 'zod';
 import { Template, TemplateType } from '@/types/template';
+import localforage from 'localforage';
+import mammoth from 'mammoth';
 
 export const templateSchema = z.object({
   name: z.string().min(1, "Template name is required"),
@@ -78,4 +80,33 @@ export function generateTestData(template: Template): Record<string, any> {
   });
 
   return testData;
+}
+
+/**
+ * Retrieves a DOCX Blob from localforage by key, converts it to clean HTML using mammoth, and returns the HTML string.
+ * @param docxKey The key for the DOCX Blob in localforage
+ * @returns Clean HTML string
+ */
+export async function convertDocxFromLocalforageToHtml(docxKey: string): Promise<string> {
+  try {
+    const blob = await localforage.getItem<Blob>(docxKey);
+    if (!blob) throw new Error('DOCX file not found in storage');
+    const arrayBuffer = await blob.arrayBuffer();
+    const { value: html } = await mammoth.convertToHtml({ arrayBuffer }, {
+      styleMap: [
+        'b => strong',
+        'i => em',
+        'u => u',
+        'table => table',
+        'p[style-name="Heading 1"] => h1:fresh',
+        'p[style-name="Heading 2"] => h2:fresh',
+        'p[style-name="Heading 3"] => h3:fresh',
+      ],
+      includeDefaultStyleMap: false
+    });
+    return html;
+  } catch (err) {
+    console.error('Failed to convert DOCX to HTML:', err);
+    return '<div class="text-red-500">Failed to load or convert DOCX file.</div>';
+  }
 } 
