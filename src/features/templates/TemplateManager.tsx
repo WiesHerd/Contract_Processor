@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Trash2, Edit } from 'lucide-react';
+import { Plus, Trash2, Edit, Eye } from 'lucide-react';
 import mammoth from 'mammoth';
 import { addTemplate, updateTemplate, deleteTemplate, setTemplates, clearTemplates, hydrateTemplates } from './templatesSlice';
 import { Template, TemplateType } from '@/types/template';
@@ -17,7 +17,7 @@ import { TemplateUploadModal } from './components/TemplateUploadModal';
 import type { UploadFormData } from './components/TemplateUploadModal';
 import { saveDocxFile } from '@/utils/docxStorage';
 import localforage from 'localforage';
-import TemplatePreviewModal from './components/TemplatePreviewModal';
+import TemplatePreviewPanel from './components/TemplatePreviewPanel';
 
 export default function TemplateManager() {
   const dispatch = useDispatch();
@@ -39,8 +39,7 @@ export default function TemplateManager() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPlaceholders, setUploadPlaceholders] = useState<string[]>([]);
   const [uploadArrayBuffer, setUploadArrayBuffer] = useState<ArrayBuffer | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
+  const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
 
   // Hydrate templates from localforage on mount
   useEffect(() => {
@@ -133,6 +132,15 @@ export default function TemplateManager() {
     const templateId = uuidv4();
     // Store the file using the pluggable storage utility (localforage by default, swap for S3/cloud as needed)
     const docxKey = await saveDocxFile(new File([uploadArrayBuffer], uploadFile.name), templateId);
+
+    // Convert DOCX to HTML for preview
+    let htmlPreviewContent = '';
+    try {
+      const { value: html } = await mammoth.convertToHtml({ arrayBuffer: uploadArrayBuffer });
+      htmlPreviewContent = html;
+    } catch (err) {
+      htmlPreviewContent = '<div class="text-red-500">Failed to convert DOCX to HTML.</div>';
+    }
     
     const newTemplate = {
       id: templateId,
@@ -145,6 +153,7 @@ export default function TemplateManager() {
       placeholders: uploadPlaceholders,
       docxTemplate: docxKey,
       clauseIds: [],
+      htmlPreviewContent, // Store HTML preview
     };
     
     dispatch(addTemplate(newTemplate));
@@ -174,12 +183,6 @@ export default function TemplateManager() {
         window.location.reload();
       });
     }
-  };
-
-  // Handler to open preview modal
-  const handlePreviewTemplate = (template: Template) => {
-    setPreviewTemplate(template);
-    setPreviewOpen(true);
   };
 
   return (
@@ -215,8 +218,7 @@ export default function TemplateManager() {
           templates.map(template => (
             <div
               key={template.id}
-              className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm cursor-pointer hover:bg-blue-50 transition"
-              onClick={() => handlePreviewTemplate(template)}
+              className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm hover:bg-blue-50 transition"
             >
               <div>
                 <h3 className="font-medium">{template.name}</h3>
@@ -228,6 +230,14 @@ export default function TemplateManager() {
                 </p>
               </div>
               <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Preview"
+                  onClick={() => setPreviewTemplateId(template.id)}
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="outline"
                   size="icon"
@@ -341,11 +351,13 @@ export default function TemplateManager() {
           onSubmit={handleUploadModalSubmit}
         />
       )}
-      <TemplatePreviewModal
-        open={previewOpen}
-        template={previewTemplate}
-        onClose={() => setPreviewOpen(false)}
-      />
+      {previewTemplateId && (
+        <Dialog open={!!previewTemplateId} onOpenChange={() => setPreviewTemplateId(null)}>
+          <DialogContent className="max-w-4xl">
+            <TemplatePreviewPanel templateId={previewTemplateId} />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 } 

@@ -153,33 +153,107 @@ export default function ContractGenerator() {
     setTestMergeResult(null);
     setTestMergePreviewText('');
     try {
-      if (!selectedTemplate.docxTemplate || typeof selectedTemplate.docxTemplate !== 'string') throw new Error('Invalid docxTemplate key');
+      if (!selectedTemplate.docxTemplate || typeof selectedTemplate.docxTemplate !== 'string') {
+        throw new Error('Invalid docxTemplate key');
+      }
+      
+      // Debug info
+      console.log('Template:', selectedTemplate);
+      console.log('Provider:', provider);
+      console.log('Mapping:', mapping);
+      
       const blob = await localforage.getItem<Blob>(selectedTemplate.docxTemplate as string);
-      if (!blob) throw new Error('DOCX file not found');
+      if (!blob) {
+        throw new Error('DOCX file not found in storage');
+      }
+      
       const arrayBuffer = await blob.arrayBuffer();
       const zip = new PizZip(arrayBuffer);
-      const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+      const doc = new Docxtemplater(zip, { 
+        paragraphLoop: true, 
+        linebreaks: true,
+        errorHandler: (error) => {
+          console.error('Docxtemplater error:', error);
+          throw error;
+        }
+      });
+      
       // Prepare data for merge
       const data: Record<string, any> = {};
-      mapping.mappings.forEach((m: any) => {
-        data[m.placeholder] = m.mappedColumn ? provider[m.mappedColumn] ?? '' : '';
+      const unmappedPlaceholders: string[] = [];
+      const missingValues: string[] = [];
+      
+      // First, check all placeholders in the template
+      const templatePlaceholders = selectedTemplate.placeholders || [];
+      templatePlaceholders.forEach(ph => {
+        const mapping = mappings[selectedTemplate.id]?.mappings.find(m => m.placeholder === ph);
+        if (!mapping) {
+          unmappedPlaceholders.push(ph);
+        } else if (!mapping.mappedColumn) {
+          unmappedPlaceholders.push(ph);
+        } else if (provider[mapping.mappedColumn] === undefined) {
+          missingValues.push(`${ph} (mapped to ${mapping.mappedColumn})`);
+        }
       });
+      
+      // Then prepare the data
+      mapping.mappings.forEach((m: any) => {
+        if (m.mappedColumn && provider[m.mappedColumn] !== undefined) {
+          const value = provider[m.mappedColumn];
+          if (typeof value === 'number') {
+            if (m.mappedColumn.toLowerCase().includes('salary') || 
+                m.mappedColumn.toLowerCase().includes('bonus') ||
+                m.mappedColumn.toLowerCase().includes('amount')) {
+              data[m.placeholder] = `$${value.toLocaleString()}`;
+            } else {
+              data[m.placeholder] = value.toString();
+            }
+          } else {
+            data[m.placeholder] = value;
+          }
+        } else {
+          data[m.placeholder] = '';
+        }
+      });
+      
+      // Set the data and render
       doc.setData(data);
       doc.render();
+      
       const text = doc.getFullText();
       if (typeof text === 'string') {
         setTestMergePreviewText(text);
-      } else {
-        setTestMergePreviewText('');
       }
-      const unresolved = Array.from(text.matchAll(/{{([^}]+)}}/g)).map(m => m[1]);
-      if (unresolved.length > 0) {
-        setTestMergeResult({ success: false, unresolved });
+      
+      // Check for any remaining placeholders
+      const remainingPlaceholders = text.match(/{{([^}]+)}}/g)?.map(m => m.slice(2, -2)) || [];
+      
+      // Prepare detailed error report
+      if (unmappedPlaceholders.length > 0 || missingValues.length > 0 || remainingPlaceholders.length > 0) {
+        const errorDetails = [];
+        if (unmappedPlaceholders.length > 0) {
+          errorDetails.push(`Unmapped placeholders: ${unmappedPlaceholders.join(', ')}`);
+        }
+        if (missingValues.length > 0) {
+          errorDetails.push(`Missing provider values: ${missingValues.join(', ')}`);
+        }
+        if (remainingPlaceholders.length > 0) {
+          errorDetails.push(`Unresolved placeholders: ${remainingPlaceholders.join(', ')}`);
+        }
+        setTestMergeResult({ 
+          success: false, 
+          error: errorDetails.join('\n'),
+          unresolved: [...unmappedPlaceholders, ...remainingPlaceholders]
+        });
       } else {
         setTestMergeResult({ success: true });
       }
     } catch (err: any) {
-      setTestMergeResult({ success: false, error: err.message });
+      console.error('Test merge error:', err);
+      setTestMergeResult({ 
+        success: false, 
+        error: `Error during test merge: ${err.message}\n\nPlease check the console for more details.`
+      });
     } finally {
       setTestMergeLoading(false);
       setTestMergeOpen(true);
@@ -351,7 +425,7 @@ export default function ContractGenerator() {
       )}
       {/* Test Merge Result Modal */}
       <Dialog open={testMergeOpen} onOpenChange={setTestMergeOpen}>
-        <DialogContent className="max-w-lg" aria-describedby="test-merge-desc">
+        <DialogContent className="max-w-2xl" aria-describedby="test-merge-desc">
           <DialogHeader>
             <DialogTitle>Test Merge Result</DialogTitle>
           </DialogHeader>
@@ -368,17 +442,19 @@ export default function ContractGenerator() {
                 </>
               ) : null}
             </>
-          ) : testMergeResult?.unresolved ? (
-            <div className="text-red-600 py-2">
-              <div className="font-semibold mb-2">Unresolved Placeholders:</div>
-              <ul className="list-disc ml-6">
-                {testMergeResult.unresolved.map(ph => (
-                  <li key={ph}>{ph}</li>
-                ))}
-              </ul>
-            </div>
           ) : testMergeResult?.error ? (
-            <div className="text-red-600 py-2">Error: {testMergeResult.error}</div>
+            <div className="text-red-600 py-2">
+              <div className="font-semibold mb-2">Issues Found:</div>
+              <pre className="bg-red-50 rounded p-2 max-h-64 overflow-auto text-xs whitespace-pre-wrap">{testMergeResult.error}</pre>
+              <div className="mt-4 text-sm text-gray-600">
+                <p>To fix these issues:</p>
+                <ol className="list-decimal ml-6 mt-2">
+                  <li>Go to the Mapping page and ensure all placeholders are mapped to provider fields</li>
+                  <li>Check that your provider data contains all required fields</li>
+                  <li>Verify that the template file is properly formatted</li>
+                </ol>
+              </div>
+            </div>
           ) : null}
           <DialogFooter className="flex justify-end gap-2 mt-6">
             <Button variant="outline" onClick={() => setTestMergeOpen(false)}>Close</Button>
