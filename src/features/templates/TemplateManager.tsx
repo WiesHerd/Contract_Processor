@@ -175,13 +175,12 @@ export default function TemplateManager() {
   };
 
   // Delete all templates handler
-  const handleDeleteAllTemplates = () => {
+  const handleDeleteAllTemplates = async () => {
     if (window.confirm('Are you sure you want to delete ALL templates? This cannot be undone.')) {
       dispatch(clearTemplates());
-      localforage.removeItem('templates').then(() => {
-        alert('All templates and files have been deleted.');
-        window.location.reload();
-      });
+      await localforage.clear(); // Clear all keys from localforage, including files/blobs
+      alert('All templates and files have been deleted.');
+      window.location.reload();
     }
   };
 

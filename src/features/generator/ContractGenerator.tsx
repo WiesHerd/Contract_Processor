@@ -21,6 +21,8 @@ import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import localforage from 'localforage';
+import html2pdf from 'html2pdf.js';
+import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 
 export default function ContractGenerator() {
   const dispatch = useDispatch();
@@ -260,6 +262,32 @@ export default function ContractGenerator() {
     }
   };
 
+  const handleGenerateDOCX = async () => {
+    if (!selectedTemplate || selectedProviderIds.length !== 1) return;
+    const provider = providers.find(p => p.id === selectedProviderIds[0]);
+    if (!provider) return;
+    const mapping = mappings[selectedTemplate.id]?.mappings;
+    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
+    // Merge with mapping for proper formatting
+    const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+    try {
+      // @ts-ignore
+      const docxBlob = window.htmlDocx.asBlob(mergedHtml);
+      const fileName = `ScheduleA_${provider.name.replace(/\s+/g, '')}.docx`;
+      const url = URL.createObjectURL(docxBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      alert('Failed to generate DOCX.');
+      console.error(error);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 space-y-6">
       {/* Debug info for selected template */}
@@ -287,6 +315,15 @@ export default function ContractGenerator() {
               Generate Single
             </>
           )}
+        </Button>
+        <Button
+          onClick={handleGenerateDOCX}
+          disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
+          variant="outline"
+          className="gap-2"
+        >
+          <FileDown className="h-4 w-4" />
+          Download as Word
         </Button>
         <Button
           onClick={handleBulkGenerate}
