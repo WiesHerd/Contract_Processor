@@ -4,9 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateTemplate } from '../templatesSlice';
 import { Template } from '@/types/template';
-
-// Dynamically import TinyMCE React component
-const Editor = React.lazy(() => import('@tinymce/tinymce-react').then(mod => ({ default: mod.Editor })));
+import { Editor } from '@tinymce/tinymce-react';
 
 interface TemplateHtmlEditorModalProps {
   templateId: string;
@@ -57,40 +55,33 @@ const TemplateHtmlEditorModal: React.FC<TemplateHtmlEditorModalProps> = ({ templ
   }, [dispatch, editorValue, onClose, template]);
 
   // Editor config
-  const tinymceInit = {
+  const tinymceInit: any = {
     height: 500,
     menubar: false,
     plugins: [
-      'lists table',
-      'advlist autolink link charmap preview anchor',
-      'searchreplace visualblocks code fullscreen',
-      'insertdatetime media paste help wordcount',
+      'lists', 'table',
+      'advlist', 'autolink', 'link', 'charmap', 'preview', 'anchor',
+      'searchreplace', 'visualblocks', 'code', 'fullscreen',
+      'insertdatetime', 'media', 'paste', 'help', 'wordcount'
     ],
     toolbar:
       'undo redo | bold italic underline | bullist numlist | table | code',
     content_style:
       'body { font-family:Inter,Arial,sans-serif; font-size:14px; }',
-    // Prevent TinyMCE from encoding curly braces or placeholders
     valid_elements: '*[*]',
     entity_encoding: 'raw',
-    // Highlight placeholders on load
-    setup: (editor: any) => {
-      editor.on('init', () => {
-        const html = highlightPlaceholders(editor.getContent());
-        editor.setContent(html);
-      });
-      // Re-highlight after content changes
-      editor.on('SetContent', (e: any) => {
-        if (e.content) {
-          editor.setContent(highlightPlaceholders(e.content), { format: 'raw' });
-        }
-      });
-    },
-    // Allow {{...}} to be edited as plain text
+    // No placeholder highlighting for performance
+    setup: (editor: any) => {},
     formats: {
       placeholder: { inline: 'span', classes: 'placeholder-highlight' },
     },
   };
+
+  // TODO: Replace 'YOUR_TINYMCE_API_KEY' with your actual TinyMCE Cloud API key
+  // Get a free key at https://www.tiny.cloud/get-tiny/
+
+  // Debug log to check what is being passed to the editor
+  console.log('Editor Value:', editorValue);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -103,14 +94,13 @@ const TemplateHtmlEditorModal: React.FC<TemplateHtmlEditorModalProps> = ({ templ
         ) : !template ? (
           <div className="text-red-500">Template not found.</div>
         ) : (
-          <React.Suspense fallback={<div className="text-gray-500">Loading editor...</div>}>
-            <Editor
-              apiKey={process.env.REACT_APP_TINYMCE_API_KEY}
-              value={editorValue}
-              onEditorChange={setEditorValue}
-              init={tinymceInit}
-            />
-          </React.Suspense>
+          <Editor
+            key={template?.id}
+            apiKey="hwuyiukhovfmwo28b4d5ktsw78kc9fu31gwdlqx9b4h2uv9b"
+            value={editorValue}
+            onEditorChange={setEditorValue}
+            init={tinymceInit}
+          />
         )}
         <DialogFooter className="flex justify-end gap-2 mt-6">
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>

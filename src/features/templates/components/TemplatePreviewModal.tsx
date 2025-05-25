@@ -47,6 +47,40 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
     }
   };
 
+  const handleGenerateDOCX = async () => {
+    if (!template || !template.docxTemplate) return;
+    // Defensive logging
+    // @ts-ignore
+    console.log("DOCX Generation Debug", {
+      htmlDocxLoaded: !!window.htmlDocx,
+      // @ts-ignore
+      availableFunctions: window.htmlDocx && Object.keys(window.htmlDocx),
+      docxTextPreview: docxText?.slice(0, 200)
+    });
+    // Defensive check
+    // @ts-ignore
+    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+      alert("DOCX export is not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.");
+      return;
+    }
+    try {
+      // @ts-ignore
+      const docxBlob = window.htmlDocx.asBlob(docxText);
+      const fileName = `ScheduleA_${template.name.replace(/\s+/g, '')}.docx`;
+      const url = URL.createObjectURL(docxBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("DOCX generation failed:", error);
+      alert("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
+    }
+  };
+
   if (!template) return null;
 
   return (
@@ -88,6 +122,7 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
         <DialogFooter className="flex justify-end gap-2 mt-6">
           <Button variant="outline" onClick={onClose}>Close</Button>
           <Button onClick={handleDownload}>Download DOCX</Button>
+          <Button onClick={handleGenerateDOCX}>Generate DOCX</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

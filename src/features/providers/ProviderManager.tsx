@@ -110,6 +110,24 @@ function DualHorizontalScrollbar({ scrollRef, minWidth }: { scrollRef: React.Ref
   );
 }
 
+// Utility functions for formatting
+function formatCurrency(value: any) {
+  const num = Number(String(value).replace(/[^0-9.]/g, ''));
+  if (isNaN(num)) return value;
+  return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}
+function formatNumber(value: any) {
+  const num = Number(value);
+  if (isNaN(num)) return value;
+  return num.toLocaleString('en-US');
+}
+function formatDate(value: any) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-US');
+}
+
 export default function ProviderManager({ isSticky = true }: ProviderManagerProps) {
   const dispatch = useDispatch();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -242,10 +260,29 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
       uploadedColumns.map(col => ({
         accessorKey: col,
         header: col,
-        cell: (info: { getValue: () => any; row: any }) =>
-          col.toLowerCase() === 'fte'
-            ? (typeof info.row.original.fte === 'number' ? info.row.original.fte.toFixed(2) : String(info.row.original.fte))
-            : String(info.getValue() || ''),
+        cell: (info: { getValue: () => any; row: any }) => {
+          const val = info.getValue();
+          const lower = col.toLowerCase();
+          if ([
+            'basesalary', 'conversionfactor', 'signingbonus', 'relocationbonus', 'qualitybonus', 'cmeamount'
+          ].includes(lower)) {
+            return formatCurrency(val);
+          }
+          if ([
+            'wrvutarget'
+          ].includes(lower)) {
+            return formatNumber(val);
+          }
+          if ([
+            'startdate', 'originalagreementdate'
+          ].includes(lower)) {
+            return formatDate(val);
+          }
+          if (lower === 'fte') {
+            return (typeof info.row.original.fte === 'number' ? info.row.original.fte.toFixed(2) : String(info.row.original.fte));
+          }
+          return String(val || '');
+        },
         enableSorting: true,
         size: providerNameCol && col === providerNameCol ? 220 : 120, // min width for name
         minSize: providerNameCol && col === providerNameCol ? 180 : 80,

@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { saveAs } from 'file-saver';
 import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
 import Select from 'react-select';
+import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
+import { FieldMapping } from '@/features/templates/mappingsSlice';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, BorderStyle, WidthType, AlignmentType } from 'docx';
 
 // IMPORTANT: Add this to your public/index.html
 // <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
@@ -27,6 +30,12 @@ interface TemplatePreviewPanelProps {
   providerData?: Record<string, string>;
 }
 
+// Add this interface near the top with other interfaces
+interface ProviderOption {
+  value: string;
+  label: string;
+}
+
 // Helper to merge placeholders with data, highlighting unresolved
 function mergePlaceholders(html: string, data: Record<string, string>): { merged: string; unresolved: string[] } {
   const unresolved: string[] = [];
@@ -42,9 +51,188 @@ function mergePlaceholders(html: string, data: Record<string, string>): { merged
   return { merged, unresolved };
 }
 
+// Helper function to parse HTML and convert to docx elements
+function parseHtmlToDocxElements(html: string) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const elements: any[] = [];
+
+  function processNode(node: Node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent?.trim();
+      if (text) {
+        elements.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text,
+                size: 24,
+              }),
+            ],
+          })
+        );
+      }
+      return;
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as HTMLElement;
+      
+      switch (element.tagName.toLowerCase()) {
+        case 'h1':
+          elements.push(
+            new Paragraph({
+              text: element.textContent || '',
+              heading: HeadingLevel.HEADING_1,
+              spacing: { after: 200 },
+            })
+          );
+          break;
+        case 'h2':
+          elements.push(
+            new Paragraph({
+              text: element.textContent || '',
+              heading: HeadingLevel.HEADING_2,
+              spacing: { after: 160 },
+            })
+          );
+          break;
+        case 'p':
+          elements.push(
+            new Paragraph({
+              text: element.textContent || '',
+              spacing: { after: 120 },
+            })
+          );
+          break;
+        case 'table':
+          const tableElement = element as HTMLTableElement;
+          const table = new Table({
+            width: {
+              size: 100,
+              type: WidthType.PERCENTAGE,
+            },
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 1 },
+              bottom: { style: BorderStyle.SINGLE, size: 1 },
+              left: { style: BorderStyle.SINGLE, size: 1 },
+              right: { style: BorderStyle.SINGLE, size: 1 },
+              insideHorizontal: { style: BorderStyle.SINGLE, size: 1 },
+              insideVertical: { style: BorderStyle.SINGLE, size: 1 },
+            },
+            rows: Array.from(tableElement.rows).map(row => 
+              new TableRow({
+                children: Array.from(row.cells).map(cell =>
+                  new TableCell({
+                    children: [
+                      new Paragraph({
+                        text: cell.textContent || '',
+                        alignment: AlignmentType.CENTER,
+                      }),
+                    ],
+                  })
+                ),
+              })
+            ),
+          });
+          elements.push(table);
+          break;
+        default:
+          // Process child nodes for other elements
+          Array.from(element.childNodes).forEach(processNode);
+      }
+    }
+  }
+
+  // Process all nodes
+  Array.from(doc.body.childNodes).forEach(processNode);
+  return elements;
+}
+
+// Helper function to convert HTML to DOCX with proper formatting
+async function convertHtmlToDocx(html: string): Promise<Blob> {
+  try {
+    // Create a new document
+    const doc = new Document({
+      styles: {
+        paragraphStyles: [
+          {
+            id: 'Heading1',
+            name: 'Heading 1',
+            basedOn: 'Normal',
+            next: 'Normal',
+            quickFormat: true,
+            run: {
+              size: 28,
+              bold: true,
+              color: '000000',
+            },
+            paragraph: {
+              spacing: {
+                after: 120,
+              },
+            },
+          },
+          {
+            id: 'Heading2',
+            name: 'Heading 2',
+            basedOn: 'Normal',
+            next: 'Normal',
+            quickFormat: true,
+            run: {
+              size: 24,
+              bold: true,
+              color: '000000',
+            },
+            paragraph: {
+              spacing: {
+                after: 100,
+              },
+            },
+          },
+          {
+            id: 'Normal',
+            name: 'Normal',
+            run: {
+              size: 24,
+              color: '000000',
+            },
+            paragraph: {
+              spacing: {
+                line: 360,
+              },
+            },
+          },
+        ],
+      },
+      sections: [{
+        properties: {
+          page: {
+            margin: {
+              top: 1440,
+              right: 1440,
+              bottom: 1440,
+              left: 1440,
+            },
+          },
+        },
+        children: parseHtmlToDocxElements(html),
+      }],
+    });
+
+    // Generate the document
+    const buffer = await Packer.toBuffer(doc);
+    return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  } catch (error) {
+    console.error('Error converting HTML to DOCX:', error);
+    throw error;
+  }
+}
+
 const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId, providerData }) => {
   const template: Template | undefined = useSelector((state: any) => state.templates.templates.find((t: Template) => t.id === templateId));
   const providers = useSelector((state: any) => state.providers.providers);
+  const mappings = useSelector((state: any) => state.mappings.mappings);
   // State for selected provider and editor modal
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(providers[0]?.id || null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -54,16 +242,36 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
 
   const html = template?.editedHtmlContent || template?.htmlPreviewContent || '';
 
-  // Merge placeholders and track unresolved
-  const { merged, unresolved } = useMemo(() => mergePlaceholders(html, selectedProvider), [html, selectedProvider]);
+  // Get mapping for this template
+  const mapping: FieldMapping[] | undefined = mappings?.[templateId]?.mappings;
+  // Merge placeholders using mergeTemplateWithData for proper formatting and mapping
+  const { content: merged, warnings } = useMemo(() => {
+    if (!template || !selectedProvider) return { content: html, warnings: [] };
+    return mergeTemplateWithData(template, selectedProvider, html, mapping);
+  }, [template, selectedProvider, html, mapping]);
 
   // Download as DOCX handler using window.htmlDocx
-  const handleDownload = () => {
-    if (typeof window !== 'undefined' && (window as any).htmlDocx) {
-      const docxBlob = (window as any).htmlDocx.asBlob(`<html><body>${merged}</body></html>`);
+  const handleDownload = async () => {
+    try {
+      // Add proper HTML structure and styling
+      const styledHtml = `
+        <div style="font-family: 'Calibri', sans-serif; font-size: 11pt; line-height: 1.5;">
+          <h1>Schedule A</h1>
+          <div style="margin-bottom: 20pt;">
+            ${merged}
+          </div>
+          <div style="margin-top: 40pt; border-top: 1px solid #000; padding-top: 20pt;">
+            <p><strong>Provider Signature:</strong> _______________________</p>
+            <p><strong>Date:</strong> _______________________</p>
+          </div>
+        </div>
+      `;
+      
+      const docxBlob = await convertHtmlToDocx(styledHtml);
       saveAs(docxBlob, 'ScheduleA.docx');
-    } else {
-      alert('DOCX export is not available. Please ensure html-docx-js is loaded via CDN.');
+    } catch (error) {
+      console.error('Error generating DOCX:', error);
+      alert('Failed to generate DOCX. Please try again.');
     }
   };
 
@@ -72,7 +280,7 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
   }
 
   // Prepare options for react-select
-  const providerOptions = providers.map((p: any) => ({
+  const providerOptions: ProviderOption[] = providers.map((p: any) => ({
     value: p.id,
     label: p.name || p.ProviderName || p.id,
   }));
@@ -105,9 +313,9 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
         {/* Render merged HTML */}
         <div dangerouslySetInnerHTML={{ __html: merged }} />
       </div>
-      {unresolved.length > 0 && (
+      {warnings && warnings.length > 0 && (
         <div className="mt-4 text-sm text-red-600">
-          <strong>Unresolved placeholders:</strong> {unresolved.map(u => `{{${u}}}`).join(', ')}
+          <strong>Unresolved placeholders:</strong> {warnings.join(', ')}
         </div>
       )}
       {/* HTML Editor Modal */}
