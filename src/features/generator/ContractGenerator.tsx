@@ -83,19 +83,55 @@ export default function ContractGenerator() {
       dispatch(setError('No mapping found for this template'));
       return;
     }
-    console.log('Generating document with template:', selectedTemplate);
-    console.log('Template docxTemplate key:', selectedTemplate.docxTemplate);
+
+    // Get HTML content
+    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent;
+    if (!html) {
+      dispatch(setError('Template HTML content is missing'));
+      return;
+    }
+
     try {
       dispatch(setGenerating(true));
       dispatch(setError(null));
-      const blob = await generateDocument(selectedTemplate, provider, mapping);
-      const url = URL.createObjectURL(blob);
+
+      // Merge provider data into template HTML
+      const { content: mergedHtml, warnings } = mergeTemplateWithData(selectedTemplate, provider, html, mapping.mappings);
+      if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
+        dispatch(setError('No contract content available after merging'));
+        return;
+      }
+
+      // Check for DOCX library availability
+      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+        dispatch(setError('DOCX generator not available. Please ensure html-docx-js is loaded.'));
+        return;
+      }
+
+      // Convert HTML to DOCX
+      const docxBlob = window.htmlDocx.asBlob(mergedHtml);
+      const url = URL.createObjectURL(docxBlob);
+      const fileName = `ScheduleA_${provider.name.replace(/\s+/g, '')}.docx`;
+
       dispatch(addGeneratedFile({
         providerId: provider.id,
-        fileName: `ScheduleB_${provider.name.replace(/\s+/g, '')}.docx`,
+        fileName,
         url,
       }));
-      downloadDocument(blob, provider);
+
+      // Download the DOCX file
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // Log any warnings
+      if (warnings.length > 0) {
+        console.warn('Contract generation warnings:', warnings);
+      }
     } catch (error) {
       dispatch(setError(error instanceof Error ? error.message : 'Failed to generate document'));
     } finally {
@@ -110,25 +146,64 @@ export default function ContractGenerator() {
       dispatch(setError('No mapping found for this template'));
       return;
     }
+
+    // Get HTML content
+    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent;
+    if (!html) {
+      dispatch(setError('Template HTML content is missing'));
+      return;
+    }
+
     const selectedProviders = providers.filter(p => selectedProviderIds.includes(p.id));
     if (selectedProviders.length === 0) {
       dispatch(setError('Please select at least one provider.'));
       return;
     }
+
+    // Check for DOCX library availability
+    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+      dispatch(setError('DOCX generator not available. Please ensure html-docx-js is loaded.'));
+      return;
+    }
+
     try {
       dispatch(setGenerating(true));
       dispatch(setError(null));
       dispatch(clearGeneratedFiles());
+
       for (const provider of selectedProviders) {
         try {
-          const blob = await generateDocument(selectedTemplate, provider, mapping);
-          const url = URL.createObjectURL(blob);
+          // Merge provider data into template HTML
+          const { content: mergedHtml, warnings } = mergeTemplateWithData(selectedTemplate, provider, html, mapping.mappings);
+          if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
+            console.error(`No contract content available for ${provider.name}`);
+            continue;
+          }
+
+          // Convert HTML to DOCX
+          const docxBlob = window.htmlDocx.asBlob(mergedHtml);
+          const url = URL.createObjectURL(docxBlob);
+          const fileName = `ScheduleA_${provider.name.replace(/\s+/g, '')}.docx`;
+
           dispatch(addGeneratedFile({
             providerId: provider.id,
-            fileName: `ScheduleB_${provider.name.replace(/\s+/g, '')}.docx`,
+            fileName,
             url,
           }));
-          downloadDocument(blob, provider);
+
+          // Download the DOCX file
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          // Log any warnings
+          if (warnings.length > 0) {
+            console.warn(`Contract generation warnings for ${provider.name}:`, warnings);
+          }
         } catch (error) {
           console.error(`Failed to generate document for ${provider.name}:`, error);
         }
@@ -174,9 +249,9 @@ export default function ContractGenerator() {
       const doc = new Docxtemplater(zip, { 
         paragraphLoop: true, 
         linebreaks: true,
-        errorHandler: (error) => {
-          console.error('Docxtemplater error:', error);
-          throw error;
+        delimiters: {
+          start: '{{',
+          end: '}}'
         }
       });
       
@@ -263,13 +338,57 @@ export default function ContractGenerator() {
   };
 
   const handleGenerateDOCX = async () => {
-    if (!selectedTemplate || selectedProviderIds.length !== 1) return;
+    // 1. Validate provider and template selection
+    if (!selectedTemplate) {
+      alert("No template selected. Please select a template before generating.");
+      return;
+    }
+    if (selectedProviderIds.length !== 1) {
+      alert("Please select exactly one provider before generating.");
+      return;
+    }
     const provider = providers.find(p => p.id === selectedProviderIds[0]);
-    if (!provider) return;
+    if (!provider) {
+      alert("Selected provider not found. Please check your provider selection.");
+      return;
+    }
+
+    // 2. Retrieve and check template HTML content
+    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent;
+    if (!html) {
+      alert("Template content is missing or not loaded. Please check your template.");
+      return;
+    }
     const mapping = mappings[selectedTemplate.id]?.mappings;
-    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
-    // Merge with mapping for proper formatting
-    const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+
+    // 3. Merge provider data into template HTML
+    const { content: mergedHtml, warnings } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+    if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
+      alert("No contract content available to export after merging. Please check your template and provider data.");
+      return;
+    }
+    if (warnings && warnings.length > 0) {
+      // Optionally show a warning to the user about unresolved placeholders
+      console.warn("Unresolved placeholders:", warnings);
+      // You could show a toast or dialog here if desired
+    }
+
+    // 4. Check for DOCX library availability
+    // @ts-ignore
+    console.log("DOCX Generation Debug", {
+      htmlDocxLoaded: !!window.htmlDocx,
+      // @ts-ignore
+      availableFunctions: window.htmlDocx && Object.keys(window.htmlDocx),
+      mergedHtmlPreview: mergedHtml?.slice(0, 200)
+    });
+    // @ts-ignore
+    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+      console.error('htmlDocx.js is not loaded');
+      alert('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
+      return;
+    }
+
+    // 5. Try to generate DOCX, with error handling and user feedback
     try {
       // @ts-ignore
       const docxBlob = window.htmlDocx.asBlob(mergedHtml);
@@ -282,9 +401,14 @@ export default function ContractGenerator() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      // Optionally show a toast: "DOCX generated successfully!"
+      console.log("[DOCX] Document generation and download complete.");
     } catch (error) {
-      alert('Failed to generate DOCX.');
-      console.error(error);
+      console.error("[DOCX] Generation failed:", error);
+      alert("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
+      // Optional fallback: offer HTML download
+      // const htmlBlob = new Blob([mergedHtml], { type: 'text/html' });
+      // downloadBlob(htmlBlob, fileName.replace('.docx', '.html'));
     }
   };
 
