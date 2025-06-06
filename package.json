@@ -31,6 +31,7 @@
     "docx": "^9.5.0",
     "docxtemplater": "^3.63.0",
     "file-saver": "^2.0.5",
+    "html-docx-js": "^0.3.1",
     "html-to-docx": "^1.8.0",
     "html2pdf.js": "^0.10.3",
     "localforage": "^1.10.0",

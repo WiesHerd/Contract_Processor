@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Template } from '@/types/template';
 import localforage from 'localforage';
 import mammoth from 'mammoth';
+import htmlDocx from 'html-docx-js/dist/html-docx';
 
 interface TemplatePreviewModalProps {
   open: boolean;
@@ -49,23 +50,18 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
 
   const handleGenerateDOCX = async () => {
     if (!template || !template.docxTemplate) return;
-    // Defensive logging
-    // @ts-ignore
+    // Optional: Debug log
     console.log("DOCX Generation Debug", {
-      htmlDocxLoaded: !!window.htmlDocx,
-      // @ts-ignore
-      availableFunctions: window.htmlDocx && Object.keys(window.htmlDocx),
+      htmlDocxLoaded: !!htmlDocx,
+      availableFunctions: htmlDocx && Object.keys(htmlDocx),
       docxTextPreview: docxText?.slice(0, 200)
     });
-    // Defensive check
-    // @ts-ignore
-    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-      alert("DOCX export is not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.");
+    if (!htmlDocx || typeof htmlDocx.asBlob !== 'function') {
+      alert("DOCX export is not available. Please ensure html-docx-js is installed and imported.");
       return;
     }
     try {
-      // @ts-ignore
-      const docxBlob = window.htmlDocx.asBlob(docxText);
+      const docxBlob = htmlDocx.asBlob(docxText);
       const fileName = `ScheduleA_${template.name.replace(/\s+/g, '')}.docx`;
       const url = URL.createObjectURL(docxBlob);
       const a = document.createElement('a');

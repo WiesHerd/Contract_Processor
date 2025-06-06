@@ -77,6 +77,63 @@ export const mergeTemplateWithData = (
   const warnings: string[] = [];
   let content = templateContent;
 
+  // Add CSS styling for Word document
+  const wordStyles = `
+    <style>
+      @page {
+        margin: 0.5in;
+      }
+      body {
+        font-family: 'Calibri', 'Arial', sans-serif;
+        font-size: 11pt;
+        line-height: 1.5;
+        margin: 0;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Calibri Light', 'Arial', sans-serif;
+        margin-top: 1em;
+        margin-bottom: 0.5em;
+      }
+      h1 { font-size: 16pt; }
+      h2 { font-size: 14pt; }
+      h3 { font-size: 13pt; }
+      p { margin-bottom: 0.5em; }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1em 0;
+      }
+      th, td {
+        border: 1px solid #000;
+        padding: 0.5em;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+      }
+      .signature-block {
+        margin-top: 2em;
+        border-top: 1px solid #000;
+        padding-top: 1em;
+      }
+    </style>
+  `;
+
+  // Wrap content in proper HTML structure with styles
+  content = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        ${wordStyles}
+      </head>
+      <body>
+        ${content}
+      </body>
+    </html>
+  `;
+
   // If mapping is provided, use it to resolve placeholders
   if (mapping && Array.isArray(mapping)) {
     mapping.forEach(({ placeholder, mappedColumn }) => {
