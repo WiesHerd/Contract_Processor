@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import Papa from 'papaparse';
 import { useDispatch, useSelector } from 'react-redux';
 import { Button } from '@/components/ui/button';
@@ -128,6 +128,13 @@ function formatDate(value: any) {
   return date.toLocaleDateString('en-US');
 }
 
+// Helper function to format as USD
+function formatUSD(value: string | number) {
+  const num = Number(value);
+  if (isNaN(num)) return value;
+  return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+}
+
 export default function ProviderManager({ isSticky = true }: ProviderManagerProps) {
   const dispatch = useDispatch();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -138,14 +145,17 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
   const [loading, setLoading] = useState(true);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({ left: ['name'] });
+  const uploadedColumns = useSelector((state: RootState) => state.providers.uploadedColumns);
   const tableScrollRef = useRef<HTMLDivElement>(null);
-  const [tableMinWidth] = useState(1200);
   const [fteRange, setFteRange] = useState<[number, number]>([0, 1]);
   const [credential, setCredential] = useState('__all__');
   const [specialty, setSpecialty] = useState('__all__');
-
-  const uploadedColumns = useSelector((state: RootState) => state.providers.uploadedColumns);
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>(() => {
+    const providerNameCol = uploadedColumns.find(col => col.toLowerCase().includes('provider name'));
+    return providerNameCol ? { left: [providerNameCol] } : {};
+  });
 
   // Hydrate providers and uploadedColumns from localforage on mount
   useEffect(() => {
@@ -180,6 +190,16 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
       localforage.removeItem('uploadedColumns');
     }
   }, [uploadedColumns]);
+
+  // Watch isSticky and update columnPinning accordingly
+  useEffect(() => {
+    const providerNameCol = uploadedColumns.find(col => col.toLowerCase().includes('provider name'));
+    if (isSticky && providerNameCol) {
+      setColumnPinning({ left: [providerNameCol] });
+    } else {
+      setColumnPinning({ left: [] });
+    }
+  }, [isSticky, uploadedColumns]);
 
   // No top scrollbar, so no scroll sync needed
 
@@ -228,7 +248,7 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
   const credentialsCol = uploadedColumns.find(col => col.toLowerCase().includes('credential'));
   const specialtyCol = uploadedColumns.find(col => col.toLowerCase().includes('specialty') || col.toLowerCase().includes('positiontitle'));
   // Dynamically find the provider name column (case-insensitive)
-  const providerNameCol = uploadedColumns.find(col => col.toLowerCase().includes('providername') || col.toLowerCase() === 'name');
+  const providerNameCol = uploadedColumns.find(col => col.toLowerCase().includes('provider name'));
 
   // Get unique credentials and specialties from the actual column in provider data
   const credentialOptions = credentialsCol
@@ -238,20 +258,41 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
     ? Array.from(new Set(providers.map(p => String(p[specialtyCol] ?? '').trim()).filter(v => v)))
     : [];
 
-  // FTE filter (use only the normalized field)
-  const filteredProviders = React.useMemo(() =>
-    providers.filter((row: Provider) => {
-      const fte = typeof row.fte === 'number' ? row.fte : Number(row.fte ?? 0);
-      const ftePass = fte >= fteRange[0] && fte <= fteRange[1];
-      // Credential filter (dynamic)
-      const credPass = credential === '__all__' || (credentialsCol && String(row[credentialsCol] ?? '').trim() === credential);
-      // Specialty filter (dynamic)
-      const specPass = specialty === '__all__' || (specialtyCol && String(row[specialtyCol] ?? '').trim() === specialty);
-      // Search filter
-      const searchPass = uploadedColumns.some(col => String(row[col] || '').toLowerCase().includes(search.toLowerCase()));
-      return ftePass && credPass && specPass && searchPass;
-    }),
-    [providers, uploadedColumns, search, fteRange, credential, specialty, credentialsCol, specialtyCol]
+  // Memoize filtered providers to prevent unnecessary recalculations
+  const filteredProviders = useMemo(() => {
+    return providers.filter(provider => {
+      // Use dynamic column names for search/filter
+      const providerNameValue = providerNameCol ? (provider[providerNameCol] || '') : (provider.name || '');
+      const credentialsValue = credentialsCol ? (provider[credentialsCol] || '') : (provider.credentials || '');
+      const specialtyValue = specialtyCol ? (provider[specialtyCol] || '') : (provider.specialty || '');
+
+      const matchesSearch =
+        search === '' ||
+        providerNameValue.toLowerCase().includes(search.toLowerCase()) ||
+        credentialsValue.toLowerCase().includes(search.toLowerCase());
+
+      const matchesFte =
+        provider.fte >= fteRange[0] && provider.fte <= fteRange[1];
+
+      const matchesCredential =
+        credential === '__all__' || credentialsValue === credential;
+
+      const matchesSpecialty =
+        specialty === '__all__' || specialtyValue === specialty;
+
+      return matchesSearch && matchesFte && matchesCredential && matchesSpecialty;
+    });
+  }, [providers, search, fteRange, credential, specialty, providerNameCol, credentialsCol, specialtyCol]);
+
+  // Memoize unique values for filters
+  const uniqueCredentials = useMemo(() => 
+    Array.from(new Set(providers.map(p => p.credentials))).filter(Boolean),
+    [providers]
+  );
+
+  const uniqueSpecialties = useMemo(() => 
+    Array.from(new Set(providers.map(p => p.specialty))).filter(Boolean),
+    [providers]
   );
 
   // TanStack Table column definitions (only uploaded columns, but override FTE to use normalized field)
@@ -262,23 +303,28 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
         header: col,
         cell: (info: { getValue: () => any; row: any }) => {
           const val = info.getValue();
-          const lower = col.toLowerCase();
+          const normalized = col.replace(/\s+/g, '').toLowerCase();
           if ([
-            'basesalary', 'conversionfactor', 'signingbonus', 'relocationbonus', 'qualitybonus', 'cmeamount'
-          ].includes(lower)) {
+            'hourlywage', 'annualwage', 'cmeamount'
+          ].includes(normalized)) {
+            return formatUSD(val);
+          }
+          if ([
+            'basesalary', 'conversionfactor', 'signingbonus', 'relocationbonus', 'qualitybonus'
+          ].includes(normalized)) {
             return formatCurrency(val);
           }
           if ([
             'wrvutarget'
-          ].includes(lower)) {
+          ].includes(normalized)) {
             return formatNumber(val);
           }
           if ([
             'startdate', 'originalagreementdate'
-          ].includes(lower)) {
+          ].includes(normalized)) {
             return formatDate(val);
           }
-          if (lower === 'fte') {
+          if (normalized === 'fte') {
             return (typeof info.row.original.fte === 'number' ? info.row.original.fte.toFixed(2) : String(info.row.original.fte));
           }
           return String(val || '');
@@ -288,7 +334,7 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
         minSize: providerNameCol && col === providerNameCol ? 180 : 80,
         maxSize: 400,
         enableResizing: true,
-        pin: providerNameCol && col === providerNameCol ? 'left' : false,
+        pin: isSticky && providerNameCol && col === providerNameCol ? 'left' : false,
       })).concat([
         {
           id: 'actions',
@@ -306,17 +352,33 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
           enableResizing: false,
         } as any,
       ]),
-    [uploadedColumns, handleEdit, providerNameCol]
+    [uploadedColumns, handleEdit, providerNameCol, isSticky]
   );
 
   const table = useReactTable({
     data: filteredProviders,
     columns: columnDefs,
-    state: { sorting, columnPinning },
+    state: { 
+      sorting, 
+      columnPinning,
+      pagination: {
+        pageIndex,
+        pageSize,
+      },
+    },
     onSortingChange: setSorting,
     onColumnPinningChange: setColumnPinning,
+    onPaginationChange: (updater) => {
+      if (typeof updater === 'function') {
+        const newState = updater({ pageIndex, pageSize });
+        setPageIndex(newState.pageIndex);
+        setPageSize(newState.pageSize);
+      }
+    },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     debugTable: false,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
@@ -407,80 +469,45 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
           </Select>
         </div>
       </div>
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-sm text-gray-500">{filteredProviders.length} shown / {providers.length} total</span>
-      </div>
-      {/* Table with real horizontal scroll below */}
-      <div className="overflow-x-auto border rounded-lg w-full max-w-none" ref={tableScrollRef} style={{ maxWidth: '100vw' }}>
-        <table className="min-w-[1200px] table-auto text-sm">
-          <thead className="bg-gray-100 sticky top-0 z-10">
+      {/* Top horizontal scrollbar synced with table */}
+      <DualHorizontalScrollbar scrollRef={tableScrollRef} minWidth={uploadedColumns.length * 120} />
+      {/* Virtualized table body */}
+      <div ref={tableScrollRef} className="overflow-x-auto border rounded-b-lg w-full max-w-none min-h-[60vh]">
+        <table className="w-full border-collapse">
+          <thead>
             {table.getHeaderGroups().map(headerGroup => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header, colIdx) => (
+                {headerGroup.headers.map(header => (
                   <th
                     key={header.id}
-                    className={`px-4 py-2 text-left font-semibold text-gray-700 border-b select-none cursor-pointer group sticky top-0 bg-gray-100 z-10 ${
-                      providerNameCol && header.id === providerNameCol ? 'sticky left-0 bg-gray-100 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''
-                    }`}
-                    style={{
-                      minWidth: header.column.getSize(),
-                      maxWidth: header.column.getSize(),
-                      left: providerNameCol && header.id === providerNameCol ? 0 : undefined,
-                      zIndex: providerNameCol && header.id === providerNameCol ? 30 : 10,
-                    }}
-                    onClick={header.column.getToggleSortingHandler()}
+                    className={`border-b p-2 text-left font-semibold bg-gray-50 ${isSticky && header.column.id === providerNameCol ? 'sticky-provider-name' : ''}`}
+                    style={isSticky && header.column.id === providerNameCol ? { position: 'sticky', left: 0, zIndex: 2, background: 'white', boxShadow: '2px 0 2px -1px rgba(0,0,0,0.04)' } : {}}
                   >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                    {header.column.getCanSort() && (
-                      <span className="ml-1 text-xs text-gray-400 group-hover:text-gray-600">
-                        {header.column.getIsSorted() === 'asc' ? '▲' : header.column.getIsSorted() === 'desc' ? '▼' : ''}
-                      </span>
-                    )}
-                    {header.column.getCanResize() && (
-                      <div
-                        onMouseDown={header.getResizeHandler()}
-                        onTouchStart={header.getResizeHandler()}
-                        className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize select-none z-10"
-                        style={{ userSelect: 'none' }}
-                      />
-                    )}
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
                   </th>
                 ))}
               </tr>
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.length === 0 ? (
-              <tr>
-                <td colSpan={uploadedColumns.length + 1} className="text-center py-8 text-gray-400">No providers found.</td>
+            {table.getRowModel().rows.map(row => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                {row.getVisibleCells().map(cell => (
+                  <td
+                    key={cell.id}
+                    className={`border-b p-2 ${isSticky && cell.column.id === providerNameCol ? 'sticky-provider-name' : ''}`}
+                    style={isSticky && cell.column.id === providerNameCol ? { position: 'sticky', left: 0, zIndex: 1, background: 'white', boxShadow: '2px 0 2px -1px rgba(0,0,0,0.04)' } : {}}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
               </tr>
-            ) : (
-              table.getRowModel().rows.map((row, idx) => (
-                <tr
-                  key={row.id}
-                  className={`border-b transition-colors duration-150 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50`}
-                >
-                  {row.getVisibleCells().map((cell, colIdx) => (
-                    <td
-                      key={cell.id}
-                      className={`px-4 py-2 border-r border-b ${
-                        providerNameCol && cell.column.id === providerNameCol 
-                          ? 'sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' 
-                          : ''
-                      } ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
-                      style={{
-                        minWidth: cell.column.getSize(),
-                        maxWidth: cell.column.getSize(),
-                        left: providerNameCol && cell.column.id === providerNameCol ? 0 : undefined,
-                        zIndex: providerNameCol && cell.column.id === providerNameCol ? 20 : 1,
-                      }}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
+            ))}
           </tbody>
         </table>
       </div>
