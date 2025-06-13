@@ -21,8 +21,21 @@ import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import localforage from 'localforage';
-import html2pdf from 'html2pdf.js';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
+import { Input } from '@/components/ui/input';
+import { Editor } from '@tinymce/tinymce-react';
+
+// Utility to normalize smart quotes and special characters
+function normalizeSmartQuotes(text: string): string {
+  return text
+    .replace(/[\u201C\u201D]/g, '"') // " "
+    .replace(/[\u2018\u2019]/g, "'") // ' '
+    .replace(/\u2013/g, "-")         // –
+    .replace(/\u2014/g, "--")        // —
+    .replace(/\u2026/g, "...")       // ...
+    .replace(/\u00a0/g, " ")         // non-breaking space
+    .replace(/\u2022/g, "-");        // bullet to dash
+}
 
 export default function ContractGenerator() {
   const dispatch = useDispatch();
@@ -40,10 +53,12 @@ export default function ContractGenerator() {
     return saved || '';
   });
   const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
-  const [testMergeOpen, setTestMergeOpen] = useState(false);
-  const [testMergeResult, setTestMergeResult] = useState<{ success: boolean; unresolved?: string[]; error?: string } | null>(null);
-  const [testMergeLoading, setTestMergeLoading] = useState(false);
-  const [testMergePreviewText, setTestMergePreviewText] = useState<string>('');
+  const [search, setSearch] = useState('');
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [userError, setUserError] = useState<string | null>(null);
+  const [editorContent, setEditorContent] = useState('');
+  const [editorModalOpen, setEditorModalOpen] = useState(false);
 
   // Persist selectedTemplateId in localStorage whenever it changes
   useEffect(() => {
@@ -83,55 +98,19 @@ export default function ContractGenerator() {
       dispatch(setError('No mapping found for this template'));
       return;
     }
-
-    // Get HTML content
-    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent;
-    if (!html) {
-      dispatch(setError('Template HTML content is missing'));
-      return;
-    }
-
+    console.log('Generating document with template:', selectedTemplate);
+    console.log('Template docxTemplate key:', selectedTemplate.docxTemplate);
     try {
       dispatch(setGenerating(true));
       dispatch(setError(null));
-
-      // Merge provider data into template HTML
-      const { content: mergedHtml, warnings } = mergeTemplateWithData(selectedTemplate, provider, html, mapping.mappings);
-      if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
-        dispatch(setError('No contract content available after merging'));
-        return;
-      }
-
-      // Check for DOCX library availability
-      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-        dispatch(setError('DOCX generator not available. Please ensure html-docx-js is loaded.'));
-        return;
-      }
-
-      // Convert HTML to DOCX
-      const docxBlob = window.htmlDocx.asBlob(mergedHtml);
-      const url = URL.createObjectURL(docxBlob);
-      const fileName = `ScheduleA_${provider.name.replace(/\s+/g, '')}.docx`;
-
+      const blob = await generateDocument(selectedTemplate, provider, mapping);
+      const url = URL.createObjectURL(blob);
       dispatch(addGeneratedFile({
         providerId: provider.id,
-        fileName,
+        fileName: `ScheduleB_${provider.name.replace(/\s+/g, '')}.docx`,
         url,
       }));
-
-      // Download the DOCX file
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      // Log any warnings
-      if (warnings.length > 0) {
-        console.warn('Contract generation warnings:', warnings);
-      }
+      downloadDocument(blob, provider);
     } catch (error) {
       dispatch(setError(error instanceof Error ? error.message : 'Failed to generate document'));
     } finally {
@@ -140,259 +119,87 @@ export default function ContractGenerator() {
   };
 
   const handleBulkGenerate = async () => {
-    if (!selectedTemplate) return;
-    const mapping = mappings[selectedTemplate.id];
-    if (!mapping) {
-      dispatch(setError('No mapping found for this template'));
+    setUserError(null);
+    if (!selectedTemplate) {
+      setUserError("No template selected. Please select a template before generating.");
       return;
     }
-
-    // Get HTML content
-    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent;
-    if (!html) {
-      dispatch(setError('Template HTML content is missing'));
-      return;
-    }
-
+    const mapping = mappings[selectedTemplate.id]?.mappings;
     const selectedProviders = providers.filter(p => selectedProviderIds.includes(p.id));
-    if (selectedProviders.length === 0) {
-      dispatch(setError('Please select at least one provider.'));
+    if (selectedProviders.length < 2) {
+      setUserError('Please select at least two providers to use Generate All.');
       return;
     }
-
-    // Check for DOCX library availability
-    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-      dispatch(setError('DOCX generator not available. Please ensure html-docx-js is loaded.'));
-      return;
-    }
-
     try {
-      dispatch(setGenerating(true));
-      dispatch(setError(null));
-      dispatch(clearGeneratedFiles());
-
+      // @ts-ignore
+      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+        setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
+        return;
+      }
       for (const provider of selectedProviders) {
-        try {
-          // Merge provider data into template HTML
-          const { content: mergedHtml, warnings } = mergeTemplateWithData(selectedTemplate, provider, html, mapping.mappings);
-          if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
-            console.error(`No contract content available for ${provider.name}`);
-            continue;
-          }
-
-          // Convert HTML to DOCX
-          const docxBlob = window.htmlDocx.asBlob(mergedHtml);
-          const url = URL.createObjectURL(docxBlob);
-          const fileName = `ScheduleA_${provider.name.replace(/\s+/g, '')}.docx`;
-
-          dispatch(addGeneratedFile({
-            providerId: provider.id,
-            fileName,
-            url,
-          }));
-
-          // Download the DOCX file
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = fileName;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-
-          // Log any warnings
-          if (warnings.length > 0) {
-            console.warn(`Contract generation warnings for ${provider.name}:`, warnings);
-          }
-        } catch (error) {
-          console.error(`Failed to generate document for ${provider.name}:`, error);
-        }
+        const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
+        const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+        const htmlClean = normalizeSmartQuotes(mergedHtml);
+        const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
+        const htmlWithFont = calibriStyle + htmlClean;
+        // @ts-ignore
+        const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+        const fileName = `ScheduleA_${String(provider.name).replace(/\s+/g, '')}.docx`;
+        const url = URL.createObjectURL(docxBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
     } catch (error) {
-      dispatch(setError(error instanceof Error ? error.message : 'Failed to generate documents'));
-    } finally {
-      dispatch(setGenerating(false));
-    }
-  };
-
-  // Test Merge Handler
-  const handleTestMerge = async () => {
-    if (!selectedTemplate || selectedProviderIds.length !== 1) return;
-    const provider = providers.find(p => p.id === selectedProviderIds[0]);
-    if (!provider) return;
-    const mapping = mappings[selectedTemplate.id];
-    if (!mapping) {
-      setTestMergeResult({ success: false, error: 'No mapping found for this template' });
-      setTestMergeOpen(true);
-      return;
-    }
-    setTestMergeLoading(true);
-    setTestMergeResult(null);
-    setTestMergePreviewText('');
-    try {
-      if (!selectedTemplate.docxTemplate || typeof selectedTemplate.docxTemplate !== 'string') {
-        throw new Error('Invalid docxTemplate key');
-      }
-      
-      // Debug info
-      console.log('Template:', selectedTemplate);
-      console.log('Provider:', provider);
-      console.log('Mapping:', mapping);
-      
-      const blob = await localforage.getItem<Blob>(selectedTemplate.docxTemplate as string);
-      if (!blob) {
-        throw new Error('DOCX file not found in storage');
-      }
-      
-      const arrayBuffer = await blob.arrayBuffer();
-      const zip = new PizZip(arrayBuffer);
-      const doc = new Docxtemplater(zip, { 
-        paragraphLoop: true, 
-        linebreaks: true,
-        delimiters: {
-          start: '{{',
-          end: '}}'
-        }
-      });
-      
-      // Prepare data for merge
-      const data: Record<string, any> = {};
-      const unmappedPlaceholders: string[] = [];
-      const missingValues: string[] = [];
-      
-      // First, check all placeholders in the template
-      const templatePlaceholders = selectedTemplate.placeholders || [];
-      templatePlaceholders.forEach(ph => {
-        const mapping = mappings[selectedTemplate.id]?.mappings.find(m => m.placeholder === ph);
-        if (!mapping) {
-          unmappedPlaceholders.push(ph);
-        } else if (!mapping.mappedColumn) {
-          unmappedPlaceholders.push(ph);
-        } else if (provider[mapping.mappedColumn] === undefined) {
-          missingValues.push(`${ph} (mapped to ${mapping.mappedColumn})`);
-        }
-      });
-      
-      // Then prepare the data
-      mapping.mappings.forEach((m: any) => {
-        if (m.mappedColumn && provider[m.mappedColumn] !== undefined) {
-          const value = provider[m.mappedColumn];
-          if (typeof value === 'number') {
-            if (m.mappedColumn.toLowerCase().includes('salary') || 
-                m.mappedColumn.toLowerCase().includes('bonus') ||
-                m.mappedColumn.toLowerCase().includes('amount')) {
-              data[m.placeholder] = `$${value.toLocaleString()}`;
-            } else {
-              data[m.placeholder] = value.toString();
-            }
-          } else {
-            data[m.placeholder] = value;
-          }
-        } else {
-          data[m.placeholder] = '';
-        }
-      });
-      
-      // Set the data and render
-      doc.setData(data);
-      doc.render();
-      
-      const text = doc.getFullText();
-      if (typeof text === 'string') {
-        setTestMergePreviewText(text);
-      }
-      
-      // Check for any remaining placeholders
-      const remainingPlaceholders = text.match(/{{([^}]+)}}/g)?.map(m => m.slice(2, -2)) || [];
-      
-      // Prepare detailed error report
-      if (unmappedPlaceholders.length > 0 || missingValues.length > 0 || remainingPlaceholders.length > 0) {
-        const errorDetails = [];
-        if (unmappedPlaceholders.length > 0) {
-          errorDetails.push(`Unmapped placeholders: ${unmappedPlaceholders.join(', ')}`);
-        }
-        if (missingValues.length > 0) {
-          errorDetails.push(`Missing provider values: ${missingValues.join(', ')}`);
-        }
-        if (remainingPlaceholders.length > 0) {
-          errorDetails.push(`Unresolved placeholders: ${remainingPlaceholders.join(', ')}`);
-        }
-        setTestMergeResult({ 
-          success: false, 
-          error: errorDetails.join('\n'),
-          unresolved: [...unmappedPlaceholders, ...remainingPlaceholders]
-        });
-      } else {
-        setTestMergeResult({ success: true });
-      }
-    } catch (err: any) {
-      console.error('Test merge error:', err);
-      setTestMergeResult({ 
-        success: false, 
-        error: `Error during test merge: ${err.message}\n\nPlease check the console for more details.`
-      });
-    } finally {
-      setTestMergeLoading(false);
-      setTestMergeOpen(true);
+      setUserError('Failed to generate one or more DOCX files. Please check your template and provider data.');
+      console.error("Bulk DOCX Generation Error:", error);
     }
   };
 
   const handleGenerateDOCX = async () => {
-    // 1. Validate provider and template selection
+    setUserError(null);
     if (!selectedTemplate) {
-      alert("No template selected. Please select a template before generating.");
+      setUserError("No template selected. Please select a template before generating.");
       return;
     }
     if (selectedProviderIds.length !== 1) {
-      alert("Please select exactly one provider before generating.");
+      setUserError("Please select exactly one provider before generating.");
       return;
     }
     const provider = providers.find(p => p.id === selectedProviderIds[0]);
     if (!provider) {
-      alert("Selected provider not found. Please check your provider selection.");
+      setUserError("Selected provider not found. Please check your provider selection.");
       return;
     }
-
-    // 2. Retrieve and check template HTML content
-    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent;
+    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
     if (!html) {
-      alert("Template content is missing or not loaded. Please check your template.");
+      setUserError("Template content is missing or not loaded. Please check your template.");
       return;
     }
     const mapping = mappings[selectedTemplate.id]?.mappings;
-
-    // 3. Merge provider data into template HTML
-    const { content: mergedHtml, warnings } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+    const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
     if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
-      alert("No contract content available to export after merging. Please check your template and provider data.");
+      setUserError("No contract content available to export after merging. Please check your template and provider data.");
       return;
     }
-    if (warnings && warnings.length > 0) {
-      // Optionally show a warning to the user about unresolved placeholders
-      console.warn("Unresolved placeholders:", warnings);
-      // You could show a toast or dialog here if desired
-    }
-
-    // 4. Check for DOCX library availability
-    // @ts-ignore
-    console.log("DOCX Generation Debug", {
-      htmlDocxLoaded: !!window.htmlDocx,
-      // @ts-ignore
-      availableFunctions: window.htmlDocx && Object.keys(window.htmlDocx),
-      mergedHtmlPreview: mergedHtml?.slice(0, 200)
-    });
-    // @ts-ignore
-    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-      console.error('htmlDocx.js is not loaded');
-      alert('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
-      return;
-    }
-
-    // 5. Try to generate DOCX, with error handling and user feedback
     try {
+      // Normalize mergedHtml
+      const htmlClean = normalizeSmartQuotes(mergedHtml);
+      // Prepend Calibri font style
+      const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
+      const htmlWithFont = calibriStyle + htmlClean;
       // @ts-ignore
-      const docxBlob = window.htmlDocx.asBlob(mergedHtml);
-      const fileName = `ScheduleA_${provider.name.replace(/\s+/g, '')}.docx`;
+      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+        setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
+        return;
+      }
+      // @ts-ignore
+      const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+      const fileName = `ScheduleA_${String(provider.name).replace(/\s+/g, '')}.docx`;
       const url = URL.createObjectURL(docxBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -401,45 +208,50 @@ export default function ContractGenerator() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      // Optionally show a toast: "DOCX generated successfully!"
-      console.log("[DOCX] Document generation and download complete.");
     } catch (error) {
-      console.error("[DOCX] Generation failed:", error);
-      alert("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
-      // Optional fallback: offer HTML download
-      // const htmlBlob = new Blob([mergedHtml], { type: 'text/html' });
-      // downloadBlob(htmlBlob, fileName.replace('.docx', '.html'));
+      setUserError("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
+      console.error("DOCX Generation Error:", error);
     }
   };
 
+  // Filtering logic (by name or specialty)
+  const filteredProviders = providers.filter((provider) => {
+    const name = provider.name?.toLowerCase() || '';
+    const specialty = provider.specialty?.toLowerCase() || '';
+    const searchTerm = search.toLowerCase();
+    return name.includes(searchTerm) || specialty.includes(searchTerm);
+  });
+
+  // Pagination logic
+  const paginatedProviders = filteredProviders.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+  const totalPages = Math.ceil(filteredProviders.length / pageSize);
+
+  // Table column headers (matching Providers screen)
+  const columns = [
+    { key: 'name', label: 'Provider Name', tooltip: 'Full provider name' },
+    { key: 'specialty', label: 'Specialty', tooltip: 'Provider specialty' },
+    { key: 'startDate', label: 'Start Date', tooltip: 'Contract start date' },
+    { key: 'baseSalary', label: 'Base Salary', tooltip: 'Annual base salary' },
+    { key: 'fte', label: 'FTE', tooltip: 'Full-Time Equivalent' },
+  ];
+
+  // After provider and template are selected and merged, set editorContent
+  useEffect(() => {
+    if (selectedTemplate && selectedProviderIds.length === 1) {
+      const provider = providers.find(p => p.id === selectedProviderIds[0]);
+      if (provider) {
+        const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
+        const mapping = mappings[selectedTemplate.id]?.mappings;
+        const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+        setEditorContent(mergedHtml);
+      }
+    }
+  }, [selectedTemplate, selectedProviderIds, providers, mappings]);
+
   return (
     <div className="max-w-7xl mx-auto px-4 space-y-6">
-      {/* Debug info for selected template */}
-      {selectedTemplate && (
-        <div className="mb-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
-          <div><b>Selected Template:</b> {selectedTemplate.name}</div>
-          <div><b>DOCX Key:</b> {typeof selectedTemplate.docxTemplate === 'string' ? selectedTemplate.docxTemplate : 'N/A'}</div>
-        </div>
-      )}
       {/* Action Buttons at the Top */}
       <div className="flex gap-4 mb-4">
-        <Button
-          onClick={handleGenerate}
-          disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
-          className="gap-2"
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Generating...
-            </>
-          ) : (
-            <>
-              <FileDown className="h-4 w-4" />
-              Generate Single
-            </>
-          )}
-        </Button>
         <Button
           onClick={handleGenerateDOCX}
           disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
@@ -447,33 +259,24 @@ export default function ContractGenerator() {
           className="gap-2"
         >
           <FileDown className="h-4 w-4" />
-          Download as Word
+          Generate Single
         </Button>
         <Button
           onClick={handleBulkGenerate}
-          disabled={!selectedTemplate || selectedProviderIds.length === 0 || isGenerating}
+          disabled={!selectedTemplate || selectedProviderIds.length < 2 || isGenerating}
           variant="outline"
           className="gap-2"
         >
-          {isGenerating ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Generating All...
-            </>
-          ) : (
-            <>
-              <FileDown className="h-4 w-4" />
-              Generate All
-            </>
-          )}
+          <FileDown className="h-4 w-4" />
+          Generate All
         </Button>
         <Button
-          onClick={handleTestMerge}
-          disabled={!selectedTemplate || selectedProviderIds.length !== 1 || testMergeLoading}
-          variant="secondary"
+          onClick={() => setEditorModalOpen(true)}
+          disabled={!selectedTemplate || selectedProviderIds.length !== 1}
+          variant="default"
           className="gap-2"
         >
-          {testMergeLoading ? 'Testing...' : 'Test Merge'}
+          Edit Contract
         </Button>
       </div>
       {/* Template Selector Full Width */}
@@ -495,53 +298,131 @@ export default function ContractGenerator() {
           </SelectContent>
         </Select>
       </Card>
-      {/* Provider Table with Multi-Select */}
+      {/* Filter/Search Bar and Pagination Controls Grouped */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-2">
+        <div className="flex flex-col">
+          <span className="mb-1 font-medium text-gray-700">Filter Providers</span>
+          <Input
+            placeholder="Search providers by name or specialty..."
+            value={search}
+            onChange={e => {
+              setSearch(e.target.value);
+              setPageIndex(0);
+            }}
+            className="w-64"
+          />
+        </div>
+        {/* Pagination Controls */}
+        <div className="flex gap-2 items-center mt-2 sm:mt-0">
+          <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
+          <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
+          <span className="text-sm">Page {pageIndex + 1} of {totalPages}</span>
+          <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
+          <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)}>&raquo;</Button>
+          <select
+            className="ml-2 border rounded px-2 py-1 text-sm"
+            value={pageSize}
+            onChange={e => {
+              setPageSize(Number(e.target.value));
+              setPageIndex(0);
+            }}
+          >
+            {[10, 20, 50, 100].map(size => (
+              <option key={size} value={size}>{size} / page</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {/* Provider Table with Multi-Select, Pagination, Sticky Name Column */}
       <Card className="p-4">
         <h2 className="text-lg font-semibold mb-4">Providers</h2>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleSelectAll}
-                  aria-label="Select all providers"
-                />
-              </TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Specialty</TableHead>
-              <TableHead>Start Date</TableHead>
-              <TableHead>Base Salary</TableHead>
-              <TableHead>FTE</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {providers.map((provider: Provider) => (
-              <TableRow key={provider.id}>
-                <TableCell>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>
                   <input
                     type="checkbox"
-                    checked={selectedProviderIds.includes(provider.id)}
-                    onChange={() => toggleSelectProvider(provider.id)}
-                    aria-label={`Select ${provider.name}`}
+                    checked={paginatedProviders.length > 0 && paginatedProviders.every(p => selectedProviderIds.includes(p.id))}
+                    onChange={() => {
+                      const ids = paginatedProviders.map(p => p.id);
+                      if (ids.every(id => selectedProviderIds.includes(id))) {
+                        setSelectedProviderIds(selectedProviderIds.filter(id => !ids.includes(id)));
+                      } else {
+                        setSelectedProviderIds([...new Set([...selectedProviderIds, ...ids])]);
+                      }
+                    }}
+                    aria-label="Select all providers"
                   />
-                </TableCell>
-                <TableCell>{provider.name}</TableCell>
-                <TableCell>{provider.specialty}</TableCell>
-                <TableCell>{provider.startDate}</TableCell>
-                <TableCell>{provider.baseSalary ? `$${provider.baseSalary.toLocaleString()}` : ''}</TableCell>
-                <TableCell>{provider.fte}</TableCell>
+                </TableHead>
+                {columns.map(col => (
+                  <TableHead
+                    key={col.key}
+                    className={col.key === 'name' ? 'sticky left-0 bg-white z-10' : ''}
+                    style={col.key === 'name' ? { minWidth: 180, maxWidth: 240 } : { minWidth: 120 }}
+                  >
+                    {col.label}
+                  </TableHead>
+                ))}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {paginatedProviders.map((provider) => (
+                <TableRow key={provider.id}>
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={selectedProviderIds.includes(provider.id)}
+                      onChange={() => toggleSelectProvider(provider.id)}
+                      aria-label={`Select ${provider.name}`}
+                    />
+                  </TableCell>
+                  <TableCell className="sticky left-0 bg-white z-10" style={{ minWidth: 180, maxWidth: 240 }}>{provider.name}</TableCell>
+                  <TableCell>{provider.specialty}</TableCell>
+                  <TableCell>{provider.startDate}</TableCell>
+                  <TableCell>{provider.baseSalary ? `$${Number(provider.baseSalary).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}</TableCell>
+                  <TableCell>{provider.fte !== undefined ? Number(provider.fte).toFixed(2) : ''}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="text-sm text-gray-600 mt-2">
+          Showing {pageIndex * pageSize + 1}–{Math.min((pageIndex + 1) * pageSize, filteredProviders.length)} of {filteredProviders.length} providers
+        </div>
       </Card>
+      {/* Modal for TinyMCE editor */}
+      <Dialog open={editorModalOpen} onOpenChange={setEditorModalOpen}>
+        <DialogContent className="max-w-4xl w-full">
+          <DialogHeader>
+            <DialogTitle>Edit Contract</DialogTitle>
+          </DialogHeader>
+          <Editor
+            apiKey="your-tinymce-api-key" // Replace with your actual API key
+            value={editorContent}
+            onEditorChange={setEditorContent}
+            init={{
+              height: 400,
+              menubar: false,
+              plugins: [
+                'lists link paste',
+              ],
+              toolbar:
+                'undo redo | bold italic underline | bullist numlist | link | removeformat',
+              branding: false,
+            }}
+          />
+          <DialogFooter className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setEditorModalOpen(false)}>Cancel</Button>
+            {/* Optionally add Save/Download here */}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* Error Message */}
-      {error && (
-        <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg">
+      {(userError || error) && (
+        <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mt-4">
           <AlertTriangle className="h-5 w-5" />
-          <span>{error}</span>
+          <span>{userError || error}</span>
         </div>
       )}
       {/* Generated Files Table */}
@@ -584,44 +465,6 @@ export default function ContractGenerator() {
           </Table>
         </Card>
       )}
-      {/* Test Merge Result Modal */}
-      <Dialog open={testMergeOpen} onOpenChange={setTestMergeOpen}>
-        <DialogContent className="max-w-2xl" aria-describedby="test-merge-desc">
-          <DialogHeader>
-            <DialogTitle>Test Merge Result</DialogTitle>
-          </DialogHeader>
-          <div id="test-merge-desc" className="sr-only">
-            This dialog shows the result of a test merge, including any unresolved placeholders or errors.
-          </div>
-          {testMergeResult?.success ? (
-            <>
-              <div className="text-green-700 font-semibold py-2">All placeholders are resolvable! Your contract is ready for generation.</div>
-              {typeof testMergePreviewText === 'string' && testMergePreviewText.length > 0 ? (
-                <>
-                  <div className="text-gray-700 font-semibold mt-4 mb-1">Preview of filled contract:</div>
-                  <pre className="bg-gray-100 rounded p-2 max-h-64 overflow-auto text-xs whitespace-pre-wrap">{testMergePreviewText}</pre>
-                </>
-              ) : null}
-            </>
-          ) : testMergeResult?.error ? (
-            <div className="text-red-600 py-2">
-              <div className="font-semibold mb-2">Issues Found:</div>
-              <pre className="bg-red-50 rounded p-2 max-h-64 overflow-auto text-xs whitespace-pre-wrap">{testMergeResult.error}</pre>
-              <div className="mt-4 text-sm text-gray-600">
-                <p>To fix these issues:</p>
-                <ol className="list-decimal ml-6 mt-2">
-                  <li>Go to the Mapping page and ensure all placeholders are mapped to provider fields</li>
-                  <li>Check that your provider data contains all required fields</li>
-                  <li>Verify that the template file is properly formatted</li>
-                </ol>
-              </div>
-            </div>
-          ) : null}
-          <DialogFooter className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setTestMergeOpen(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 } 
