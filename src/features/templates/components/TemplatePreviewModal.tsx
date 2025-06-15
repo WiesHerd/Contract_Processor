@@ -1,10 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Template } from '@/types/template';
 import localforage from 'localforage';
 import mammoth from 'mammoth';
 import htmlDocx from 'html-docx-js/dist/html-docx';
+import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
+import { FieldMapping } from '@/features/templates/mappingsSlice';
+import { Provider } from '@/types/provider';
+import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
 
 interface TemplatePreviewModalProps {
   open: boolean;
@@ -16,6 +21,16 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
   const [docxText, setDocxText] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const providers = useSelector((state: any) => state.providers.providers);
+  const mappings = useSelector((state: any) => state.mappings.mappings);
+  const selectedProvider = providers[0]; // Use first provider for now
+  const html = template?.editedHtmlContent || template?.htmlPreviewContent || '';
+  const mapping: FieldMapping[] | undefined = template ? mappings?.[template.id]?.mappings : undefined;
+  const { content: mergedHtml } = useMemo(() => {
+    if (!template || !selectedProvider) return { content: html };
+    return mergeTemplateWithData(template, selectedProvider, html, mapping);
+  }, [template, selectedProvider, html, mapping]);
 
   useEffect(() => {
     if (open && template && typeof template.docxTemplate === 'string' && template.docxTemplate) {
@@ -35,16 +50,27 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
   }, [open, template]);
 
   const handleDownload = async () => {
-    if (template && typeof template.docxTemplate === 'string' && template.docxTemplate) {
-      const blob = await localforage.getItem<Blob>(template.docxTemplate as string);
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = template.name + '.docx';
-        a.click();
-        URL.revokeObjectURL(url);
-      }
+    if (!template) return;
+    // Use the merged, formatted HTML from the preview
+    const htmlContent = `<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>${mergedHtml}</body></html>`;
+    if (!htmlDocx || typeof htmlDocx.asBlob !== 'function') {
+      alert("DOCX export is not available. Please ensure html-docx-js is installed and imported.");
+      return;
+    }
+    try {
+      const docxBlob = htmlDocx.asBlob(htmlContent);
+      const fileName = `ScheduleA_${template.name.replace(/\s+/g, '')}.docx`;
+      const url = URL.createObjectURL(docxBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("DOCX generation failed:", error);
+      alert("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
     }
   };
 
@@ -119,7 +145,15 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
           <Button variant="outline" onClick={onClose}>Close</Button>
           <Button onClick={handleDownload}>Download DOCX</Button>
           <Button onClick={handleGenerateDOCX}>Generate DOCX</Button>
+          <Button onClick={() => setEditorOpen(true)}>Edit HTML</Button>
         </DialogFooter>
+        {editorOpen && (
+          <TemplateHtmlEditorModal
+            templateId={template?.id || ''}
+            isOpen={editorOpen}
+            onClose={() => setEditorOpen(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

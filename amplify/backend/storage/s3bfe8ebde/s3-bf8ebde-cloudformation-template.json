@@ -1,0 +1,77 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "An Amazon S3 bucket for contract generator storage",
+  "Resources": {
+    "S3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "contractgenerator42b439f60de94b878e0fba58439804",
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": ["*"],
+              "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+              "AllowedOrigins": ["*"],
+              "ExposedHeaders": ["ETag"],
+              "MaxAge": 3000
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        }
+      }
+    },
+    "S3BucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "S3Bucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowAuthUsersAccess",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": ["AuthRole", "Arn"]
+                }
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                {
+                  "Fn::Join": ["", ["arn:aws:s3:::", { "Ref": "S3Bucket" }, "/*"]]
+                },
+                {
+                  "Fn::Join": ["", ["arn:aws:s3:::", { "Ref": "S3Bucket" }]]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "BucketName": {
+      "Value": {
+        "Ref": "S3Bucket"
+      }
+    },
+    "BucketARN": {
+      "Value": {
+        "Fn::GetAtt": ["S3Bucket", "Arn"]
+      }
+    }
+  }
+} 

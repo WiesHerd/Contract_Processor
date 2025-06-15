@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
+import { PageHeader } from '@/components/PageHeader';
 
 export default function MappingListPage() {
   const templates = useSelector((state: RootState) => state.templates.templates);
@@ -14,11 +15,11 @@ export default function MappingListPage() {
   const dispatch = useDispatch();
 
   return (
-    <div className="max-w-7xl mx-auto px-4 space-y-6">
-      <div className="border-b pb-4 mb-4 bg-white px-4 pt-6 rounded-lg shadow-sm">
-        <h1 className="text-2xl font-bold">All Template Mappings</h1>
-        <p className="text-gray-500 text-sm mt-1">View and manage all your contract template mappings. Continue mapping to finish or update your field assignments.</p>
-      </div>
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6 overflow-y-auto min-h-screen">
+      <PageHeader
+        title="All Template Mappings"
+        description="View and manage all your contract template mappings. Continue mapping to finish or update your field assignments."
+      />
       
       <Card className="p-4">
         <Table>

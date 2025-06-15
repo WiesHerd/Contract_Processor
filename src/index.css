@@ -68,9 +68,26 @@
  
 @layer base {
   * {
-    @apply border-border;
+    @apply border-[hsl(var(--border))];
   }
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Custom light scrollbar for modal and form scroll areas */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb #fff;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  background: #fff;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #fff;
 } 

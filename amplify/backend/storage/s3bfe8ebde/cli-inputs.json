@@ -1,0 +1,12 @@
+{
+  "resourceName": "s3bfe8ebde",
+  "policyUUID": "bfe8ebde",
+  "bucketName": "contractgenerator42b439f60de94b878e0fba58439804",
+  "storageAccess": "auth",
+  "guestAccess": [],
+  "authAccess": [
+    "CREATE_AND_UPDATE"
+  ],
+  "triggerFunction": "NONE",
+  "groupAccess": {}
+}

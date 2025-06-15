@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { Template } from '@/types/template';
 import { Button } from '@/components/ui/button';
 import { saveAs } from 'file-saver';
@@ -8,6 +8,8 @@ import Select from 'react-select';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { FieldMapping } from '@/features/templates/mappingsSlice';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, BorderStyle, WidthType, AlignmentType } from 'docx';
+import { addAuditLog } from '@/store/slices/auditSlice';
+import { v4 as uuidv4 } from 'uuid';
 
 // IMPORTANT: Add this to your public/index.html
 // <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
@@ -233,6 +235,7 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
   const template: Template | undefined = useSelector((state: any) => state.templates.templates.find((t: Template) => t.id === templateId));
   const providers = useSelector((state: any) => state.providers.providers);
   const mappings = useSelector((state: any) => state.mappings.mappings);
+  const dispatch = useDispatch();
   // State for selected provider and editor modal
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(providers[0]?.id || null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -250,28 +253,58 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
     return mergeTemplateWithData(template, selectedProvider, html, mapping);
   }, [template, selectedProvider, html, mapping]);
 
-  // Download as DOCX handler using window.htmlDocx
-  const handleDownload = async () => {
+  // Download as DOCX handler using html-docx-js
+  const handleDownload = () => {
     try {
-      // Add proper HTML structure and styling
-      const styledHtml = `
-        <div style="font-family: 'Calibri', sans-serif; font-size: 11pt; line-height: 1.5;">
-          <h1>Schedule A</h1>
-          <div style="margin-bottom: 20pt;">
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Contract</title>
+          </head>
+          <body style="font-family:Calibri,Arial,sans-serif; font-size:11pt;">
             ${merged}
-          </div>
-          <div style="margin-top: 40pt; border-top: 1px solid #000; padding-top: 20pt;">
-            <p><strong>Provider Signature:</strong> _______________________</p>
-            <p><strong>Date:</strong> _______________________</p>
-          </div>
-        </div>
+          </body>
+        </html>
       `;
-      
-      const docxBlob = await convertHtmlToDocx(styledHtml);
-      saveAs(docxBlob, 'ScheduleA.docx');
+      let providerName = selectedProvider?.ProviderName || selectedProvider?.name || 'Provider';
+      providerName = providerName.replace(/[^a-zA-Z0-9]/g, '');
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      // @ts-ignore
+      const docxBlob = window.htmlDocx.asBlob(htmlContent);
+      const fileName = `ScheduleA_${providerName}_${dateStr}.docx`;
+      const url = URL.createObjectURL(docxBlob);
+      saveAs(docxBlob, fileName);
+      // Audit log for preview download
+      dispatch(addAuditLog({
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        user: '-',
+        providers: [providerName],
+        template: template?.name || 'Unknown',
+        outputType: 'DOCX',
+        status: 'success' as const,
+        downloadUrl: url,
+      }));
     } catch (error) {
       console.error('Error generating DOCX:', error);
       alert('Failed to generate DOCX. Please try again.');
+      // Audit log for failure
+      dispatch(addAuditLog({
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        user: '-',
+        providers: [selectedProvider?.ProviderName || selectedProvider?.name || 'Provider'],
+        template: template?.name || 'Unknown',
+        outputType: 'DOCX',
+        status: 'failed' as const,
+        downloadUrl: undefined,
+      }));
     }
   };
 

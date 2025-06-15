@@ -40,7 +40,7 @@ export function validateTemplate(template: Template): { isValid: boolean; errors
 }
 
 export function generateDocument(template: Template, data: Record<string, any>): string {
-  let content = template.content;
+  let content = template.content ?? '';
 
   // Replace all placeholders with their values
   template.placeholders.forEach(placeholder => {

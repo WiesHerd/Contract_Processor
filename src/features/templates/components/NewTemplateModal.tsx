@@ -121,14 +121,19 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
     setFileError(null);
     try {
       await localforage.setItem(docxFile.name, docxFile);
+      const now = new Date().toISOString();
       dispatch(
         addTemplate({
           id: uuidv4(),
           ...data,
           docxTemplate: docxFile.name,
-          lastModified: new Date().toISOString().split('T')[0],
-          description: '',
+          lastModified: now.split('T')[0],
+          createdAt: now,
+          updatedAt: now,
+          description: (data as any).description ?? '',
           content: '',
+          placeholders: data.placeholders || [],
+          clauseIds: data.clauseIds || [],
         })
       );
       onClose();

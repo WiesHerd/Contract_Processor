@@ -1,0 +1,23 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-contractgenerator-dev-00c71-authRole",
+      "UnauthRoleArn": "arn:aws:iam::430118851518:role/amplify-contractgenerator-dev-00c71-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::430118851518:role/amplify-contractgenerator-dev-00c71-authRole",
+      "Region": "us-east-2",
+      "DeploymentBucketName": "amplify-contractgenerator-dev-00c71-deployment",
+      "UnauthRoleName": "amplify-contractgenerator-dev-00c71-unauthRole",
+      "StackName": "amplify-contractgenerator-dev-00c71",
+      "StackId": "arn:aws:cloudformation:us-east-2:430118851518:stack/amplify-contractgenerator-dev-00c71/e9945ed0-4958-11f0-aac8-0a6e15c7760b",
+      "AmplifyAppId": "d1u3c8k7z1pj0k"
+    },
+    "categories": {
+      "auth": {
+        "contractgenerator7e5dfb2d": {}
+      },
+      "storage": {
+        "s3bfe8ebde": {}
+      }
+    }
+  }
+}

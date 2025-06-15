@@ -52,16 +52,27 @@ const csvToProviderFieldMap: Record<string, string> = {
 
 export function mapCsvRowToProviderFields(row: Record<string, string>): Record<string, string> {
   const mapped: Record<string, string> = { ...row }; // preserve all original columns
+
+  // Always set normalized fields from the most likely CSV columns
+  mapped.name = row["Provider Name"] || row["Employee Name"] || row.name || "";
+  mapped.specialty = row["Specialty"] || row["PositionTitle"] || row.specialty || "";
+  mapped.credentials = row["Credentials"] || row.credentials || "";
+  mapped.startDate = row["StartDate"] || row.startDate || "";
+  mapped.fte = row["FTE"] || row.fte || "";
+  mapped.baseSalary = row["BaseSalary"] || row["Annual Wage"] || row.baseSalary || "";
+  // Add more as needed for your normalized fields
+
+  // Existing dynamic mapping logic (case-insensitive)
   Object.entries(row).forEach(([csvKey, value]) => {
     // Case-insensitive mapping
-    const lowerKey = csvKey.toLowerCase();
+    const lowerKey = String(csvKey).toLowerCase();
     const mappedKey =
       Object.keys(csvToProviderFieldMap).find(
-        k => k.toLowerCase() === lowerKey
+        k => String(k).toLowerCase() === lowerKey
       )
         ? csvToProviderFieldMap[
             Object.keys(csvToProviderFieldMap).find(
-              k => k.toLowerCase() === lowerKey
+              k => String(k).toLowerCase() === lowerKey
             )!
           ]
         : null;
@@ -267,9 +278,9 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
       const specialtyValue = specialtyCol ? (provider[specialtyCol] || '') : (provider.specialty || '');
 
       const matchesSearch =
-        search === '' ||
-        providerNameValue.toLowerCase().includes(search.toLowerCase()) ||
-        credentialsValue.toLowerCase().includes(search.toLowerCase());
+        String(search) === '' ||
+        String(providerNameValue).toLowerCase().includes(String(search).toLowerCase()) ||
+        String(credentialsValue).toLowerCase().includes(String(search).toLowerCase());
 
       const matchesFte =
         provider.fte >= fteRange[0] && provider.fte <= fteRange[1];
@@ -396,6 +407,9 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
     }
   };
 
+  // Calculate total pages for pagination
+  const totalPages = Math.ceil(filteredProviders.length / pageSize);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400 text-lg">Loading provider data...</div>
@@ -414,60 +428,83 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
   return (
     <div className="space-y-4 px-4 pt-4 pb-2">
       {/* Filters header and controls in a single card-style container */}
-      <div className="bg-slate-50 p-4 rounded-md shadow-sm mb-2 grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-        {/* Search Input */}
-        <div className="flex flex-col w-full">
-          <label className="text-sm font-medium text-gray-700 mb-1">Search Providers</label>
-          <Input
-            placeholder="Search providers..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full"
-          />
+      <div className="bg-slate-50 p-4 rounded-md shadow-sm mb-2">
+        <span className="mb-1 font-medium text-gray-700">Filter Providers</span>
+        <div className="flex flex-nowrap gap-4 items-end mt-2">
+          {/* Search Input */}
+          <div className="flex flex-col basis-1/4 min-w-[180px]">
+            <label className="text-sm font-medium text-gray-700 mb-1">Search</label>
+            <Input
+              placeholder="Search providers..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          {/* FTE Slider */}
+          <div className="flex flex-col basis-1/4 min-w-[180px]">
+            <label className="text-sm font-medium text-gray-700 mb-1">FTE Range</label>
+            <Slider
+              min={0}
+              max={1}
+              step={0.01}
+              value={fteRange}
+              onValueChange={handleFteRangeChange}
+              className="w-full"
+            />
+            <span className="text-xs mt-1">{fteRange[0].toFixed(2)} – {fteRange[1].toFixed(2)}</span>
+          </div>
+          {/* Credentials dropdown */}
+          <div className="flex flex-col basis-1/4 min-w-[180px]">
+            <label htmlFor="credential-select" className="text-sm font-medium text-gray-700 mb-1">Credentials</label>
+            <Select value={credential} onValueChange={setCredential}>
+              <SelectTrigger id="credential-select" className="w-full">
+                <SelectValue placeholder="All Credentials" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Credentials</SelectItem>
+                {credentialOptions.map(opt => (
+                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Specialty dropdown */}
+          <div className="flex flex-col basis-1/4 min-w-[180px]">
+            <label htmlFor="specialty-select" className="text-sm font-medium text-gray-700 mb-1">Specialty</label>
+            <Select value={specialty} onValueChange={setSpecialty}>
+              <SelectTrigger id="specialty-select" className="w-full">
+                <SelectValue placeholder="All Specialties" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Specialties</SelectItem>
+                {specialtyOptions.map(opt => (
+                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        {/* FTE Slider */}
-        <div className="flex flex-col w-full min-w-[200px]">
-          <label className="text-sm font-medium text-gray-700 mb-1">FTE Range</label>
-          <Slider
-            min={0}
-            max={1}
-            step={0.01}
-            value={fteRange}
-            onValueChange={handleFteRangeChange}
-            className="w-full"
-          />
-          <span className="text-xs mt-1">{fteRange[0].toFixed(2)} – {fteRange[1].toFixed(2)}</span>
-        </div>
-        {/* Credentials dropdown */}
-        <div className="flex flex-col w-full">
-          <label htmlFor="credential-select" className="text-sm font-medium text-gray-700 mb-1">Credentials</label>
-          <Select value={credential} onValueChange={setCredential}>
-            <SelectTrigger id="credential-select" className="w-full">
-              <SelectValue placeholder="All Credentials" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All Credentials</SelectItem>
-              {credentialOptions.map(opt => (
-                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {/* Specialty dropdown */}
-        <div className="flex flex-col w-full">
-          <label htmlFor="specialty-select" className="text-sm font-medium text-gray-700 mb-1">Specialty</label>
-          <Select value={specialty} onValueChange={setSpecialty}>
-            <SelectTrigger id="specialty-select" className="w-full">
-              <SelectValue placeholder="All Specialties" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All Specialties</SelectItem>
-              {specialtyOptions.map(opt => (
-                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      </div>
+      {/* Pagination Controls above the table */}
+      <div className="flex gap-2 items-center mb-2">
+        <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
+        <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
+        <span className="text-sm">Page {pageIndex + 1} of {totalPages}</span>
+        <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
+        <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)}>&raquo;</Button>
+        <select
+          className="ml-2 border rounded px-2 py-1 text-sm"
+          value={pageSize}
+          onChange={e => {
+            setPageSize(Number(e.target.value));
+            setPageIndex(0);
+          }}
+        >
+          {[10, 20, 50, 100].map(size => (
+            <option key={size} value={size}>{size} / page</option>
+          ))}
+        </select>
       </div>
       {/* Top horizontal scrollbar synced with table */}
       <DualHorizontalScrollbar scrollRef={tableScrollRef} minWidth={uploadedColumns.length * 120} />
@@ -511,7 +548,30 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
           </tbody>
         </table>
       </div>
-
+      {/* Pagination Controls below the table (optional, for long tables) */}
+      <div className="flex gap-2 items-center mt-2">
+        <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
+        <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
+        <span className="text-sm">Page {pageIndex + 1} of {totalPages}</span>
+        <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
+        <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)}>&raquo;</Button>
+        <select
+          className="ml-2 border rounded px-2 py-1 text-sm"
+          value={pageSize}
+          onChange={e => {
+            setPageSize(Number(e.target.value));
+            setPageIndex(0);
+          }}
+        >
+          {[10, 20, 50, 100].map(size => (
+            <option key={size} value={size}>{size} / page</option>
+          ))}
+        </select>
+      </div>
+      {/* Pagination info below table */}
+      <div className="text-sm text-gray-600 mt-2">
+        Showing {pageIndex * pageSize + 1}–{Math.min((pageIndex + 1) * pageSize, filteredProviders.length)} of {filteredProviders.length} providers
+      </div>
       {/* Edit Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="max-w-2xl w-full max-h-[80vh] overflow-y-auto">
