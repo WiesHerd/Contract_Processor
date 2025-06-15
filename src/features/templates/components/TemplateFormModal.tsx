@@ -31,16 +31,26 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
     reset,
   } = useForm<NewTemplateFormData>({
     resolver: zodResolver(newTemplateSchema),
-    defaultValues: template || {
-      placeholders: [],
-      clauseIds: [],
-    },
+    defaultValues: template
+      ? { 
+          ...template, 
+          type: (template.type.charAt(0).toUpperCase() + template.type.slice(1)) as any,
+          docxTemplate: typeof template.docxTemplate === 'string' ? template.docxTemplate : ''
+        }
+      : {
+          placeholders: [],
+          clauseIds: [],
+        },
   });
 
   // Reset form when template changes
   React.useEffect(() => {
     if (template) {
-      reset(template);
+      reset({ 
+        ...template, 
+        type: (template.type.charAt(0).toUpperCase() + template.type.slice(1)) as any,
+        docxTemplate: typeof template.docxTemplate === 'string' ? template.docxTemplate : ''
+      });
     }
   }, [template, reset]);
 
@@ -53,13 +63,16 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
       setError(null);
 
       if (isEditMode && template) {
-        dispatch(updateTemplate({ ...template, ...data }));
+        dispatch(updateTemplate({ ...template, ...data, updatedAt: new Date().toISOString() }));
       } else {
+        const now = new Date().toISOString();
         dispatch(
           addTemplate({
             id: uuidv4(),
             ...data,
-            lastModified: new Date().toISOString().split('T')[0],
+            lastModified: now.split('T')[0],
+            createdAt: now,
+            updatedAt: now,
           })
         );
       }

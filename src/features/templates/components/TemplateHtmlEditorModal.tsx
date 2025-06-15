@@ -10,6 +10,7 @@ interface TemplateHtmlEditorModalProps {
   templateId: string;
   isOpen: boolean;
   onClose: () => void;
+  initialValue?: string;
 }
 
 // Utility to highlight placeholders visually in the editor
@@ -18,7 +19,7 @@ function highlightPlaceholders(html: string): string {
   return html.replace(/(\{\{[^}]+\}\})/g, '<span style="background: #e0e7ff; color: #1e40af; padding:2px 4px; border-radius:3px; font-family:monospace;">$1</span>');
 }
 
-const TemplateHtmlEditorModal: React.FC<TemplateHtmlEditorModalProps> = ({ templateId, isOpen, onClose }) => {
+const TemplateHtmlEditorModal: React.FC<TemplateHtmlEditorModalProps> = ({ templateId, isOpen, onClose, initialValue }) => {
   const dispatch = useDispatch();
   const template: Template | undefined = useSelector((state: any) => state.templates.templates.find((t: Template) => t.id === templateId));
   const [editorValue, setEditorValue] = useState<string>('');
@@ -28,14 +29,14 @@ const TemplateHtmlEditorModal: React.FC<TemplateHtmlEditorModalProps> = ({ templ
   // Load initial content
   useEffect(() => {
     if (isOpen && template) {
-      const html = template.editedHtmlContent || template.htmlPreviewContent || '';
+      const html = initialValue !== undefined ? initialValue : (template.editedHtmlContent || template.htmlPreviewContent || '');
       setEditorValue(html);
       setLoading(false);
     } else if (!template) {
       setEditorValue('');
       setLoading(false);
     }
-  }, [isOpen, template]);
+  }, [isOpen, template, initialValue]);
 
   // Save handler
   const handleSave = useCallback(() => {

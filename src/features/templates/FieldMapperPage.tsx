@@ -128,10 +128,10 @@ export default function FieldMapperPage() {
     setMappingState((prev: FieldMapping[]) =>
       prev.map((m: FieldMapping) => {
         if (m.mappedColumn) return m;
-        const cleanPh = m.placeholder.replace(/[{}]/g, '').toLowerCase();
-        const found = columns.find(col =>
-          col.toLowerCase() === cleanPh || col.toLowerCase().includes(cleanPh)
-        );
+        // Normalize: remove { }, spaces, underscores, and lowercase
+        const normalize = (str: string) => str.replace(/[{} _]/g, '').toLowerCase();
+        const cleanPh = normalize(m.placeholder);
+        const found = columns.find(col => normalize(col) === cleanPh || normalize(col).includes(cleanPh));
         return found ? { ...m, mappedColumn: found } : m;
       })
     );

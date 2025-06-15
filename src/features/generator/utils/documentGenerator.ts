@@ -8,7 +8,8 @@ import localforage from 'localforage';
 
 export async function loadTemplate(template: Template): Promise<Docxtemplater> {
   try {
-    const docxBlob = await localforage.getItem<Blob>(template.docxTemplate);
+    const docxKey = typeof template.docxTemplate === 'string' ? template.docxTemplate : '';
+    const docxBlob = await localforage.getItem<Blob>(docxKey);
     if (!docxBlob) {
       throw new Error('Template file not found');
     }
@@ -86,7 +87,7 @@ export async function generateDocument(
   }
 }
 
-export function downloadDocument(blob: Blob, provider: Provider): void {
-  const fileName = `ScheduleB_${provider.name.replace(/\s+/g, '')}.docx`;
-  saveAs(blob, fileName);
+export function downloadDocument(blob: Blob, provider: Provider, fileName?: string): void {
+  const name = (typeof fileName === 'string' && fileName) ? fileName : `ScheduleB_${provider.name.replace(/\s+/g, '')}.docx`;
+  saveAs(blob, name);
 } 

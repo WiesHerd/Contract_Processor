@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,11 @@ import localforage from 'localforage';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { Input } from '@/components/ui/input';
 import { Editor } from '@tinymce/tinymce-react';
+import { CLAUSES as SHARED_CLAUSES } from '@/features/clauses/clausesData';
+import { getContractFileName } from '@/utils/filename';
+import { addAuditLog } from '@/store/slices/auditSlice';
+import { v4 as uuidv4 } from 'uuid';
+import { PageHeader } from '@/components/PageHeader';
 
 // Utility to normalize smart quotes and special characters
 function normalizeSmartQuotes(text: string): string {
@@ -59,6 +64,8 @@ export default function ContractGenerator() {
   const [userError, setUserError] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState('');
   const [editorModalOpen, setEditorModalOpen] = useState(false);
+  const editorRef = useRef<any>(null);
+  const [clauseSearch, setClauseSearch] = useState('');
 
   // Persist selectedTemplateId in localStorage whenever it changes
   useEffect(() => {
@@ -93,26 +100,66 @@ export default function ContractGenerator() {
     if (!selectedTemplate || selectedProviderIds.length !== 1) return;
     const provider = providers.find(p => p.id === selectedProviderIds[0]);
     if (!provider) return;
-    const mapping = mappings[selectedTemplate.id];
+    const mapping = mappings[selectedTemplate.id]?.mappings;
     if (!mapping) {
       dispatch(setError('No mapping found for this template'));
       return;
     }
-    console.log('Generating document with template:', selectedTemplate);
-    console.log('Template docxTemplate key:', selectedTemplate.docxTemplate);
     try {
       dispatch(setGenerating(true));
       dispatch(setError(null));
-      const blob = await generateDocument(selectedTemplate, provider, mapping);
-      const url = URL.createObjectURL(blob);
+      // Use HTML-to-DOCX logic (same as bulk)
+      const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
+      const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+      const htmlClean = normalizeSmartQuotes(mergedHtml);
+      const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
+      const htmlWithFont = calibriStyle + htmlClean;
+      // @ts-ignore
+      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+        dispatch(setError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.'));
+        return;
+      }
+      // @ts-ignore
+      const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+      const startDate = provider.startDate || new Date().toISOString().split('T')[0];
+      const fileName = getContractFileName(selectedTemplate.contractYear || new Date().getFullYear().toString(), provider.name, new Date().toISOString().split('T')[0]);
+      const url = URL.createObjectURL(docxBlob);
       dispatch(addGeneratedFile({
         providerId: provider.id,
-        fileName: `ScheduleB_${provider.name.replace(/\s+/g, '')}.docx`,
+        fileName,
         url,
       }));
-      downloadDocument(blob, provider);
+      // Download the file
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Audit log for single generation
+      dispatch(addAuditLog({
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        user: '-',
+        providers: [provider.name],
+        template: selectedTemplate.name,
+        outputType: 'DOCX',
+        status: 'success' as const,
+        downloadUrl: url,
+      }));
     } catch (error) {
       dispatch(setError(error instanceof Error ? error.message : 'Failed to generate document'));
+      // Audit log for failure
+      dispatch(addAuditLog({
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        user: '-',
+        providers: [provider?.name || 'Unknown'],
+        template: selectedTemplate?.name || 'Unknown',
+        outputType: 'DOCX',
+        status: 'failed' as const,
+        downloadUrl: undefined,
+      }));
     } finally {
       dispatch(setGenerating(false));
     }
@@ -136,6 +183,7 @@ export default function ContractGenerator() {
         setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
         return;
       }
+      const auditEntries = [];
       for (const provider of selectedProviders) {
         const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
         const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
@@ -153,10 +201,33 @@ export default function ContractGenerator() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        // Audit log for each generated file
+        auditEntries.push({
+          id: uuidv4(),
+          timestamp: new Date().toISOString(),
+          user: '-',
+          providers: [provider.name],
+          template: selectedTemplate.name,
+          outputType: 'DOCX',
+          status: 'success' as const,
+          downloadUrl: url,
+        });
       }
+      auditEntries.forEach(entry => dispatch(addAuditLog(entry)));
     } catch (error) {
       setUserError('Failed to generate one or more DOCX files. Please check your template and provider data.');
       console.error("Bulk DOCX Generation Error:", error);
+      // Audit log for bulk failure
+      dispatch(addAuditLog({
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        user: '-',
+        providers: selectedProviders.map(p => p.name),
+        template: selectedTemplate.name,
+        outputType: 'DOCX',
+        status: 'failed' as const,
+        downloadUrl: undefined,
+      }));
     }
   };
 
@@ -249,11 +320,15 @@ export default function ContractGenerator() {
   }, [selectedTemplate, selectedProviderIds, providers, mappings]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+      <PageHeader
+        title="Contract Generator"
+        description="Generate provider contracts individually or in bulk. Select a template and provider(s) to begin."
+      />
       {/* Action Buttons at the Top */}
       <div className="flex gap-4 mb-4">
         <Button
-          onClick={handleGenerateDOCX}
+          onClick={handleGenerate}
           disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
           variant="outline"
           className="gap-2"
@@ -273,7 +348,7 @@ export default function ContractGenerator() {
         <Button
           onClick={() => setEditorModalOpen(true)}
           disabled={!selectedTemplate || selectedProviderIds.length !== 1}
-          variant="default"
+          variant="outline"
           className="gap-2"
         >
           Edit Contract
@@ -282,21 +357,24 @@ export default function ContractGenerator() {
       {/* Template Selector Full Width */}
       <Card className="p-4 w-full">
         <h2 className="text-lg font-semibold mb-4">Template</h2>
-        <Select
-          value={selectedTemplateId}
-          onValueChange={setSelectedTemplateId}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select template" />
-          </SelectTrigger>
-          <SelectContent>
-            {templates.map(template => (
-              <SelectItem key={template.id} value={template.id}>
-                {template.name} (v{template.version})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-row justify-between items-center">
+          <Select
+            value={selectedTemplateId}
+            onValueChange={setSelectedTemplateId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select template" />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map(template => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name} (v{template.version})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <hr className="my-6" />
       </Card>
       {/* Filter/Search Bar and Pagination Controls Grouped */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-2">
@@ -393,29 +471,103 @@ export default function ContractGenerator() {
       </Card>
       {/* Modal for TinyMCE editor */}
       <Dialog open={editorModalOpen} onOpenChange={setEditorModalOpen}>
-        <DialogContent className="max-w-4xl w-full">
-          <DialogHeader>
-            <DialogTitle>Edit Contract</DialogTitle>
-          </DialogHeader>
-          <Editor
-            apiKey="your-tinymce-api-key" // Replace with your actual API key
-            value={editorContent}
-            onEditorChange={setEditorContent}
-            init={{
-              height: 400,
-              menubar: false,
-              plugins: [
-                'lists link paste',
-              ],
-              toolbar:
-                'undo redo | bold italic underline | bullist numlist | link | removeformat',
-              branding: false,
-            }}
-          />
-          <DialogFooter className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setEditorModalOpen(false)}>Cancel</Button>
-            {/* Optionally add Save/Download here */}
-          </DialogFooter>
+        <DialogContent className="max-w-6xl w-full flex flex-col md:flex-row gap-6">
+          <div className="flex-1 min-w-0">
+            <DialogHeader>
+              <DialogTitle>Edit Contract</DialogTitle>
+            </DialogHeader>
+            <Editor
+              apiKey="your-tinymce-api-key"
+              value={editorContent}
+              onEditorChange={setEditorContent}
+              onInit={(_evt, editor) => (editorRef.current = editor)}
+              init={{
+                height: 400,
+                menubar: false,
+                plugins: [
+                  'lists link paste',
+                ],
+                toolbar:
+                  'undo redo | bold italic underline | bullist numlist | link | removeformat',
+                branding: false,
+              }}
+            />
+            <DialogFooter className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setEditorModalOpen(false)}>Cancel</Button>
+              <Button
+                variant="default"
+                onClick={async () => {
+                  // Download as Word logic using html-docx-js
+                  const html = editorContent;
+                  const provider = providers.find(p => p.id === selectedProviderIds[0]);
+                  if (!provider) return;
+                  // @ts-ignore
+                  if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+                    alert('DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
+                    return;
+                  }
+                  // Prepend Calibri font style
+                  const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
+                  const htmlWithFont = calibriStyle + html;
+                  // Get provider and template info for filename
+                  const contractYear = selectedTemplate ? selectedTemplate.contractYear || new Date().getFullYear().toString() : new Date().getFullYear().toString();
+                  const fileName = getContractFileName(contractYear, provider?.name || 'Provider', new Date().toISOString().split('T')[0]);
+                  // @ts-ignore
+                  const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+                  const url = URL.createObjectURL(docxBlob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = fileName;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Download as Word
+              </Button>
+            </DialogFooter>
+          </div>
+          {/* Clause Library Sidebar */}
+          <aside className="w-full md:w-80 bg-gray-50 border-l p-4 rounded-lg flex flex-col">
+            <h3 className="font-bold mb-2">Clause Library</h3>
+            <input
+              type="text"
+              placeholder="Search clauses..."
+              value={clauseSearch}
+              onChange={e => setClauseSearch(e.target.value)}
+              className="mb-3 px-2 py-1 border rounded"
+            />
+            {/* Scrollable clause list with fixed max height */}
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-[400px]">
+              {SHARED_CLAUSES.filter((clause: { title: string; content: string }) =>
+                clause.title.toLowerCase().includes(clauseSearch.toLowerCase()) ||
+                clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
+              ).map((clause: { id: string; title: string; content: string }) => (
+                <div key={clause.id} className="bg-white rounded shadow p-2 flex flex-col gap-1">
+                  <div className="font-semibold text-sm">{clause.title}</div>
+                  <div className="text-xs text-gray-600 line-clamp-2">{clause.content}</div>
+                  <Button
+                    size="sm"
+                    className="mt-1 self-end"
+                    onClick={() => {
+                      if (editorRef.current) {
+                        editorRef.current.insertContent(clause.content);
+                      }
+                    }}
+                  >
+                    Insert
+                  </Button>
+                </div>
+              ))}
+              {SHARED_CLAUSES.filter((clause: { title: string; content: string }) =>
+                clause.title.toLowerCase().includes(clauseSearch.toLowerCase()) ||
+                clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
+              ).length === 0 && (
+                <div className="text-xs text-gray-400">No clauses found.</div>
+              )}
+            </div>
+          </aside>
         </DialogContent>
       </Dialog>
       {/* Error Message */}
@@ -424,46 +576,6 @@ export default function ContractGenerator() {
           <AlertTriangle className="h-5 w-5" />
           <span>{userError || error}</span>
         </div>
-      )}
-      {/* Generated Files Table */}
-      {generatedFiles.length > 0 && (
-        <Card className="p-4">
-          <h2 className="text-lg font-semibold mb-4">Generated Files</h2>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Provider</TableHead>
-                <TableHead>File Name</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {generatedFiles.map((file: GeneratedFile) => {
-                const provider = providers.find(p => p.id === file.providerId);
-                return (
-                  <TableRow key={file.providerId}>
-                    <TableCell>{provider?.name}</TableCell>
-                    <TableCell>{file.fileName}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = file.url;
-                          link.download = file.fileName;
-                          link.click();
-                        }}
-                      >
-                        <FileDown className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
       )}
     </div>
   );

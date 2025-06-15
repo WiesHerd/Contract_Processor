@@ -77,63 +77,6 @@ export const mergeTemplateWithData = (
   const warnings: string[] = [];
   let content = templateContent;
 
-  // Add CSS styling for Word document
-  const wordStyles = `
-    <style>
-      @page {
-        margin: 0.5in;
-      }
-      body {
-        font-family: 'Calibri', 'Arial', sans-serif;
-        font-size: 11pt;
-        line-height: 1.5;
-        margin: 0;
-      }
-      h1, h2, h3, h4, h5, h6 {
-        font-family: 'Calibri Light', 'Arial', sans-serif;
-        margin-top: 1em;
-        margin-bottom: 0.5em;
-      }
-      h1 { font-size: 16pt; }
-      h2 { font-size: 14pt; }
-      h3 { font-size: 13pt; }
-      p { margin-bottom: 0.5em; }
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        margin: 1em 0;
-      }
-      th, td {
-        border: 1px solid #000;
-        padding: 0.5em;
-        text-align: left;
-      }
-      th {
-        background-color: #f2f2f2;
-        font-weight: bold;
-      }
-      .signature-block {
-        margin-top: 2em;
-        border-top: 1px solid #000;
-        padding-top: 1em;
-      }
-    </style>
-  `;
-
-  // Wrap content in proper HTML structure with styles
-  content = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        ${wordStyles}
-      </head>
-      <body>
-        ${content}
-      </body>
-    </html>
-  `;
-
   // If mapping is provided, use it to resolve placeholders
   if (mapping && Array.isArray(mapping)) {
     mapping.forEach(({ placeholder, mappedColumn }) => {
@@ -159,36 +102,40 @@ export const mergeTemplateWithData = (
   } else {
     // Fallback to old logic if no mapping is provided
     const placeholderMap: Record<string, string> = {
-      '{{ProviderName}}': `${provider.name}, ${provider.credentials}`,
+      '{{ProviderName}}': `${provider.name}, ${provider.credentials ?? ''}`,
       '{{StartDate}}': formatDate(provider.startDate),
-      '{{BaseSalary}}': formatCurrency(provider.baseSalary),
+      '{{BaseSalary}}': formatCurrency(provider.baseSalary ?? 0),
       '{{FTE}}': provider.fte.toString(),
       '{{FTEBreakdown}}': generateFTEBreakdown(provider.fte),
-      '{{Specialty}}': provider.specialty,
+      '{{Specialty}}': provider.specialty ?? '',
     };
     if (provider.wRVUTarget) {
       placeholderMap['{{wRVUTarget}}'] = formatNumber(provider.wRVUTarget);
     }
     if (provider.conversionFactor) {
-      placeholderMap['{{ConversionFactor}}'] = formatCurrency2(provider.conversionFactor);
+      placeholderMap['{{ConversionFactor}}'] = formatCurrency2(provider.conversionFactor ?? 0);
     }
     if (provider.retentionBonus) {
-      placeholderMap['{{RetentionBonus}}'] = formatCurrency(provider.retentionBonus);
+      if (typeof provider.retentionBonus === 'number') {
+        placeholderMap['{{RetentionBonus}}'] = formatCurrency(provider.retentionBonus);
+      } else if (typeof provider.retentionBonus === 'object' && provider.retentionBonus.amount) {
+        placeholderMap['{{RetentionBonus}}'] = formatCurrency(provider.retentionBonus.amount);
+      }
     }
     if (provider.signingBonus) {
-      placeholderMap['{{SigningBonus}}'] = formatCurrency(provider.signingBonus);
+      placeholderMap['{{SigningBonus}}'] = formatCurrency(provider.signingBonus ?? 0);
     }
     if (provider.relocationBonus) {
-      placeholderMap['{{RelocationBonus}}'] = formatCurrency(provider.relocationBonus);
+      placeholderMap['{{RelocationBonus}}'] = formatCurrency(provider.relocationBonus ?? 0);
     }
     if (provider.qualityBonus) {
-      placeholderMap['{{QualityBonus}}'] = formatCurrency(provider.qualityBonus);
+      placeholderMap['{{QualityBonus}}'] = formatCurrency(provider.qualityBonus ?? 0);
     }
     if (provider.cmeAmount) {
-      placeholderMap['{{CMEAmount}}'] = formatCurrency(provider.cmeAmount);
+      placeholderMap['{{CMEAmount}}'] = formatCurrency(provider.cmeAmount ?? 0);
     }
     if (provider.originalAgreementDate) {
-      placeholderMap['{{OriginalAgreementDate}}'] = formatDate(String(provider.originalAgreementDate));
+      placeholderMap['{{OriginalAgreementDate}}'] = formatDate(String(provider.originalAgreementDate ?? ''));
     }
     Object.entries(placeholderMap).forEach(([placeholder, value]) => {
       content = content.replace(new RegExp(placeholder, 'g'), value);
