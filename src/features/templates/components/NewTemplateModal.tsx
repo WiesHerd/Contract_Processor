@@ -79,11 +79,13 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
     formState: { errors },
     setValue,
     watch,
+    reset,
   } = useForm<NewTemplateFormData>({
     resolver: zodResolver(newTemplateSchema),
     defaultValues: {
       placeholders: [],
       clauseIds: [],
+      compensationModel: 'BASE',
     },
   });
 
@@ -126,13 +128,21 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
         addTemplate({
           id: uuidv4(),
           ...data,
+          compensationModel: data.compensationModel,
+          metadata: {
+            createdAt: now,
+            updatedAt: now,
+            createdBy: 'system',
+            lastModifiedBy: 'system',
+          },
           docxTemplate: docxFile.name,
-          createdAt: now,
-          updatedAt: now,
           description: (data as any).description ?? '',
           content: '',
           placeholders: data.placeholders || [],
           clauseIds: data.clauseIds || [],
+          tags: [],
+          clauses: [],
+          versionHistory: [],
         })
       );
       onClose();
@@ -186,22 +196,22 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
             )}
           </div>
 
-          {/* Type */}
+          {/* Compensation Model */}
           <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
+            <label className="block text-sm font-medium mb-1">Compensation Model</label>
             <select
-              {...register('type')}
+              {...register('compensationModel')}
               className="w-full p-2 border rounded-md"
             >
-              <option value="">Select type</option>
+              <option value="">Select compensation model</option>
               {templateTypes.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
-            {errors.type && (
-              <p className="text-red-500 text-sm mt-1">{errors.type.message}</p>
+            {errors.compensationModel && (
+              <p className="text-red-500 text-sm mt-1">{errors.compensationModel.message}</p>
             )}
           </div>
 
