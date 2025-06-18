@@ -10,6 +10,7 @@ export const ProvidersPage: React.FC = () => {
   const { providers, selectedProviders } = useSelector((state: RootState) => state.providers);
 
   const handleBulkDownload = async () => {
+    if (selectedProviders.length === 0) return;
     // TODO: Implement bulk contract generation and download
     console.log('Bulk download for providers:', selectedProviders);
   };

@@ -288,7 +288,7 @@ export default function ContractGenerator() {
   // Filtering logic (by name or specialty)
   const filteredProviders = providers.filter((provider) => {
     const name = provider.name?.toLowerCase() || '';
-    const specialty = provider.specialty?.toLowerCase() || '';
+    const specialty = (provider as any).specialty?.toLowerCase() || '';
     const searchTerm = search.toLowerCase();
     return name.includes(searchTerm) || specialty.includes(searchTerm);
   });
@@ -456,7 +456,7 @@ export default function ContractGenerator() {
                     />
                   </TableCell>
                   <TableCell className="sticky left-0 bg-white z-10" style={{ minWidth: 180, maxWidth: 240 }}>{provider.name}</TableCell>
-                  <TableCell>{provider.specialty}</TableCell>
+                  <TableCell>{(provider as any).specialty || 'N/A'}</TableCell>
                   <TableCell>{provider.startDate}</TableCell>
                   <TableCell>{provider.baseSalary ? `$${Number(provider.baseSalary).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}</TableCell>
                   <TableCell>{provider.fte !== undefined ? Number(provider.fte).toFixed(2) : ''}</TableCell>

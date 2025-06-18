@@ -64,7 +64,7 @@ export const ProviderList: React.FC = () => {
               <TableCell>
                 <Checkbox
                   checked={selectedProviders.includes(provider.id)}
-                  onCheckedChange={(checked) => handleSelectProvider(provider.id, checked as boolean)}
+                  onCheckedChange={(checked) => handleSelectProvider(provider.id, checked === true)}
                   aria-label={`Select ${provider.name}`}
                 />
               </TableCell>

@@ -7,12 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Plus, X, Save, AlertTriangle } from 'lucide-react';
 import { z } from 'zod';
-import { Template, TemplateType } from '@/types/template';
+import { Template } from '@/types/template';
+import { CompensationModel } from '@/types/provider';
 
 const templateSchema = z.object({
   name: z.string().min(1, "Template name is required"),
   version: z.string().regex(/^\d+\.\d+\.\d+$/, "Version must be in format x.y.z"),
-  type: z.enum(['Base', 'Productivity', 'Hybrid', 'Hospital-based'] as const),
+  compensationModel: z.enum(['BASE', 'PRODUCTIVITY', 'HYBRID', 'HOSPITALIST', 'LEADERSHIP'] as const),
   content: z.string(),
   docxTemplate: z.string(),
   clauseIds: z.array(z.string()),
@@ -90,19 +91,20 @@ export function TemplateEditor({ template, onSave, onClose }: TemplateEditorProp
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="type">Type</Label>
+              <Label htmlFor="compensationModel">Compensation Model</Label>
               <Select
-                value={editedTemplate.type}
-                onValueChange={(value: TemplateType) => setEditedTemplate(prev => prev ? { ...prev, type: value } : null)}
+                value={editedTemplate.compensationModel}
+                onValueChange={(value: CompensationModel) => setEditedTemplate(prev => prev ? { ...prev, compensationModel: value } : null)}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Base">Base</SelectItem>
-                  <SelectItem value="Productivity">Productivity</SelectItem>
-                  <SelectItem value="Hybrid">Hybrid</SelectItem>
-                  <SelectItem value="Hospital-based">Hospital-based</SelectItem>
+                  <SelectItem value="BASE">Base</SelectItem>
+                  <SelectItem value="PRODUCTIVITY">Productivity</SelectItem>
+                  <SelectItem value="HYBRID">Hybrid</SelectItem>
+                  <SelectItem value="HOSPITALIST">Hospitalist</SelectItem>
+                  <SelectItem value="LEADERSHIP">Leadership</SelectItem>
                 </SelectContent>
               </Select>
             </div>
