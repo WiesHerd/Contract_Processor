@@ -69,7 +69,7 @@ interface NewTemplateModalProps {
   onClose: () => void;
 }
 
-const templateTypes: TemplateType[] = ['Base', 'Productivity', 'Hybrid', 'Hospital-based'];
+const templateTypes: TemplateType[] = ['BASE', 'PRODUCTIVITY', 'HYBRID', 'HOSPITALIST'];
 
 export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
   const dispatch = useDispatch();
@@ -127,7 +127,6 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
           id: uuidv4(),
           ...data,
           docxTemplate: docxFile.name,
-          lastModified: now.split('T')[0],
           createdAt: now,
           updatedAt: now,
           description: (data as any).description ?? '',

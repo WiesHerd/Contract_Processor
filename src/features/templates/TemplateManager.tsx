@@ -51,14 +51,20 @@ export default function TemplateManager() {
       name: '',
       description: '',
       version: '1.0.0',
-      type: 'Base',
+      compensationModel: 'BASE',
       content: '',
-      lastModified: now.split('T')[0],
-      createdAt: now,
-      updatedAt: now,
+      metadata: {
+        createdAt: now,
+        updatedAt: now,
+        createdBy: 'system',
+        lastModifiedBy: 'system',
+      },
       placeholders: [],
       docxTemplate: '',
       clauseIds: [],
+      tags: [],
+      clauses: [],
+      versionHistory: [],
     };
     setEditingTemplate(newTemplate);
     setIsCreating(true);
@@ -146,16 +152,22 @@ export default function TemplateManager() {
       name: data.name,
       description: data.description,
       version: data.version,
-      type: data.type as TemplateType,
+      compensationModel: data.type as TemplateType,
       content: '',
-      lastModified: now.split('T')[0],
-      createdAt: now,
-      updatedAt: now,
+      metadata: {
+        createdAt: now,
+        updatedAt: now,
+        createdBy: 'system',
+        lastModifiedBy: 'system',
+      },
       placeholders: uploadPlaceholders,
       docxTemplate: docxKey,
       clauseIds: [],
-      htmlPreviewContent, // Store HTML preview
+      htmlPreviewContent,
       contractYear: data.contractYear,
+      tags: [],
+      clauses: [],
+      versionHistory: [],
     };
     dispatch(addTemplate(newTemplate));
     // Reset all upload state
@@ -221,7 +233,7 @@ export default function TemplateManager() {
               <div>
                 <h3 className="font-medium">{template.name}</h3>
                 <p className="text-sm text-gray-500">
-                  Version {template.version} • {template.type} • Last modified {template.lastModified}
+                  Version {template.version} • {template.compensationModel} • Last modified {template.metadata?.updatedAt || ''}
                   {template.contractYear && <> • Contract Year: {template.contractYear}</>}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
@@ -274,55 +286,7 @@ export default function TemplateManager() {
           }}
           file={uploadFile}
           placeholders={uploadPlaceholders}
-          onSubmit={async (data) => {
-            if (isEditing && editingTemplate) {
-              const now = new Date().toISOString();
-              const updatedTemplate: Template = {
-                ...editingTemplate,
-                ...data,
-                updatedAt: now,
-                placeholders: uploadPlaceholders,
-                type: data.type as TemplateType,
-              };
-              dispatch(updateTemplate(updatedTemplate));
-              setEditingTemplate(null);
-              setIsEditing(false);
-              setUploadModalOpen(false);
-            }
-            if (!uploadFile || !uploadArrayBuffer) return;
-            const now = new Date().toISOString();
-            const templateId = uuidv4();
-            const docxKey = await saveDocxFile(new File([uploadArrayBuffer], uploadFile.name), templateId);
-            let htmlPreviewContent = '';
-            try {
-              const { value: html } = await mammoth.convertToHtml({ arrayBuffer: uploadArrayBuffer });
-              htmlPreviewContent = html;
-            } catch (err) {
-              htmlPreviewContent = '<div class="text-red-500">Failed to convert DOCX to HTML.</div>';
-            }
-            const newTemplate: Template = {
-              id: templateId,
-              name: data.name,
-              description: data.description,
-              version: data.version,
-              type: data.type as TemplateType,
-              content: '',
-              lastModified: now.split('T')[0],
-              createdAt: now,
-              updatedAt: now,
-              placeholders: uploadPlaceholders,
-              docxTemplate: docxKey,
-              clauseIds: [],
-              htmlPreviewContent,
-              contractYear: data.contractYear,
-            };
-            dispatch(addTemplate(newTemplate));
-            setUploadModalOpen(false);
-            setUploadFile(null);
-            setUploadPlaceholders([]);
-            setUploadArrayBuffer(null);
-            navigate(`/map-fields/${templateId}`);
-          }}
+          onSubmit={handleUploadModalSubmit}
           initialData={isEditing && editingTemplate ? editingTemplate : undefined}
           mode={isEditing ? 'edit' : 'upload'}
         />
