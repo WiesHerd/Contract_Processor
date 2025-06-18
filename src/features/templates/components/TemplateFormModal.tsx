@@ -34,12 +34,13 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
     defaultValues: template
       ? { 
           ...template, 
-          type: (template.type.charAt(0).toUpperCase() + template.type.slice(1)) as any,
+          compensationModel: template.compensationModel,
           docxTemplate: typeof template.docxTemplate === 'string' ? template.docxTemplate : ''
         }
       : {
           placeholders: [],
           clauseIds: [],
+          compensationModel: 'BASE',
         },
   });
 
@@ -48,7 +49,7 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
     if (template) {
       reset({ 
         ...template, 
-        type: (template.type.charAt(0).toUpperCase() + template.type.slice(1)) as any,
+        compensationModel: template.compensationModel,
         docxTemplate: typeof template.docxTemplate === 'string' ? template.docxTemplate : ''
       });
     }
@@ -63,16 +64,36 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
       setError(null);
 
       if (isEditMode && template) {
-        dispatch(updateTemplate({ ...template, ...data, updatedAt: new Date().toISOString() }));
+        dispatch(updateTemplate({
+          ...template,
+          ...data,
+          compensationModel: data.compensationModel,
+          metadata: {
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            createdBy: 'system',
+            lastModifiedBy: 'system',
+          },
+          tags: [],
+          clauses: [],
+          versionHistory: [],
+        }));
       } else {
         const now = new Date().toISOString();
         dispatch(
           addTemplate({
             id: uuidv4(),
             ...data,
-            lastModified: now.split('T')[0],
-            createdAt: now,
-            updatedAt: now,
+            compensationModel: data.compensationModel,
+            metadata: {
+              createdAt: now,
+              updatedAt: now,
+              createdBy: 'system',
+              lastModifiedBy: 'system',
+            },
+            tags: [],
+            clauses: [],
+            versionHistory: [],
           })
         );
       }
@@ -137,23 +158,23 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
             )}
           </div>
 
-          {/* Type */}
+          {/* Compensation Model */}
           <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
+            <label className="block text-sm font-medium mb-1">Compensation Model</label>
             <select
-              {...register('type')}
+              {...register('compensationModel')}
               className="w-full p-2 border rounded-md"
               disabled={isSubmitting}
             >
-              <option value="">Select type</option>
+              <option value="">Select compensation model</option>
               {templateTypes.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
-            {errors.type && (
-              <p className="text-red-500 text-sm mt-1">{errors.type.message}</p>
+            {errors.compensationModel && (
+              <p className="text-red-500 text-sm mt-1">{errors.compensationModel.message}</p>
             )}
           </div>
 
