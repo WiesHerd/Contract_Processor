@@ -43,7 +43,7 @@ export default function MappingListPage() {
               return (
                 <TableRow key={template.id} className="hover:bg-slate-50">
                   <TableCell className="font-semibold text-lg">{template.name}</TableCell>
-                  <TableCell>{templateMapping?.metadata?.updatedAt || template.metadata?.updatedAt || ''}</TableCell>
+                  <TableCell>{templateMapping?.updatedAt || template?.metadata?.updatedAt || ''}</TableCell>
                   <TableCell>{totalCount}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">

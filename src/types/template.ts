@@ -55,4 +55,13 @@ export interface TemplateUpload {
   metadata: Omit<Template, 'id' | 'metadata'>;
 }
 
-export type TemplateType = CompensationModel; 
+export type TemplateType = CompensationModel;
+
+export interface TemplateMapping {
+  id: string;
+  templateId: string;
+  updatedAt: string;
+  createdAt: string;
+  createdBy: string;
+  lastModifiedBy: string;
+} 

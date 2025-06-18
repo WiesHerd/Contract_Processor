@@ -63,10 +63,11 @@ export const ProviderUploadForm: React.FC = () => {
           }
         },
         error: (error: Papa.ParseError) => {
-          setLocalError('Failed to parse CSV file: ' + error.message);
-          dispatch(setError('Failed to parse CSV file: ' + error.message));
-        },
-      });
+          console.error('Error parsing CSV:', error);
+          setLocalError('Error parsing CSV file. Please check the format and try again.');
+          dispatch(setError('Error parsing CSV file. Please check the format and try again.'));
+        }
+      } as Papa.ParseConfig);
     } catch (err) {
       setLocalError('Failed to read file');
       dispatch(setError('Failed to read file'));

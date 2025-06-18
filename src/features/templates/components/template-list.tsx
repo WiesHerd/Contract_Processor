@@ -46,7 +46,7 @@ export const TemplateList: React.FC = () => {
           {templates.map((template) => (
             <TableRow
               key={template.id}
-              className={`cursor-pointer hover:bg-muted ${selectedTemplate === template.id ? 'bg-muted' : ''}`}
+              className={`cursor-pointer hover:bg-muted ${selectedTemplate?.id === template.id ? 'bg-muted' : ''}`}
               onClick={() => handleSelectTemplate(template.id)}
             >
               <TableCell className="font-medium">{template.name}</TableCell>
