@@ -115,7 +115,7 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
           <div>
             <h2 className="text-lg font-semibold mb-1">{template.name}</h2>
             <p className="text-sm text-gray-500 mb-1">
-              Version {template.version} • {template.type} • Last modified {template.lastModified}
+              Version {template.version} • {template.compensationModel} • Last modified {template.metadata?.updatedAt || ''}
             </p>
             <p className="text-sm text-gray-500 mb-1">
               {template.placeholders.length} placeholders • {template.clauseIds.length} clauses
