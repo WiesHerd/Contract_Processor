@@ -10,6 +10,11 @@ export const ProviderSchema = z.object({
   fte: z.number().min(0).max(1),
   baseSalary: z.number().positive(),
   compensationModel: CompensationModel,
+  specialty: z.string().optional(),
+  credentials: z.string().optional(),
+  signingBonus: z.number().optional(),
+  relocationBonus: z.number().optional(),
+  qualityBonus: z.number().optional(),
   wRVUTarget: z.number().optional(),
   conversionFactor: z.number().optional(),
   retentionBonus: z.object({
@@ -27,7 +32,7 @@ export const ProviderSchema = z.object({
   templateTag: z.string().optional(),
 });
 
-export type Provider = z.infer<typeof ProviderSchema>;
+export type Provider = z.infer<typeof ProviderSchema> & { [key: string]: any };
 
 export const ProviderUploadSchema = z.object({
   providers: z.array(ProviderSchema),

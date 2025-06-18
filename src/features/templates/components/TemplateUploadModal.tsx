@@ -8,7 +8,7 @@ import { X } from 'lucide-react';
 import { z } from 'zod';
 import { TemplateType } from '@/types/template';
 
-const templateTypes: TemplateType[] = ['Base', 'Productivity', 'Hybrid', 'Hospital-based'];
+const templateTypes: TemplateType[] = ['BASE', 'PRODUCTIVITY', 'HYBRID', 'HOSPITALIST'];
 
 const uploadSchema = z.object({
   name: z.string().min(1, 'Template name is required'),
@@ -98,7 +98,7 @@ export function TemplateUploadModal({ isOpen, onClose, file, placeholders, onSub
               <Input
                 {...register('type')}
                 list="template-type-list"
-                placeholder="e.g., Base, Productivity, Custom..."
+                placeholder="e.g., BASE, PRODUCTIVITY, Custom..."
                 autoComplete="off"
                 className="focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
               />

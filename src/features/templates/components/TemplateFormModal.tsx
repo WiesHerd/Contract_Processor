@@ -14,7 +14,7 @@ interface TemplateFormModalProps {
   template?: Template;
 }
 
-const templateTypes: TemplateType[] = ['Base', 'Productivity', 'Hybrid', 'Hospital-based'];
+const templateTypes: TemplateType[] = ['BASE', 'PRODUCTIVITY', 'HYBRID', 'HOSPITALIST'];
 
 export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormModalProps) {
   const dispatch = useDispatch();
