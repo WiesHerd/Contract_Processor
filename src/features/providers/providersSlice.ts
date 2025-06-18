@@ -25,6 +25,7 @@ const providersSlice = createSlice({
     addProvidersFromCSV: (state, action: PayloadAction<Record<string, string>[]>) => {
       state.loading = true;
       try {
+        const allowedModels = ['BASE', 'PRODUCTIVITY', 'HYBRID', 'HOSPITALIST', 'LEADERSHIP'];
         const newProviders = action.payload.map(provider => ({
           id: uuidv4(),
           name: provider.name || '',
@@ -35,10 +36,41 @@ const providersSlice = createSlice({
           baseSalary: parseFloat(provider.baseSalary) || 0,
           wRVUTarget: provider.wRVUTarget ? parseFloat(provider.wRVUTarget) : undefined,
           conversionFactor: provider.conversionFactor ? parseFloat(provider.conversionFactor) : undefined,
-          retentionBonus: provider.retentionBonus ? parseFloat(provider.retentionBonus) : undefined,
+          retentionBonus: (() => {
+            if (typeof provider.retentionBonus === 'string') {
+              try {
+                const parsed = JSON.parse(provider.retentionBonus);
+                if (typeof parsed === 'object' && parsed !== null && 'amount' in parsed) {
+                  return parsed;
+                }
+                const num = parseFloat(provider.retentionBonus);
+                if (!isNaN(num)) return { amount: num, vestingPeriod: 0 };
+              } catch {
+                const num = parseFloat(provider.retentionBonus);
+                if (!isNaN(num)) return { amount: num, vestingPeriod: 0 };
+              }
+            } else if (typeof provider.retentionBonus === 'number') {
+              return { amount: provider.retentionBonus, vestingPeriod: 0 };
+            }
+            return undefined;
+          })(),
           templateTag: provider.templateTag,
-          lastModified: new Date().toISOString().split('T')[0],
-          type: ((provider.type === 'physician' || provider.type === 'advanced-practitioner' || provider.type === 'other') ? provider.type : 'physician') as Provider['type'],
+          compensationModel: (allowedModels.includes((provider.compensationModel || '').toUpperCase()) ? (provider.compensationModel || '').toUpperCase() : 'BASE') as Provider['compensationModel'],
+          fteBreakdown: (() => {
+            if (Array.isArray(provider.fteBreakdown)) return provider.fteBreakdown;
+            if (typeof provider.fteBreakdown === 'string') {
+              try {
+                const parsed = JSON.parse(provider.fteBreakdown);
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            }
+            return [];
+          })(),
+          metadata: {
+            updatedAt: new Date().toISOString().split('T')[0],
+          },
           ...provider, // Keep any additional fields from CSV
         }));
         state.providers = newProviders;
@@ -57,7 +89,9 @@ const providersSlice = createSlice({
       if (index !== -1) {
         state.providers[index] = {
           ...action.payload,
-          lastModified: new Date().toISOString().split('T')[0],
+          metadata: {
+            updatedAt: new Date().toISOString().split('T')[0],
+          },
         };
       }
     },
@@ -98,18 +132,16 @@ export const selectProviderWithMatchedTemplate = createSelector(
       if (template) return { provider, template };
     }
 
-    // If no templateTag match, try to match by type based on provider data
-    let contractModel: Template['type'] | undefined;
-    
+    // If no templateTag match, try to match by compensationModel based on provider data
+    let contractModel: Template['compensationModel'] | undefined;
     if (provider.wRVUTarget && provider.conversionFactor) {
-      contractModel = 'Productivity';
+      contractModel = 'PRODUCTIVITY';
     } else if (provider.retentionBonus) {
-      contractModel = 'Hybrid';
+      contractModel = 'HYBRID';
     } else {
-      contractModel = 'Base';
+      contractModel = 'BASE';
     }
-
-    const template = templates.find(t => t.type === contractModel);
+    const template = templates.find(t => t.compensationModel === contractModel);
     return { provider, template };
   }
 );
