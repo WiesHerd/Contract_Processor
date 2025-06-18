@@ -14,6 +14,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { Logo } from './components/Logo';
 import InstructionsPage from './components/InstructionsPage';
 import { AuthProvider } from './contexts/AuthContext';
+import { ProvidersPage } from './features/providers/pages/providers-page';
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -34,6 +35,54 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 function TopNav() {
+  const location = useLocation();
+  
+  const isActive = (path: string) => {
+    return location.pathname === path;
+  };
+
+  const navItems = [
+    {
+      title: 'Templates',
+      path: '/templates',
+      group: 'setup'
+    },
+    {
+      title: 'Providers',
+      path: '/providers',
+      group: 'setup'
+    },
+    {
+      title: 'Mapping',
+      path: '/map-fields',
+      group: 'setup'
+    },
+    {
+      title: 'Clauses',
+      path: '/clauses',
+      group: 'content'
+    },
+    {
+      title: 'Generate',
+      path: '/generate',
+      group: 'action'
+    },
+    {
+      title: 'Audit',
+      path: '/audit',
+      group: 'review'
+    }
+  ];
+
+  // Group navItems by group
+  const groupedNav = navItems.reduce((acc, item) => {
+    if (!acc[item.group]) acc[item.group] = [];
+    acc[item.group].push(item);
+    return acc;
+  }, {} as Record<string, typeof navItems>);
+
+  const groupOrder = ['setup', 'content', 'action', 'review'];
+
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -42,25 +91,50 @@ function TopNav() {
             <Link to="/" className="flex items-center">
               <Logo size="small" />
             </Link>
-            <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-              <Link to="/templates" className="text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 border-transparent hover:border-gray-300">
-                Templates
-              </Link>
-              <Link to="/providers" className="text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 border-transparent hover:border-gray-300">
-                Providers
-              </Link>
-              <Link to="/generate" className="text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 border-transparent hover:border-gray-300">
-                Generate
-              </Link>
-              <Link to="/map-fields" className="text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 border-transparent hover:border-gray-300">
-                Mapping
-              </Link>
-              <Link to="/clauses" className="text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 border-transparent hover:border-gray-300">
-                Clauses
-              </Link>
-              <Link to="/audit" className="text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 border-transparent hover:border-gray-300">
-                Audit
-              </Link>
+            <div className="hidden sm:ml-6 sm:flex items-center space-x-4">
+              {groupOrder.map((group) => {
+                if (!groupedNav[group]) return null;
+                // For the 'setup' group, add vertical lines only before the first and after the last item
+                if (group === 'setup') {
+                  return (
+                    <div key={group} className="flex items-center px-3 py-1">
+                      <div className="h-6 w-px bg-gray-200 mr-3" />
+                      {groupedNav[group].map((item, idx) => (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          className={`inline-flex items-center px-3 pt-1 border-b-2 text-sm font-medium ${
+                            isActive(item.path)
+                              ? 'border-blue-500 text-blue-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          {item.title}
+                        </Link>
+                      ))}
+                      <div className="h-6 w-px bg-gray-200 ml-3" />
+                    </div>
+                  );
+                }
+                // Default for other groups
+                return (
+                  <div key={group} className="flex items-center space-x-2 px-3 py-1">
+                    {groupedNav[group].map((item) => (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                          isActive(item.path)
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        {item.title}
+                      </Link>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
