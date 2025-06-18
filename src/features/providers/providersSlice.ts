@@ -9,6 +9,7 @@ interface ProvidersState {
   uploadedColumns: string[];
   loading: boolean;
   error: string | null;
+  selectedProviders: string[];
 }
 
 const initialState: ProvidersState = {
@@ -16,6 +17,7 @@ const initialState: ProvidersState = {
   uploadedColumns: [],
   loading: false,
   error: null,
+  selectedProviders: [],
 };
 
 const providersSlice = createSlice({

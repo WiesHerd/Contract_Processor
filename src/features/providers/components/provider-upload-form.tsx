@@ -21,7 +21,7 @@ export const ProviderUploadForm: React.FC = () => {
 
     try {
       const text = await file.text();
-      Papa.parse(text, {
+      Papa.parse(text as any, {
         header: true,
         complete: (results) => {
           try {
