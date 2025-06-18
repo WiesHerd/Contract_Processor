@@ -17,6 +17,15 @@
       },
       "storage": {
         "s3bfe8ebde": {}
+      },
+      "hosting": {
+        "amplifyhosting": {
+          "appId": "d1u3c8k7z1pj0k",
+          "type": "manual"
+        }
+      },
+      "api": {
+        "contractgenerator": {}
       }
     }
   }

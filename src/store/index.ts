@@ -7,6 +7,7 @@ import clauseReducer from './slices/clauseSlice';
 import auditReducer from './slices/auditSlice';
 import { persistStore, persistReducer } from 'redux-persist';
 import storage from 'redux-persist/lib/storage';
+import providerReducer from './slices/providerSlice';
 
 const rootReducer = combineReducers({
   templates: templatesReducer,
@@ -15,12 +16,13 @@ const rootReducer = combineReducers({
   generator: generatorReducer,
   clauses: clauseReducer,
   audit: auditReducer,
+  provider: providerReducer,
 });
 
 const persistConfig = {
   key: 'root',
   storage,
-  whitelist: ['templates', 'providers', 'mappings', 'audit'],
+  whitelist: ['templates', 'providers', 'mappings', 'audit', 'provider'],
 };
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);

@@ -1,0 +1,44 @@
+type Template @model @auth(rules: [{ allow: public }]) {
+  id: ID!
+  name: String!
+  description: String
+  version: String
+  s3Key: String!
+  type: String
+  contractYear: String
+  createdAt: AWSDateTime
+  updatedAt: AWSDateTime
+}
+
+type Provider @model @auth(rules: [{ allow: public }]) {
+  id: ID!
+  name: String!
+  specialty: String
+  fte: Float
+  baseSalary: Float
+  startDate: AWSDate
+  contractTerm: String
+}
+
+type Mapping @model @auth(rules: [{ allow: public }]) {
+  id: ID!
+  templateID: ID!
+  providerID: ID!
+  field: String!
+  value: String
+}
+
+type Clause @model @auth(rules: [{ allow: public }]) {
+  id: ID!
+  text: String!
+  tags: [String]
+  condition: String
+}
+
+type AuditLog @model @auth(rules: [{ allow: public }]) {
+  id: ID!
+  action: String!
+  user: String
+  timestamp: AWSDateTime!
+  details: String
+}
