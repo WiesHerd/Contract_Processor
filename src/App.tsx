@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { store, persistor } from './store';
@@ -15,6 +15,9 @@ import { Logo } from './components/Logo';
 import InstructionsPage from './components/InstructionsPage';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProvidersPage } from './features/providers/pages/providers-page';
+import SignIn from './features/auth/SignIn';
+import { signOut } from 'aws-amplify/auth';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -36,7 +39,15 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 function TopNav() {
   const location = useLocation();
-  
+  const navigate = useNavigate();
+  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+
+  const handleSignOut = async () => {
+    await signOut();
+    localStorage.removeItem('isAuthenticated');
+    navigate('/login');
+  };
+
   const isActive = (path: string) => {
     return location.pathname === path;
   };
@@ -137,6 +148,23 @@ function TopNav() {
               })}
             </div>
           </div>
+          <div className="flex items-center space-x-4">
+            {!isAuthenticated ? (
+              <Link
+                to="/login"
+                className="text-sm font-medium text-blue-600 hover:text-blue-800 px-3 py-2 rounded-md border border-blue-100 hover:border-blue-300 transition"
+              >
+                Sign In
+              </Link>
+            ) : (
+              <button
+                onClick={handleSignOut}
+                className="text-sm font-medium text-gray-600 hover:text-red-600 px-3 py-2 rounded-md border border-gray-100 hover:border-red-200 transition"
+              >
+                Sign Out
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </nav>
@@ -151,15 +179,17 @@ function App() {
           <Router>
             <AppLayout>
               <Routes>
-                <Route path="/" element={<WelcomeScreen />} />
-                <Route path="/templates" element={<TemplateManager />} />
-                <Route path="/map-fields" element={<MappingListPage />} />
-                <Route path="/map-fields/:templateId" element={<FieldMapperPage />} />
-                <Route path="/providers" element={<ProviderDataManager />} />
-                <Route path="/generate" element={<ContractGenerator />} />
-                <Route path="/clauses" element={<ClauseManager />} />
-                <Route path="/audit" element={<AuditPage />} />
-                <Route path="/instructions" element={<InstructionsPage />} />
+                <Route path="/login" element={<SignIn />} />
+                <Route path="/signup" element={<div>Sign Up Coming Soon</div>} />
+                <Route path="/" element={<ProtectedRoute><WelcomeScreen /></ProtectedRoute>} />
+                <Route path="/templates" element={<ProtectedRoute><TemplateManager /></ProtectedRoute>} />
+                <Route path="/map-fields" element={<ProtectedRoute><MappingListPage /></ProtectedRoute>} />
+                <Route path="/map-fields/:templateId" element={<ProtectedRoute><FieldMapperPage /></ProtectedRoute>} />
+                <Route path="/providers" element={<ProtectedRoute><ProviderDataManager /></ProtectedRoute>} />
+                <Route path="/generate" element={<ProtectedRoute><ContractGenerator /></ProtectedRoute>} />
+                <Route path="/clauses" element={<ProtectedRoute><ClauseManager /></ProtectedRoute>} />
+                <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
+                <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
               </Routes>
             </AppLayout>
           </Router>
