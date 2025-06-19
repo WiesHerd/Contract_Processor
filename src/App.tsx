@@ -16,6 +16,8 @@ import InstructionsPage from './components/InstructionsPage';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProvidersPage } from './features/providers/pages/providers-page';
 import SignIn from './features/auth/SignIn';
+import SignUp from './features/auth/SignUp';
+import VerifyEmail from './features/auth/VerifyEmail';
 import { signOut } from 'aws-amplify/auth';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -45,7 +47,7 @@ function TopNav() {
   const handleSignOut = async () => {
     await signOut();
     localStorage.removeItem('isAuthenticated');
-    navigate('/login');
+    navigate('/signin');
   };
 
   const isActive = (path: string) => {
@@ -102,19 +104,40 @@ function TopNav() {
             <Link to="/" className="flex items-center">
               <Logo size="small" />
             </Link>
-            <div className="hidden sm:ml-6 sm:flex items-center space-x-4">
-              {groupOrder.map((group) => {
-                if (!groupedNav[group]) return null;
-                // For the 'setup' group, add vertical lines only before the first and after the last item
-                if (group === 'setup') {
+            {isAuthenticated && (
+              <div className="hidden sm:ml-6 sm:flex items-center space-x-4">
+                {groupOrder.map((group) => {
+                  if (!groupedNav[group]) return null;
+                  // For the 'setup' group, add vertical lines only before the first and after the last item
+                  if (group === 'setup') {
+                    return (
+                      <div key={group} className="flex items-center px-3 py-1">
+                        <div className="h-6 w-px bg-gray-200 mr-3" />
+                        {groupedNav[group].map((item, idx) => (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            className={`inline-flex items-center px-3 pt-1 border-b-2 text-sm font-medium ${
+                              isActive(item.path)
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                          >
+                            {item.title}
+                          </Link>
+                        ))}
+                        <div className="h-6 w-px bg-gray-200 ml-3" />
+                      </div>
+                    );
+                  }
+                  // Default for other groups
                   return (
-                    <div key={group} className="flex items-center px-3 py-1">
-                      <div className="h-6 w-px bg-gray-200 mr-3" />
-                      {groupedNav[group].map((item, idx) => (
+                    <div key={group} className="flex items-center space-x-2 px-3 py-1">
+                      {groupedNav[group].map((item) => (
                         <Link
                           key={item.path}
                           to={item.path}
-                          className={`inline-flex items-center px-3 pt-1 border-b-2 text-sm font-medium ${
+                          className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
                             isActive(item.path)
                               ? 'border-blue-500 text-blue-600'
                               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -123,35 +146,16 @@ function TopNav() {
                           {item.title}
                         </Link>
                       ))}
-                      <div className="h-6 w-px bg-gray-200 ml-3" />
                     </div>
                   );
-                }
-                // Default for other groups
-                return (
-                  <div key={group} className="flex items-center space-x-2 px-3 py-1">
-                    {groupedNav[group].map((item) => (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                          isActive(item.path)
-                            ? 'border-blue-500 text-blue-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        }`}
-                      >
-                        {item.title}
-                      </Link>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+                })}
+              </div>
+            )}
           </div>
           <div className="flex items-center space-x-4">
             {!isAuthenticated ? (
               <Link
-                to="/login"
+                to="/signin"
                 className="text-sm font-medium text-blue-600 hover:text-blue-800 px-3 py-2 rounded-md border border-blue-100 hover:border-blue-300 transition"
               >
                 Sign In
@@ -179,8 +183,12 @@ function App() {
           <Router>
             <AppLayout>
               <Routes>
-                <Route path="/login" element={<SignIn />} />
-                <Route path="/signup" element={<div>Sign Up Coming Soon</div>} />
+                {/* Auth Routes */}
+                <Route path="/signin" element={<SignIn />} />
+                <Route path="/signup" element={<SignUp />} />
+                <Route path="/verify-email" element={<VerifyEmail />} />
+
+                {/* Protected Routes */}
                 <Route path="/" element={<ProtectedRoute><WelcomeScreen /></ProtectedRoute>} />
                 <Route path="/templates" element={<ProtectedRoute><TemplateManager /></ProtectedRoute>} />
                 <Route path="/map-fields" element={<ProtectedRoute><MappingListPage /></ProtectedRoute>} />
