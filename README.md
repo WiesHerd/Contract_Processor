@@ -49,4 +49,8 @@ src/
 ├── store/           # Redux store configuration
 ├── types/           # TypeScript type definitions
 └── utils/           # Utility functions
-``` 
+```
+
+# Redeploy Trigger
+
+This line was added to trigger a redeployment on AWS Amplify. (2024-06-19) 
