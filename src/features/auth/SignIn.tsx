@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signIn, fetchAuthSession, resetPassword, confirmResetPassword } from 'aws-amplify/auth';
+import { 
+  signIn, 
+  fetchAuthSession, 
+  resetPassword as amplifyResetPassword, 
+  confirmResetPassword as amplifyConfirmResetPassword
+} from 'aws-amplify/auth';
+
+type AuthError = {
+  name: string;
+  message: string;
+};
 
 const SignIn: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -35,23 +45,24 @@ const SignIn: React.FC = () => {
     try {
       const { isSignedIn, nextStep } = await signIn({ username: email, password });
       if (isSignedIn) {
-        // You can set a flag in localStorage or context if needed
-        navigate('/'); // Redirect to home/dashboard
+        localStorage.setItem('isAuthenticated', 'true');
+        navigate('/');
       } else if (nextStep?.signInStep === 'CONFIRM_SIGN_UP') {
         navigate('/verify-email', { state: { email } });
       }
-    } catch (err: any) {
+    } catch (err) {
+      const authError = err as AuthError;
       // Enterprise-grade error handling
-      if (err.name === 'UserNotFoundException') {
+      if (authError.name === 'UserNotFoundException') {
         setError('No account found with this email.');
-      } else if (err.name === 'NotAuthorizedException') {
+      } else if (authError.name === 'NotAuthorizedException') {
         setError('Incorrect email or password.');
-      } else if (err.name === 'UserNotConfirmedException') {
+      } else if (authError.name === 'UserNotConfirmedException') {
         setError('Account not confirmed. Please check your email for a verification link.');
-      } else if (err.name === 'PasswordResetRequiredException') {
+      } else if (authError.name === 'PasswordResetRequiredException') {
         setError('Password reset required. Please use the "Forgot password?" link.');
       } else {
-        setError(err.message || 'Sign in failed. Please try again.');
+        setError(authError.message ?? 'Sign in failed. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -65,14 +76,17 @@ const SignIn: React.FC = () => {
     setResetSuccess('');
     setResetLoading(true);
     try {
-      await resetPassword({ username: resetEmail });
+      await amplifyResetPassword({
+        username: resetEmail
+      });
       setResetStep('verify');
       setResetSuccess('A verification code has been sent to your email.');
-    } catch (err: any) {
-      if (err.name === 'UserNotFoundException') {
+    } catch (err) {
+      const authError = err as AuthError;
+      if (authError.name === 'UserNotFoundException') {
         setResetError('No account found with this email.');
       } else {
-        setResetError(err.message || 'Failed to send reset code.');
+        setResetError(authError.message ?? 'Failed to send reset code.');
       }
     } finally {
       setResetLoading(false);
@@ -85,7 +99,7 @@ const SignIn: React.FC = () => {
     setResetSuccess('');
     setResetLoading(true);
     try {
-      await confirmResetPassword({
+      await amplifyConfirmResetPassword({
         username: resetEmail,
         confirmationCode: resetCode,
         newPassword: resetPassword
@@ -95,13 +109,14 @@ const SignIn: React.FC = () => {
       setShowForgot(false);
       setEmail(resetEmail);
       setPassword('');
-    } catch (err: any) {
-      if (err.name === 'CodeMismatchException') {
+    } catch (err) {
+      const authError = err as AuthError;
+      if (authError.name === 'CodeMismatchException') {
         setResetError('Invalid verification code.');
-      } else if (err.name === 'ExpiredCodeException') {
+      } else if (authError.name === 'ExpiredCodeException') {
         setResetError('Verification code expired. Please request a new one.');
       } else {
-        setResetError(err.message || 'Failed to reset password.');
+        setResetError(authError.message ?? 'Failed to reset password.');
       }
     } finally {
       setResetLoading(false);
