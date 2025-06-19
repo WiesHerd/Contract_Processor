@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import { store } from './store';
@@ -19,7 +19,6 @@ import SignUp from './features/auth/SignUp';
 import VerifyEmail from './features/auth/VerifyEmail';
 import { signOut } from 'aws-amplify/auth';
 import ProtectedRoute from './components/ProtectedRoute';
-import { awsTemplates, awsProviders, awsMappings, awsClauses, awsAuditLogs } from './utils/awsServices';
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -176,30 +175,6 @@ function TopNav() {
 }
 
 function App() {
-  // Initialize AWS data on app start
-  useEffect(() => {
-    const initializeAwsData = async () => {
-      try {
-        console.log('Initializing AWS data...');
-        
-        // Load all data types in parallel
-        await Promise.allSettled([
-          awsTemplates.list(1000),
-          awsProviders.list(1000),
-          awsMappings.list(1000),
-          awsClauses.list(1000),
-          awsAuditLogs.list(1000)
-        ]);
-        
-        console.log('AWS data initialization complete');
-      } catch (error) {
-        console.error('Error initializing AWS data:', error);
-      }
-    };
-
-    initializeAwsData();
-  }, []);
-
   return (
     <Provider store={store}>
       <AuthProvider>
