@@ -26,6 +26,10 @@ import localforage from 'localforage';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
+import { generateClient } from 'aws-amplify/api';
+import { createProvider } from '@/graphql/mutations';
+
+const client = generateClient();
 
 // CSV header to internal field mapping
 const csvToProviderFieldMap: Record<string, string> = {
@@ -214,20 +218,38 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
 
   // No top scrollbar, so no scroll sync needed
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results: Papa.ParseResult<Record<string, string>>) => {
+      complete: async (results: Papa.ParseResult<Record<string, string>>) => {
         // Map CSV fields to internal fields for provider data
         const mappedData = results.data.map(mapCsvRowToProviderFields);
         // Store original CSV headers (fields) for mapping UI
         const cols = results.meta.fields || [];
         dispatch(setUploadedColumns(cols));
         dispatch(addProvidersFromCSV(mappedData));
+
+        // Save each provider to AppSync (DynamoDB)
+        for (const provider of mappedData) {
+          try {
+            // Only send required fields for the mutation
+            const input = {
+              name: provider.name || '',
+              specialty: provider.specialty || '',
+              fte: provider.fte ? parseFloat(provider.fte) : undefined,
+              baseSalary: provider.baseSalary ? parseFloat(provider.baseSalary) : undefined,
+              startDate: provider.startDate || '',
+              contractTerm: provider.contractTerm || '',
+            };
+            await client.graphql({ query: createProvider, variables: { input } });
+          } catch (err) {
+            console.error('Failed to save provider to AppSync:', err);
+          }
+        }
       },
       error: (error) => {
         console.error('Failed to parse file:', error);
