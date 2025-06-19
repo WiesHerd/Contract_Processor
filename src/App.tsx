@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Provider } from 'react-redux';
-import { PersistGate } from 'redux-persist/integration/react';
-import { store, persistor } from './store';
+import { store } from './store';
 import TemplateManager from './features/templates/TemplateManager';
 import MappingListPage from './features/templates/MappingListPage';
 import FieldMapperPage from './features/templates/FieldMapperPage';
@@ -20,6 +19,7 @@ import SignUp from './features/auth/SignUp';
 import VerifyEmail from './features/auth/VerifyEmail';
 import { signOut } from 'aws-amplify/auth';
 import ProtectedRoute from './components/ProtectedRoute';
+import { awsTemplates, awsProviders, awsMappings, awsClauses, awsAuditLogs } from './utils/awsServices';
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -176,32 +176,54 @@ function TopNav() {
 }
 
 function App() {
+  // Initialize AWS data on app start
+  useEffect(() => {
+    const initializeAwsData = async () => {
+      try {
+        console.log('Initializing AWS data...');
+        
+        // Load all data types in parallel
+        await Promise.allSettled([
+          awsTemplates.list(1000),
+          awsProviders.list(1000),
+          awsMappings.list(1000),
+          awsClauses.list(1000),
+          awsAuditLogs.list(1000)
+        ]);
+        
+        console.log('AWS data initialization complete');
+      } catch (error) {
+        console.error('Error initializing AWS data:', error);
+      }
+    };
+
+    initializeAwsData();
+  }, []);
+
   return (
     <Provider store={store}>
       <AuthProvider>
-        <PersistGate loading={null} persistor={persistor}>
-          <Router>
-            <AppLayout>
-              <Routes>
-                {/* Auth Routes */}
-                <Route path="/signin" element={<SignIn />} />
-                <Route path="/signup" element={<SignUp />} />
-                <Route path="/verify-email" element={<VerifyEmail />} />
+        <Router>
+          <AppLayout>
+            <Routes>
+              {/* Auth Routes */}
+              <Route path="/signin" element={<SignIn />} />
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
 
-                {/* Protected Routes */}
-                <Route path="/" element={<ProtectedRoute><WelcomeScreen /></ProtectedRoute>} />
-                <Route path="/templates" element={<ProtectedRoute><TemplateManager /></ProtectedRoute>} />
-                <Route path="/map-fields" element={<ProtectedRoute><MappingListPage /></ProtectedRoute>} />
-                <Route path="/map-fields/:templateId" element={<ProtectedRoute><FieldMapperPage /></ProtectedRoute>} />
-                <Route path="/providers" element={<ProtectedRoute><ProviderDataManager /></ProtectedRoute>} />
-                <Route path="/generate" element={<ProtectedRoute><ContractGenerator /></ProtectedRoute>} />
-                <Route path="/clauses" element={<ProtectedRoute><ClauseManager /></ProtectedRoute>} />
-                <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
-                <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
-              </Routes>
-            </AppLayout>
-          </Router>
-        </PersistGate>
+              {/* Protected Routes */}
+              <Route path="/" element={<ProtectedRoute><WelcomeScreen /></ProtectedRoute>} />
+              <Route path="/templates" element={<ProtectedRoute><TemplateManager /></ProtectedRoute>} />
+              <Route path="/map-fields" element={<ProtectedRoute><MappingListPage /></ProtectedRoute>} />
+              <Route path="/map-fields/:templateId" element={<ProtectedRoute><FieldMapperPage /></ProtectedRoute>} />
+              <Route path="/providers" element={<ProtectedRoute><ProviderDataManager /></ProtectedRoute>} />
+              <Route path="/generate" element={<ProtectedRoute><ContractGenerator /></ProtectedRoute>} />
+              <Route path="/clauses" element={<ProtectedRoute><ClauseManager /></ProtectedRoute>} />
+              <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
+              <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
+            </Routes>
+          </AppLayout>
+        </Router>
       </AuthProvider>
     </Provider>
   );
