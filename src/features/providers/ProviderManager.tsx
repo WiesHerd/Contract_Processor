@@ -17,6 +17,8 @@ import {
   getFacetedRowModel,
   getFacetedUniqueValues,
   getFacetedMinMaxValues,
+  ColumnFiltersState,
+  VisibilityState,
 } from '@tanstack/react-table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { RootState } from '@/store';
@@ -28,6 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { generateClient } from 'aws-amplify/api';
 import { createProvider } from '@/graphql/mutations';
+import { v4 as uuidv4 } from 'uuid';
 
 const client = generateClient();
 
@@ -91,6 +94,14 @@ interface ProviderManagerProps {
   isSticky?: boolean;
 }
 
+interface BulkGenerationResult {
+  providerId: string;
+  providerName: string;
+  success: boolean;
+  error?: string;
+  fileName?: string;
+}
+
 // Custom component for dual synced scrollbars
 function DualHorizontalScrollbar({ scrollRef, minWidth }: { scrollRef: React.RefObject<HTMLDivElement>, minWidth: number }) {
   const topScrollbarRef = useRef<HTMLDivElement>(null);
@@ -152,59 +163,29 @@ function formatUSD(value: string | number) {
 
 export default function ProviderManager({ isSticky = true }: ProviderManagerProps) {
   const dispatch = useDispatch();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const providers = useSelector((state: RootState) => state.providers.providers);
+  const uploadedColumns = useSelector((state: RootState) => state.providers.uploadedColumns);
+  const loading = useSelector((state: RootState) => state.providers.loading);
+  const error = useSelector((state: RootState) => state.providers.error);
   const [search, setSearch] = useState('');
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editRow, setEditRow] = useState<Provider | null>(null);
-  const [loading, setLoading] = useState(true);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const uploadedColumns = useSelector((state: RootState) => state.providers.uploadedColumns);
-  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showBulkGenerationModal, setShowBulkGenerationModal] = useState(false);
+  const [bulkGenerationResults, setBulkGenerationResults] = useState<BulkGenerationResult[]>([]);
   const [fteRange, setFteRange] = useState<[number, number]>([0, 1]);
   const [credential, setCredential] = useState('__all__');
   const [specialty, setSpecialty] = useState('__all__');
   const [pageSize, setPageSize] = useState(25);
   const [pageIndex, setPageIndex] = useState(0);
-  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>(() => {
-    const providerNameCol = uploadedColumns.find(col => col.toLowerCase().includes('provider name'));
-    return providerNameCol ? { left: [providerNameCol] } : {};
-  });
-
-  // Hydrate providers and uploadedColumns from localforage on mount
-  useEffect(() => {
-    Promise.all([
-      localforage.getItem<Record<string, any>[]>('providers'),
-      localforage.getItem<string[]>('uploadedColumns'),
-    ]).then(([savedProviders, savedColumns]) => {
-      if (Array.isArray(savedProviders) && savedProviders.length > 0) {
-        dispatch(addProvidersFromCSV(savedProviders));
-      }
-      if (Array.isArray(savedColumns) && savedColumns.length > 0) {
-        dispatch(setUploadedColumns(savedColumns));
-      }
-      setLoading(false);
-    });
-  }, [dispatch]);
-
-  // Persist providers to localforage whenever they change
-  useEffect(() => {
-    if (providers.length > 0) {
-      localforage.setItem('providers', providers);
-    } else {
-      localforage.removeItem('providers');
-    }
-  }, [providers]);
-
-  // Persist uploadedColumns to localforage whenever they change
-  useEffect(() => {
-    if (uploadedColumns.length > 0) {
-      localforage.setItem('uploadedColumns', uploadedColumns);
-    } else {
-      localforage.removeItem('uploadedColumns');
-    }
-  }, [uploadedColumns]);
+  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({ left: [] });
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = useState({});
+  const tableScrollRef = useRef<HTMLDivElement>(null);
 
   // Watch isSticky and update columnPinning accordingly
   useEffect(() => {
@@ -215,8 +196,6 @@ export default function ProviderManager({ isSticky = true }: ProviderManagerProp
       setColumnPinning({ left: [] });
     }
   }, [isSticky, uploadedColumns]);
-
-  // No top scrollbar, so no scroll sync needed
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

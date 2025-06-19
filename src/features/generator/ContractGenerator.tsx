@@ -53,10 +53,7 @@ export default function ContractGenerator() {
   const error = useSelector((state: RootState) => state.generator.error);
   const generatedFiles = useSelector((state: RootState) => state.generator.generatedFiles);
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => {
-    const saved = localStorage.getItem('selectedTemplateId');
-    return saved || '';
-  });
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
@@ -66,11 +63,6 @@ export default function ContractGenerator() {
   const [editorModalOpen, setEditorModalOpen] = useState(false);
   const editorRef = useRef<any>(null);
   const [clauseSearch, setClauseSearch] = useState('');
-
-  // Persist selectedTemplateId in localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('selectedTemplateId', selectedTemplateId);
-  }, [selectedTemplateId]);
 
   // Update selected template when ID changes
   useEffect(() => {
