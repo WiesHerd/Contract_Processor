@@ -19,6 +19,9 @@ import SignUp from './features/auth/SignUp';
 import VerifyEmail from './features/auth/VerifyEmail';
 import { signOut } from 'aws-amplify/auth';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
+import AdminDashboard from './features/admin/AdminDashboard';
+import { Toaster } from 'sonner';
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -180,6 +183,7 @@ function App() {
       <AuthProvider>
         <Router>
           <AppLayout>
+            <Toaster position="top-right" richColors />
             <Routes>
               {/* Auth Routes */}
               <Route path="/signin" element={<SignIn />} />
@@ -196,6 +200,9 @@ function App() {
               <Route path="/clauses" element={<ProtectedRoute><ClauseManager /></ProtectedRoute>} />
               <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
               <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
+              
+              {/* Admin Routes - Hidden from navigation */}
+              <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             </Routes>
           </AppLayout>
         </Router>

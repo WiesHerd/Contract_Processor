@@ -102,12 +102,12 @@ export const mergeTemplateWithData = (
   } else {
     // Fallback to old logic if no mapping is provided
     const placeholderMap: Record<string, string> = {
-      '{{ProviderName}}': `${provider.name}, ${(provider as any).credentials ?? ''}`,
-      '{{StartDate}}': formatDate(provider.startDate),
+      '{{ProviderName}}': `${provider.name}, ${provider.credentials ?? ''}`,
+      '{{StartDate}}': formatDate(provider.startDate ?? ''),
       '{{BaseSalary}}': formatCurrency(provider.baseSalary ?? 0),
-      '{{FTE}}': provider.fte.toString(),
-      '{{FTEBreakdown}}': generateFTEBreakdown(provider.fte),
-      '{{Specialty}}': (provider as any).specialty ?? '',
+      '{{FTE}}': String(provider.fte ?? ''),
+      '{{FTEBreakdown}}': generateFTEBreakdown(provider.fte ?? 0),
+      '{{Specialty}}': provider.specialty ?? '',
     };
     if (provider.wRVUTarget) {
       placeholderMap['{{wRVUTarget}}'] = formatNumber(provider.wRVUTarget);
@@ -122,14 +122,14 @@ export const mergeTemplateWithData = (
         placeholderMap['{{RetentionBonus}}'] = formatCurrency(provider.retentionBonus.amount);
       }
     }
-    if ((provider as any).signingBonus) {
-      placeholderMap['{{SigningBonus}}'] = formatCurrency((provider as any).signingBonus ?? 0);
+    if (provider.signingBonus) {
+      placeholderMap['{{SigningBonus}}'] = formatCurrency(provider.signingBonus ?? 0);
     }
-    if ((provider as any).relocationBonus) {
-      placeholderMap['{{RelocationBonus}}'] = formatCurrency((provider as any).relocationBonus ?? 0);
+    if (provider.relocationBonus) {
+      placeholderMap['{{RelocationBonus}}'] = formatCurrency(provider.relocationBonus ?? 0);
     }
-    if ((provider as any).qualityBonus) {
-      placeholderMap['{{QualityBonus}}'] = formatCurrency((provider as any).qualityBonus ?? 0);
+    if (provider.qualityBonus) {
+      placeholderMap['{{QualityBonus}}'] = formatCurrency(provider.qualityBonus ?? 0);
     }
     if (provider.cmeAmount) {
       placeholderMap['{{CMEAmount}}'] = formatCurrency(provider.cmeAmount ?? 0);

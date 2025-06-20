@@ -77,12 +77,40 @@ export const createProvider = /* GraphQL */ `mutation CreateProvider(
 ) {
   createProvider(input: $input, condition: $condition) {
     id
+    employeeId
     name
+    providerType
     specialty
+    subspecialty
     fte
+    administrativeFte
+    administrativeRole
+    yearsExperience
+    hourlyWage
     baseSalary
+    originalAgreementDate
+    organizationName
     startDate
     contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    educationBonus
+    qualityBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    fteBreakdown {
+      activity
+      percentage
+      __typename
+    }
+    templateTag
     createdAt
     updatedAt
     __typename
@@ -98,12 +126,40 @@ export const updateProvider = /* GraphQL */ `mutation UpdateProvider(
 ) {
   updateProvider(input: $input, condition: $condition) {
     id
+    employeeId
     name
+    providerType
     specialty
+    subspecialty
     fte
+    administrativeFte
+    administrativeRole
+    yearsExperience
+    hourlyWage
     baseSalary
+    originalAgreementDate
+    organizationName
     startDate
     contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    educationBonus
+    qualityBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    fteBreakdown {
+      activity
+      percentage
+      __typename
+    }
+    templateTag
     createdAt
     updatedAt
     __typename
@@ -119,12 +175,40 @@ export const deleteProvider = /* GraphQL */ `mutation DeleteProvider(
 ) {
   deleteProvider(input: $input, condition: $condition) {
     id
+    employeeId
     name
+    providerType
     specialty
+    subspecialty
     fte
+    administrativeFte
+    administrativeRole
+    yearsExperience
+    hourlyWage
     baseSalary
+    originalAgreementDate
+    organizationName
     startDate
     contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    educationBonus
+    qualityBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    fteBreakdown {
+      activity
+      percentage
+      __typename
+    }
+    templateTag
     createdAt
     updatedAt
     __typename

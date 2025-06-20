@@ -55,12 +55,40 @@ export const listTemplates = /* GraphQL */ `query ListTemplates(
 export const getProvider = /* GraphQL */ `query GetProvider($id: ID!) {
   getProvider(id: $id) {
     id
+    employeeId
     name
+    providerType
     specialty
+    subspecialty
     fte
+    administrativeFte
+    administrativeRole
+    yearsExperience
+    hourlyWage
     baseSalary
+    originalAgreementDate
+    organizationName
     startDate
     contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    educationBonus
+    qualityBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    fteBreakdown {
+      activity
+      percentage
+      __typename
+    }
+    templateTag
     createdAt
     updatedAt
     __typename
@@ -78,12 +106,35 @@ export const listProviders = /* GraphQL */ `query ListProviders(
   listProviders(filter: $filter, limit: $limit, nextToken: $nextToken) {
     items {
       id
+      employeeId
       name
+      providerType
       specialty
+      subspecialty
       fte
+      administrativeFte
+      administrativeRole
+      yearsExperience
+      hourlyWage
       baseSalary
+      originalAgreementDate
+      organizationName
       startDate
       contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      educationBonus
+      qualityBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      templateTag
       createdAt
       updatedAt
       __typename

@@ -65,12 +65,40 @@ export const onDeleteTemplate = /* GraphQL */ `subscription OnDeleteTemplate($fi
 export const onCreateProvider = /* GraphQL */ `subscription OnCreateProvider($filter: ModelSubscriptionProviderFilterInput) {
   onCreateProvider(filter: $filter) {
     id
+    employeeId
     name
+    providerType
     specialty
+    subspecialty
     fte
+    administrativeFte
+    administrativeRole
+    yearsExperience
+    hourlyWage
     baseSalary
+    originalAgreementDate
+    organizationName
     startDate
     contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    educationBonus
+    qualityBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    fteBreakdown {
+      activity
+      percentage
+      __typename
+    }
+    templateTag
     createdAt
     updatedAt
     __typename
@@ -83,12 +111,40 @@ export const onCreateProvider = /* GraphQL */ `subscription OnCreateProvider($fi
 export const onUpdateProvider = /* GraphQL */ `subscription OnUpdateProvider($filter: ModelSubscriptionProviderFilterInput) {
   onUpdateProvider(filter: $filter) {
     id
+    employeeId
     name
+    providerType
     specialty
+    subspecialty
     fte
+    administrativeFte
+    administrativeRole
+    yearsExperience
+    hourlyWage
     baseSalary
+    originalAgreementDate
+    organizationName
     startDate
     contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    educationBonus
+    qualityBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    fteBreakdown {
+      activity
+      percentage
+      __typename
+    }
+    templateTag
     createdAt
     updatedAt
     __typename
@@ -101,12 +157,40 @@ export const onUpdateProvider = /* GraphQL */ `subscription OnUpdateProvider($fi
 export const onDeleteProvider = /* GraphQL */ `subscription OnDeleteProvider($filter: ModelSubscriptionProviderFilterInput) {
   onDeleteProvider(filter: $filter) {
     id
+    employeeId
     name
+    providerType
     specialty
+    subspecialty
     fte
+    administrativeFte
+    administrativeRole
+    yearsExperience
+    hourlyWage
     baseSalary
+    originalAgreementDate
+    organizationName
     startDate
     contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    educationBonus
+    qualityBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    fteBreakdown {
+      activity
+      percentage
+      __typename
+    }
+    templateTag
     createdAt
     updatedAt
     __typename

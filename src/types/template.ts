@@ -60,8 +60,15 @@ export type TemplateType = CompensationModel;
 export interface TemplateMapping {
   id: string;
   templateId: string;
-  updatedAt: string;
-  createdAt: string;
-  createdBy: string;
-  lastModifiedBy: string;
+  metadata: {
+    updatedAt: string;
+    createdAt: string;
+    createdBy: string;
+    lastModifiedBy: string;
+  };
+  mappings: Array<{
+    placeholder: string;
+    mappedColumn?: string;
+    notes?: string;
+  }>;
 } 

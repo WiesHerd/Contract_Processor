@@ -3,10 +3,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // Initialize the S3 client
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
+  region: import.meta.env.VITE_AWS_REGION || import.meta.env.AWS_REGION,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID || import.meta.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY || import.meta.env.AWS_SECRET_ACCESS_KEY || '',
   },
 });
 
@@ -18,8 +18,11 @@ const s3Client = new S3Client({
  */
 export async function uploadFile(file: Buffer | Blob, key: string) {
   try {
+    const bucket = import.meta.env.VITE_S3_BUCKET || import.meta.env.S3_BUCKET;
+    const region = import.meta.env.VITE_AWS_REGION || import.meta.env.AWS_REGION;
+    
     const command = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET,
+      Bucket: bucket,
       Key: key,
       Body: file,
     });
@@ -27,7 +30,7 @@ export async function uploadFile(file: Buffer | Blob, key: string) {
     const response = await s3Client.send(command);
     return {
       success: true,
-      location: `https://${process.env.S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`,
+      location: `https://${bucket}.s3.${region}.amazonaws.com/${key}`,
       response,
     };
   } catch (error) {
@@ -44,8 +47,10 @@ export async function uploadFile(file: Buffer | Blob, key: string) {
  */
 export async function getSignedDownloadUrl(key: string, expiresIn = 3600) {
   try {
+    const bucket = import.meta.env.VITE_S3_BUCKET || import.meta.env.S3_BUCKET;
+    
     const command = new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET,
+      Bucket: bucket,
       Key: key,
     });
 

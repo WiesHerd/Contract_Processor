@@ -12,7 +12,6 @@ import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft } from 'lucide
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { CommandDialog } from '@/components/ui/command';
 import localforage from 'localforage';
-import { setUploadedColumns } from '@/features/providers/providersSlice';
 import { updateMapping, setMapping, FieldMapping, TemplateMapping } from './mappingsSlice';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
@@ -36,16 +35,18 @@ function FieldSelect({
   onChange: (val: string) => void;
   placeholder?: string;
 }) {
+  const NONE_VALUE = '--NONE--';
+
   return (
     <Select
-      value={typeof value === 'string' ? value : 'none'}
-      onValueChange={val => onChange(val === 'none' ? '' : val)}
+      value={value || NONE_VALUE}
+      onValueChange={(val) => onChange(val === NONE_VALUE ? '' : val)}
     >
       <SelectTrigger className="w-[200px]">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="none">-- Select --</SelectItem>
+      <SelectContent className="max-h-96 overflow-y-auto">
+        <SelectItem value={NONE_VALUE}>-- None --</SelectItem>
         {options.map(opt => (
           <SelectItem key={opt} value={opt}>
             {opt}
@@ -61,46 +62,48 @@ export default function FieldMapperPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const template = useSelector((state: RootState) => state.templates.templates.find(t => t.id === templateId));
-  const columns = useSelector((state: RootState) => state.providers.uploadedColumns) || [];
-  const provider = useSelector((state: RootState) => state.providers.providers[0]);
-  const existingMapping = useSelector((state: RootState) => state.mappings.mappings[templateId || '']);
+  
+  // Get providers and derive columns directly from live data, not localforage
+  const providers = useSelector((state: RootState) => state.provider.providers);
+  const [columns, setColumns] = useState<string[]>([]);
 
-  // Hydrate columns from localforage if empty
   useEffect(() => {
-    if (columns.length === 0) {
-      localforage.getItem<string[]>('uploadedColumns').then(cols => {
-        if (Array.isArray(cols) && cols.length > 0) {
-          dispatch(setUploadedColumns(cols));
-        }
-      });
+    if (providers && providers.length > 0) {
+      // Use keys from the first provider object as the source of truth for columns
+      const providerKeys = Object.keys(providers[0]);
+      setColumns(providerKeys);
     }
-  }, [columns, dispatch]);
+  }, [providers]);
 
-  if (!template || !templateId) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <h2 className="text-2xl font-bold text-red-600 mb-4">Template Not Found</h2>
-        <p className="text-gray-600 mb-4">The template you are trying to map does not exist. Please return to the Templates page and try again.</p>
-        <Button onClick={() => navigate('/templates')}>Back to Templates</Button>
-      </div>
-    );
-  }
+  const provider = providers[0] as { [key: string]: any } | undefined;
+  const existingMapping = useSelector((state: RootState) => state.mappings.mappings[templateId || '']);
 
   // Initialize mapping state from Redux or create new
   const [mapping, setMappingState] = useState<FieldMapping[]>(() => {
     if (existingMapping) {
       return existingMapping.mappings;
     }
-    return template.placeholders.map((ph: string) => ({ placeholder: ph }));
+    return template?.placeholders.map((ph: string) => ({ placeholder: ph })) || [];
   });
 
   const [search, setSearch] = useState('');
   const [autoMapActive, setAutoMapActive] = useState(false);
   const [filter, setFilter] = useState<'all' | 'mapped' | 'unmapped'>('all');
 
+  // Hydrate columns from localforage if empty
+  /*
+  useEffect(() => {
+    localforage.getItem<string[]>('uploadedColumns').then(cols => {
+      if (Array.isArray(cols) && cols.length > 0) {
+        setColumns(cols);
+      }
+    });
+  }, []);
+  */
+
   const mappedCount = mapping.filter(m => m.mappedColumn).length;
   const totalCount = mapping.length;
-  const percent = Math.round((mappedCount / totalCount) * 100);
+  const percent = totalCount > 0 ? Math.round((mappedCount / totalCount) * 100) : 0;
 
   // Filtered mapping and placeholders
   const filteredMapping = mapping.filter(m => {
@@ -109,14 +112,14 @@ export default function FieldMapperPage() {
     if (filter === 'unmapped') return !m.mappedColumn;
     return true;
   });
-  const filteredPlaceholders = template.placeholders.filter((ph: string) => {
+  const filteredPlaceholders = template?.placeholders.filter((ph: string) => {
     const m = mapping.find(m => m.placeholder === ph);
     if (search && !ph.toLowerCase().includes(search.toLowerCase())) return false;
     if (filter === 'all') return true;
     if (filter === 'mapped') return m && !!m.mappedColumn;
     if (filter === 'unmapped') return m && !m.mappedColumn;
     return true;
-  });
+  }) || [];
 
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
@@ -125,13 +128,30 @@ export default function FieldMapperPage() {
   };
 
   const handleAutoMap = () => {
-    setMappingState((prev: FieldMapping[]) =>
-      prev.map((m: FieldMapping) => {
+    setMappingState((prev) =>
+      prev.map((m) => {
         if (m.mappedColumn) return m;
-        // Normalize: remove { }, spaces, underscores, and lowercase
-        const normalize = (str: string) => str.replace(/[{} _]/g, '').toLowerCase();
+
+        const normalize = (str: string) => str.replace(/[\s_{}-]/g, '').toLowerCase();
+        
+        // An alias map to handle common, predictable discrepancies.
+        const aliasMap: { [key: string]: string } = {
+          providername: 'name',
+          // future aliases can be added here
+        };
+
         const cleanPh = normalize(m.placeholder);
-        const found = columns.find(col => normalize(col) === cleanPh || normalize(col).includes(cleanPh));
+        const targetColumnName = aliasMap[cleanPh] || cleanPh;
+
+        // Pass 1: Find an exact match using the (potentially aliased) target name.
+        let found = columns.find((col) => normalize(col) === targetColumnName);
+
+        // Pass 2: If no exact match, try a partial match.
+        // This helps with cases like placeholder `wRVU` and column `wRVUTarget`.
+        if (!found) {
+          found = columns.find((col) => normalize(col).includes(targetColumnName));
+        }
+
         return found ? { ...m, mappedColumn: found } : m;
       })
     );
@@ -164,6 +184,26 @@ export default function FieldMapperPage() {
 
   const hasUnmapped = mapping.some(m => !m.mappedColumn);
 
+  if (!template || !templateId) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <h2 className="text-2xl font-bold text-red-600 mb-4">Template Not Found</h2>
+        <p className="text-gray-600 mb-4">The template you are trying to map does not exist. Please return to the Templates page and try again.</p>
+        <Button onClick={() => navigate('/templates')}>Back to Templates</Button>
+      </div>
+    );
+  }
+
+  if (!providers || providers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <h2 className="text-2xl font-bold text-amber-600 mb-4">No Provider Data</h2>
+        <p className="text-gray-600 mb-4">Provider data must be loaded to map template fields. Please upload a provider CSV first.</p>
+        <Button onClick={() => navigate('/providers')}>Go to Provider Data</Button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 space-y-6">
       <div className="flex items-center justify-between border-b pb-4 mb-4 bg-white px-4 pt-6 rounded-lg shadow-sm">
@@ -189,7 +229,6 @@ export default function FieldMapperPage() {
           </Button>
           <Button
             variant="default"
-            disabled={hasUnmapped}
             onClick={handleSave}
             className="gap-2"
           >
@@ -293,22 +332,17 @@ export default function FieldMapperPage() {
                           <FieldSelect
                             value={m.mappedColumn}
                             options={columns}
-                            onChange={val =>
-                              setMappingState((prev: FieldMapping[]) =>
-                                prev.map((mm: FieldMapping, i: number) =>
-                                  i === idx ? { ...mm, mappedColumn: val } : mm
+                            onChange={val => {
+                              setMappingState(current =>
+                                current.map(item =>
+                                  item.placeholder === m.placeholder ? { ...item, mappedColumn: val } : item
                                 )
-                              )
-                            }
-                            placeholder="Select field"
+                              );
+                            }}
                           />
                         </TableCell>
-                        <TableCell>
-                          {col !== undefined ? (
-                            <span className="text-sm text-gray-700">{String(col)}</span>
-                          ) : (
-                            <span className="text-sm text-gray-400">--</span>
-                          )}
+                        <TableCell className="font-mono text-gray-500 truncate max-w-xs">
+                          {m.mappedColumn && provider && provider[m.mappedColumn] ? String(provider[m.mappedColumn]) : <i className="text-gray-400">No preview</i>}
                         </TableCell>
                         <TableCell>
                           <Input

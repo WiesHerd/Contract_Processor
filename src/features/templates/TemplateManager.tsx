@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Plus, Trash2, Edit, Eye } from 'lucide-react';
 import mammoth from 'mammoth';
-import { addTemplate, updateTemplate, deleteTemplate, setTemplates, clearTemplates, hydrateTemplates } from './templatesSlice';
+import { addTemplate, updateTemplate, deleteTemplate, setTemplates, clearTemplates, hydrateTemplates, hydrateTemplatesFromS3 } from './templatesSlice';
 import { Template, TemplateType } from '@/types/template';
 import { RootState } from '@/store';
 import { useNavigate } from 'react-router-dom';
@@ -31,7 +31,7 @@ export default function TemplateManager() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Memoize provider fields selector
-  const providers = useSelector((state: RootState) => state.providers.providers || []);
+  const providers = useSelector((state: RootState) => state.provider.providers || []);
   const providerFields = useMemo(() => 
     Array.isArray(providers) && providers.length > 0 ? Object.keys(providers[0]) : [],
     [providers]
@@ -43,6 +43,10 @@ export default function TemplateManager() {
   const [uploadArrayBuffer, setUploadArrayBuffer] = useState<ArrayBuffer | null>(null);
   const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    dispatch(hydrateTemplatesFromS3());
+  }, [dispatch]);
 
   const handleCreateTemplate = () => {
     const now = new Date().toISOString();
@@ -76,7 +80,9 @@ export default function TemplateManager() {
   };
 
   const handleDeleteTemplate = (id: string) => {
-    dispatch(deleteTemplate(id));
+    if (window.confirm('Are you sure you want to delete this template?')) {
+      dispatch(deleteTemplate(id));
+    }
   };
 
   const handleSaveTemplate = () => {
@@ -134,48 +140,70 @@ export default function TemplateManager() {
   };
 
   const handleUploadModalSubmit = async (data: UploadFormData) => {
-    if (!uploadFile || !uploadArrayBuffer) return;
-    const now = new Date().toISOString();
-    const templateId = uuidv4();
-    // Store the file using the pluggable storage utility (localforage by default, swap for S3/cloud as needed)
-    const docxKey = await saveDocxFile(new File([uploadArrayBuffer], uploadFile.name), templateId);
-    // Convert DOCX to HTML for preview
-    let htmlPreviewContent = '';
-    try {
-      const { value: html } = await mammoth.convertToHtml({ arrayBuffer: uploadArrayBuffer });
-      htmlPreviewContent = html;
-    } catch (err) {
-      htmlPreviewContent = '<div class="text-red-500">Failed to convert DOCX to HTML.</div>';
+    console.log('Submitting template data:', data);
+
+    if (!uploadFile || !uploadArrayBuffer) {
+      console.error('Upload file or buffer is missing.');
+      alert('An error occurred. The file to upload is missing.');
+      return;
     }
-    const newTemplate: Template = {
-      id: templateId,
-      name: data.name,
-      description: data.description,
-      version: data.version,
-      compensationModel: data.type as TemplateType,
-      content: '',
-      metadata: {
-        createdAt: now,
-        updatedAt: now,
-        createdBy: 'system',
-        lastModifiedBy: 'system',
-      },
-      placeholders: uploadPlaceholders,
-      docxTemplate: docxKey,
-      clauseIds: [],
-      htmlPreviewContent,
-      contractYear: data.contractYear,
-      tags: [],
-      clauses: [],
-      versionHistory: [],
-    };
-    dispatch(addTemplate(newTemplate));
-    // Reset all upload state
-    setUploadModalOpen(false);
-    setUploadFile(null);
-    setUploadPlaceholders([]);
-    setUploadArrayBuffer(null);
-    navigate(`/map-fields/${templateId}`);
+    console.log('File and buffer are present. Proceeding to save.');
+
+    try {
+      const now = new Date().toISOString();
+      const templateId = uuidv4();
+      
+      console.log(`Saving DOCX with templateId: ${templateId}`);
+      const docxKey = await saveDocxFile(new File([uploadArrayBuffer], uploadFile.name), templateId);
+      console.log(`DOCX saved to S3 with key: ${docxKey}`);
+
+      let htmlPreviewContent = '';
+      try {
+        const { value: html } = await mammoth.convertToHtml({ arrayBuffer: uploadArrayBuffer });
+        htmlPreviewContent = html;
+        console.log('Successfully converted DOCX to HTML for preview.');
+      } catch (err) {
+        console.error('Error converting DOCX to HTML:', err);
+        htmlPreviewContent = '<div class="text-red-500">Failed to convert DOCX to HTML.</div>';
+      }
+
+      const newTemplate: Template = {
+        id: templateId,
+        name: data.name,
+        description: data.description,
+        version: data.version,
+        compensationModel: data.type as TemplateType,
+        content: '', // Not used for DOCX templates
+        metadata: {
+          createdAt: now,
+          updatedAt: now,
+          createdBy: 'system', // Replace with actual user later
+          lastModifiedBy: 'system',
+        },
+        placeholders: uploadPlaceholders,
+        docxTemplate: docxKey, // This is the S3 key
+        clauseIds: [],
+        htmlPreviewContent,
+        contractYear: data.contractYear,
+        tags: [],
+        clauses: [],
+        versionHistory: [],
+      };
+      
+      console.log('Dispatching addTemplate with new template:', newTemplate);
+      dispatch(addTemplate(newTemplate));
+      
+      console.log('Resetting form and navigating...');
+      setUploadModalOpen(false);
+      setUploadFile(null);
+      setUploadPlaceholders([]);
+      setUploadArrayBuffer(null);
+      navigate(`/map-fields/${templateId}`);
+      console.log('Submission process complete.');
+    } catch (error) {
+      console.error('An error occurred during template submission:', error);
+      alert(`An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   const handleCloseUploadModal = () => {
@@ -189,9 +217,10 @@ export default function TemplateManager() {
   const handleDeleteAllTemplates = async () => {
     if (window.confirm('Are you sure you want to delete ALL templates? This cannot be undone.')) {
       dispatch(clearTemplates());
-      await localforage.clear(); // Clear all keys from localforage, including files/blobs
-      alert('All templates and files have been deleted.');
-      window.location.reload();
+      // The slice will handle S3 deletion if you build that logic.
+      // For now, we just clear the local state. A more robust solution
+      // would be a `clearAllTemplatesFromS3` thunk.
+      alert('All templates have been cleared from the view. Implement S3 cleanup as needed.');
     }
   };
 

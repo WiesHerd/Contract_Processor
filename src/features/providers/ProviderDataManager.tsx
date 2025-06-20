@@ -1,17 +1,24 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Trash2, Upload, Maximize2, Minimize2, Download } from 'lucide-react';
-import { clearProviders, addProvidersFromCSV, setUploadedColumns, selectProviders, selectProvidersLoading } from './providersSlice';
+import { clearProviders, fetchProviders, uploadProviders, clearAllProviders } from '@/store/slices/providerSlice';
+import { selectProviders, selectProvidersLoading, selectProvidersError } from '@/store/slices/providerSlice';
 import ProviderManager from './ProviderManager';
 import Papa from 'papaparse';
 import { mapCsvRowToProviderFields } from './ProviderManager';
 import { PageHeader } from '@/components/PageHeader';
+import { toast } from 'sonner';
+import type { Provider } from '@/types/provider';
+import type { CreateProviderInput } from '@/API';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 const REQUIRED_COLUMNS = [
   'Provider Name', 'Provider Type', 'Specialty', 'FTE', 'BaseSalary', 'StartDate', 'ContractTerm',
   'PTODays', 'HolidayDays', 'CMEDays', 'CMEAmount', 'SigningBonus', 'RelocationBonus', 'QualityBonus',
-  'OrganizationName', 'OriginalAgreementDate', 'Hourly Wage', 'Subspecialty', 'Years of Experience', 'Compensation Type', 'ConversionFactor', 'Administrative FTE', 'Administrative Role'
+  'OrganizationName'
 ];
 
 const SAMPLE_ROWS = [
@@ -19,23 +26,21 @@ const SAMPLE_ROWS = [
   ['Sarah Russell','Physician','Anesthesiology','0.65','273671.84','3/1/2024','3','20','8','5','3000','10000','7500','Summit Medical Group','1/15/2024','202.42','General Anesthesiology','28','New Hire Guarantee','58.4','','0.1','None']
 ];
 
-function downloadTemplate() {
-  const csvContent = [REQUIRED_COLUMNS, ...SAMPLE_ROWS]
-    .map(row => row.map(val => (val === undefined ? '' : val)).join(','))
-    .join('\r\n');
-  const blob = new Blob([csvContent], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
+const downloadTemplate = () => {
+  const template = REQUIRED_COLUMNS.join(',') + '\n';
+  const blob = new Blob([template], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'provider-template.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+  window.URL.revokeObjectURL(url);
+};
 
 export default function ProviderDataManager() {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSticky, setIsSticky] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
@@ -43,43 +48,34 @@ export default function ProviderDataManager() {
   const [showValidationModal, setShowValidationModal] = useState(false);
   const providers = useSelector(selectProviders);
   const loading = useSelector(selectProvidersLoading);
-  const topScrollRef = useRef<HTMLDivElement>(null);
+  const error = useSelector(selectProvidersError);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync scroll positions between top and bottom scrollbars
+  // Load providers from DynamoDB on component mount
   useEffect(() => {
-    const top = topScrollRef.current;
-    const table = tableScrollRef.current;
-    if (!top || !table) return;
-    const handleTopScroll = () => {
-      table.scrollLeft = top.scrollLeft;
-    };
-    const handleTableScroll = () => {
-      top.scrollLeft = table.scrollLeft;
-    };
-    top.addEventListener('scroll', handleTopScroll);
-    table.addEventListener('scroll', handleTableScroll);
-    return () => {
-      top.removeEventListener('scroll', handleTopScroll);
-      table.removeEventListener('scroll', handleTableScroll);
-    };
-  }, []);
+    dispatch(fetchProviders());
+  }, [dispatch]);
 
-  // CSV upload handler with validation
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // Show error toast if there's an error
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+    }
+  }, [error]);
+
+  // CSV upload handler with validation and AWS persistence
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    dispatch(setUploadedColumns([]));
 
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results: Papa.ParseResult<Record<string, string>>) => {
+      complete: async (results: Papa.ParseResult<Record<string, string>>) => {
         const cols = results.meta.fields || [];
-        dispatch(setUploadedColumns(cols));
         const errors: any[] = [];
+        
         // 1. Check for missing required columns
         const missingColumns = REQUIRED_COLUMNS.filter(col => !cols.includes(col));
         if (missingColumns.length > 0) {
@@ -90,6 +86,7 @@ export default function ProviderDataManager() {
           setShowValidationModal(true);
           return;
         }
+
         // 2. Proceed to row validation if all columns present
         const mappedData = results.data.map(mapCsvRowToProviderFields);
         mappedData.forEach((row, i) => {
@@ -111,163 +108,200 @@ export default function ProviderDataManager() {
             }
           });
         });
+
         if (errors.length > 0) {
           setValidationErrors(errors);
           setShowValidationModal(true);
         } else {
-          dispatch(addProvidersFromCSV(mappedData));
+          try {
+            // Convert to CreateProviderInput format
+            const providersToCreate: CreateProviderInput[] = mappedData.map(row => ({
+              id: crypto.randomUUID(),
+              name: row['Provider Name'],
+              specialty: row['Specialty'],
+              fte: parseFloat(row['FTE']),
+              baseSalary: parseFloat(row['BaseSalary']),
+              startDate: row['StartDate'],
+              contractTerm: row['ContractTerm'],
+              providerType: row['Provider Type'],
+              subspecialty: row['Subspecialty'],
+              administrativeFte: row['Administrative FTE'] ? parseFloat(row['Administrative FTE']) : undefined,
+              administrativeRole: row['Administrative Role'],
+              yearsExperience: row['Years of Experience'] ? parseInt(row['Years of Experience']) : undefined,
+              hourlyWage: row['Hourly Wage'] ? parseFloat(row['Hourly Wage']) : undefined,
+              originalAgreementDate: row['OriginalAgreementDate'],
+              organizationName: row['OrganizationName'],
+              ptoDays: row['PTODays'] ? parseInt(row['PTODays']) : undefined,
+              holidayDays: row['HolidayDays'] ? parseInt(row['HolidayDays']) : undefined,
+              cmeDays: row['CMEDays'] ? parseInt(row['CMEDays']) : undefined,
+              cmeAmount: row['CMEAmount'] ? parseFloat(row['CMEAmount']) : undefined,
+              signingBonus: row['SigningBonus'] ? parseFloat(row['SigningBonus']) : undefined,
+              educationBonus: row['EducationBonus'] ? parseFloat(row['EducationBonus']) : undefined,
+              qualityBonus: row['QualityBonus'] ? parseFloat(row['QualityBonus']) : undefined,
+              compensationType: row['CompensationType'],
+              conversionFactor: row['ConversionFactor'] ? parseFloat(row['ConversionFactor']) : undefined,
+              wRVUTarget: row['wRVUTarget'] ? parseFloat(row['wRVUTarget']) : undefined
+            }));
+
+            // Save to DynamoDB using Redux thunk
+            await dispatch(uploadProviders(providersToCreate)).unwrap();
+            toast.success('Providers uploaded successfully');
+            dispatch(fetchProviders());
+          } catch (error) {
+            console.error('Failed to save providers:', error);
+            toast.error('Failed to save providers to database');
+          }
         }
       },
       error: (error) => {
         console.error('Failed to parse file:', error);
-        alert('Failed to parse file. Please upload a valid CSV.');
+        toast.error('Failed to parse file. Please upload a valid CSV.');
       },
     });
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [dispatch]);
 
+  // Handle clear table with DynamoDB sync
+  const handleClearTable = async () => {
+    try {
+      await dispatch(clearAllProviders()).unwrap();
+      toast.success('Provider data cleared successfully');
+    } catch (error) {
+      console.error('Failed to clear providers:', error);
+      toast.error('Failed to clear provider data');
+    }
+    setShowConfirm(false);
+  };
+
   return (
-    <div className={`max-w-7xl mx-auto px-4 py-8 space-y-6 ${fullscreen ? 'fixed inset-0 z-50 bg-white p-8 overflow-auto' : ''}`}>
-      <PageHeader
-        title="Provider Data Manager"
-        description="Upload, map, and manage provider contract data. Easily import CSVs, configure field mapping, and generate contracts in bulk or individually. Use the controls on the right to upload data, clear the table, or adjust table display options."
-        rightContent={
-          <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto justify-end">
-            <Button
-              variant="outline"
-              className="flex items-center"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
-            >
-              <Upload className="mr-2 h-4 w-4" />
-              {loading ? 'Processing...' : 'Upload CSV'}
-            </Button>
-            <Button variant="secondary" className="flex items-center" onClick={downloadTemplate}>
-              <Download className="mr-2 h-4 w-4" />
-              Download CSV Template
-            </Button>
-            <input
-              ref={fileInputRef}
-              id="provider-csv-upload"
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-            <Button
-              variant="destructive"
-              className="flex items-center"
-              onClick={() => setShowConfirm(true)}
-              disabled={providers.length === 0 || loading}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Clear Table
-            </Button>
-            <label className="flex items-center gap-2 ml-4 text-sm font-medium cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isSticky}
-                onChange={e => setIsSticky(e.target.checked)}
-                className="accent-blue-600"
-              />
-              Sticky Name Column
-            </label>
-            <Button
-              variant="ghost"
-              className="ml-2"
-              onClick={() => setFullscreen(f => !f)}
-              title={fullscreen ? 'Exit Fullscreen' : 'Fullscreen Table'}
-            >
-              {fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
-            </Button>
-          </div>
-        }
-      />
-      {/* Table card only: no duplicate title, no upload button */}
-      <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-0">
-        {/* Remove title and description here, only keep stats and table */}
-        <div className="flex justify-between items-center mb-2 px-4 pt-4">
-          <span className="text-sm text-gray-500">
-            {providers.length > 0
-              ? `${providers.length} providers loaded`
-              : 'No provider data loaded'}
-          </span>
-        </div>
-        {/* Top horizontal scrollbar synced with table */}
-        <div
-          ref={topScrollRef}
-          className="overflow-x-auto border-t border-l border-r rounded-t-lg mb-0"
-          style={{ maxWidth: '100vw' }}
-        >
-          <div style={{ minWidth: 1200, height: 1 }} />
-        </div>
-        {/* Table section with border and synced scroll */}
-        <div
-          ref={tableScrollRef}
-          className="overflow-x-auto border rounded-b-lg w-full max-w-none min-h-[60vh]"
-          style={{ maxWidth: '100vw' }}
-        >
-          <ProviderManager isSticky={isSticky} />
-        </div>
-      </div>
-      {showConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center">
-            <p className="mb-4 text-lg font-semibold text-red-600">
-              Are you sure you want to clear all provider data?
+    <div className={`min-h-screen bg-gray-50/50 ${fullscreen ? 'fixed inset-0 z-50 p-8 overflow-auto' : 'p-4 sm:p-6 lg:p-8'}`}>
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold text-gray-900">Provider Data Manager</h1>
+            <p className="text-sm text-gray-600">
+              Upload, map, and manage provider contract data. Easily import CSVs, configure field mapping, and generate contracts in
+              bulk or individually.
             </p>
-            <div className="flex gap-4">
-              <Button variant="outline" onClick={() => setShowConfirm(false)}>
-                Cancel
+          </div>
+          <div className="flex-shrink-0">
+            <div className="flex items-center justify-end gap-2">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                className="hidden"
+                ref={fileInputRef}
+                disabled={loading}
+              />
+              <Button
+                variant="outline"
+                className="bg-white"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload CSV
               </Button>
               <Button
-                variant="destructive"
-                onClick={() => {
-                  dispatch(clearProviders());
-                  setShowConfirm(false);
-                }}
+                variant="outline"
+                className="bg-white"
+                onClick={downloadTemplate}
+                disabled={loading}
               >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Yes, Clear All
+                <Download className="w-4 h-4 mr-2" />
+                Download CSV Template
               </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-700">{providers.length} providers loaded</p>
+            <div className="flex items-center gap-4">
+                <Button
+                    variant="destructive"
+                    onClick={() => setShowConfirm(true)}
+                    disabled={loading || providers.length === 0}
+                    >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear Table
+                </Button>
+                <div className="flex items-center gap-2">
+                    <Checkbox id="sticky-name" checked={isSticky} onCheckedChange={() => setIsSticky(!isSticky)} />
+                    <Label htmlFor="sticky-name" className="text-sm font-medium">Sticky Name Column</Label>
+                </div>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setFullscreen(!fullscreen)}
+                    disabled={loading}
+                    >
+                    {fullscreen ? (
+                        <Minimize2 className="w-4 h-4" />
+                    ) : (
+                        <Maximize2 className="w-4 h-4" />
+                    )}
+                </Button>
+            </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <ProviderManager
+            providers={providers}
+            loading={loading}
+            isSticky={isSticky}
+            tableScrollRef={tableScrollRef}
+          />
+        </div>
+      </div>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg p-6 shadow-xl">
+            <h3 className="text-lg font-bold">Are you sure?</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              This will permanently delete all provider data. This action cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowConfirm(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleClearTable}>Confirm</Button>
             </div>
           </div>
         </div>
       )}
-      {/* Validation Modal */}
       {showValidationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center max-w-2xl w-full">
-            <p className="mb-4 text-lg font-semibold text-red-600">
-              Provider Data Validation Errors
-            </p>
-            <div className="overflow-auto max-h-96 w-full">
-              <table className="min-w-full text-xs border">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1">Row</th>
-                    <th className="border px-2 py-1">Field</th>
-                    <th className="border px-2 py-1">Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {validationErrors.map((err, idx) => (
-                    <tr key={idx}>
-                      <td className="border px-2 py-1">{err.row}</td>
-                      <td className="border px-2 py-1">{err.field}</td>
-                      <td className="border px-2 py-1 text-red-600">{err.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex gap-4 mt-6">
-              <Button variant="outline" onClick={() => setShowValidationModal(false)}>
-                Close
-              </Button>
-            </div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+              <div className="bg-white rounded-lg p-6 shadow-xl max-w-2xl w-full">
+                  <h3 className="text-lg font-bold text-red-600">Validation Errors</h3>
+                  <p className="mt-2 text-sm text-gray-600">
+                      The uploaded CSV has the following errors. Please correct them and try again.
+                  </p>
+                  <div className="mt-4 max-h-60 overflow-y-auto">
+                      <table className="w-full text-sm text-left">
+                          <thead className="bg-gray-50">
+                              <tr>
+                                  <th className="px-4 py-2">Row</th>
+                                  <th className="px-4 py-2">Field</th>
+                                  <th className="px-4 py-2">Message</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {validationErrors.map((err, i) => (
+                                  <tr key={i} className="border-b">
+                                      <td className="px-4 py-2">{err.row}</td>
+                                      <td className="px-4 py-2 font-mono">{err.field}</td>
+                                      <td className="px-4 py-2">{err.message}</td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                      <Button variant="outline" onClick={() => setShowValidationModal(false)}>Close</Button>
+                  </div>
+              </div>
           </div>
-        </div>
       )}
     </div>
   );
