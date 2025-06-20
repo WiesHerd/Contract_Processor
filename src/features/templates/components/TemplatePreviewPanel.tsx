@@ -8,23 +8,49 @@ import Select from 'react-select';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { FieldMapping } from '@/features/templates/mappingsSlice';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, BorderStyle, WidthType, AlignmentType } from 'docx';
+import { getDocxFile } from '@/utils/docxStorage';
 import { addAuditLog } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
+import { Provider } from '@/types/provider';
 
 // IMPORTANT: Add this to your public/index.html
 // <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
 
-// Sample provider data for preview
-const sampleData = {
-  ProviderName: 'Dr. Jordan Smith',
-  Credentials: 'MD',
-  BaseSalary: '$250,000',
-  StartDate: 'July 1, 2025',
-  ContractTerm: '3',
-  PTODays: '20',
-  HolidayDays: '10',
-  wRVUTarget: '5,500',
-  ConversionFactor: '$52.00',
+// A more complete sample provider for robust previewing
+const sampleData: Provider = {
+  id: 'sample-provider-id',
+  employeeId: '007',
+  name: 'Dr. Jordan Smith',
+  providerType: 'Physician',
+  specialty: 'Cardiology',
+  subspecialty: 'Interventional Cardiology',
+  fte: 1.0,
+  administrativeFte: 0,
+  administrativeRole: '',
+  yearsExperience: 10,
+  hourlyWage: 0,
+  baseSalary: 250000,
+  originalAgreementDate: '2024-01-01',
+  organizationName: 'General Hospital',
+  startDate: '2025-07-01',
+  contractTerm: "3",
+  ptoDays: 20,
+  holidayDays: 10,
+  cmeDays: 5,
+  cmeAmount: 5000,
+  signingBonus: 20000,
+  educationBonus: 0,
+  qualityBonus: 15000,
+  compensationType: 'PRODUCTIVITY',
+  conversionFactor: 52.00,
+  wRVUTarget: 5500,
+  compensationYear: "2025",
+  credentials: 'MD, FACC',
+  compensationModel: 'PRODUCTIVITY',
+  templateTag: 'PRODUCTIVITY_V1',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  fteBreakdown: [{ activity: 'Clinical', percentage: 100 }],
 };
 
 interface TemplatePreviewPanelProps {
@@ -233,7 +259,7 @@ async function convertHtmlToDocx(html: string): Promise<Blob> {
 
 const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId, providerData }) => {
   const template: Template | undefined = useSelector((state: any) => state.templates.templates.find((t: Template) => t.id === templateId));
-  const providers = useSelector((state: any) => state.providers.providers);
+  const providers = useSelector((state: any) => state.provider.providers);
   const mappings = useSelector((state: any) => state.mappings.mappings);
   const dispatch = useDispatch();
   // State for selected provider and editor modal
@@ -248,64 +274,39 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
   // Get mapping for this template
   const mapping: FieldMapping[] | undefined = mappings?.[templateId]?.mappings;
   // Merge placeholders using mergeTemplateWithData for proper formatting and mapping
-  const { content: merged, warnings } = useMemo(() => {
-    if (!template || !selectedProvider) return { content: html, warnings: [] };
+  const { content: mergedHtml, warnings: unresolvedPlaceholders } = useMemo(() => {
+    if (!template) return { content: '', warnings: [] };
     return mergeTemplateWithData(template, selectedProvider, html, mapping);
   }, [template, selectedProvider, html, mapping]);
 
-  // Download as DOCX handler using html-docx-js
-  const handleDownload = () => {
-    try {
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <title>Contract</title>
-          </head>
-          <body style="font-family:Calibri,Arial,sans-serif; font-size:11pt;">
-            ${merged}
-          </body>
-        </html>
-      `;
-      let providerName = selectedProvider?.ProviderName || selectedProvider?.name || 'Provider';
-      providerName = providerName.replace(/[^a-zA-Z0-9]/g, '');
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      const dateStr = `${yyyy}-${mm}-${dd}`;
-      // @ts-ignore
-      const docxBlob = window.htmlDocx.asBlob(htmlContent);
-      const fileName = `ScheduleA_${providerName}_${dateStr}.docx`;
-      const url = URL.createObjectURL(docxBlob);
-      saveAs(docxBlob, fileName);
-      // Audit log for preview download
-      dispatch(addAuditLog({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        user: '-',
-        providers: [providerName],
-        template: template?.name || 'Unknown',
-        outputType: 'DOCX',
-        status: 'success' as const,
-        downloadUrl: url,
-      }));
-    } catch (error) {
-      console.error('Error generating DOCX:', error);
-      alert('Failed to generate DOCX. Please try again.');
-      // Audit log for failure
-      dispatch(addAuditLog({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        user: '-',
-        providers: [selectedProvider?.ProviderName || selectedProvider?.name || 'Provider'],
-        template: template?.name || 'Unknown',
-        outputType: 'DOCX',
-        status: 'failed' as const,
-        downloadUrl: undefined,
-      }));
+  const handleDownload = async () => {
+    if (!template) return;
+
+    // Use the S3 download logic
+    if (template.docxTemplate) {
+      // docxTemplate is the key, e.g., "templates/TEMPLATE_ID/FILENAME.docx"
+      // We need to extract the fileName part.
+      const fileName = template.docxTemplate.split('/').pop();
+      if (!fileName) {
+        alert('Could not determine the file name from the S3 key.');
+        return;
+      }
+      const file = await getDocxFile(template.id, fileName);
+      if (file) {
+        saveAs(file, `${template.name}.docx`);
+      } else {
+        alert('Could not download the template file from S3.');
+      }
+      return;
     }
+
+    // Fallback for non-S3/older templates
+    const blob = await convertHtmlToDocx(mergedHtml);
+    saveAs(blob, `${template.name}.docx`);
+  };
+  
+  const handleSaveEditedHtml = (editedHtml: string) => {
+    // Logic to save edited HTML
   };
 
   if (!template) {
@@ -344,11 +345,11 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
       </div>
       <div className="bg-white rounded shadow p-6 overflow-auto font-serif leading-relaxed text-gray-900 max-h-[70vh] border relative">
         {/* Render merged HTML */}
-        <div dangerouslySetInnerHTML={{ __html: merged }} />
+        <div dangerouslySetInnerHTML={{ __html: mergedHtml }} />
       </div>
-      {warnings && warnings.length > 0 && (
+      {unresolvedPlaceholders && unresolvedPlaceholders.length > 0 && (
         <div className="mt-4 text-sm text-red-600">
-          <strong>Unresolved placeholders:</strong> {warnings.join(', ')}
+          <strong>Unresolved placeholders:</strong> {unresolvedPlaceholders.join(', ')}
         </div>
       )}
       {/* HTML Editor Modal */}

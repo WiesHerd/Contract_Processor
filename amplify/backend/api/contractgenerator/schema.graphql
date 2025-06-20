@@ -12,12 +12,43 @@ type Template @model @auth(rules: [{ allow: public }]) {
 
 type Provider @model @auth(rules: [{ allow: public }]) {
   id: ID!
+  employeeId: String
   name: String!
+  providerType: String
   specialty: String
+  subspecialty: String
   fte: Float
+  administrativeFte: Float
+  administrativeRole: String
+  yearsExperience: Int
+  hourlyWage: Float
   baseSalary: Float
+  originalAgreementDate: AWSDate
+  organizationName: String
   startDate: AWSDate
   contractTerm: String
+  ptoDays: Int
+  holidayDays: Int
+  cmeDays: Int
+  cmeAmount: Float
+  signingBonus: Float
+  educationBonus: Float
+  qualityBonus: Float
+  compensationType: String
+  conversionFactor: Float
+  wRVUTarget: Float
+  compensationYear: String
+  credentials: String
+  compensationModel: String
+  fteBreakdown: [FTEBreakdownComponent]
+  templateTag: String
+  createdAt: AWSDateTime
+  updatedAt: AWSDateTime
+}
+
+type FTEBreakdownComponent {
+  activity: String!
+  percentage: Float!
 }
 
 type Mapping @model @auth(rules: [{ allow: public }]) {

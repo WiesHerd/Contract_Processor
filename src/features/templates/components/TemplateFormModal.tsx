@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useDispatch } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
-import { X, Loader2 } from 'lucide-react';
+import { Template } from '@/types/template';
+import { CompensationModel } from '@/types/provider';
+import { newTemplateSchema } from '../schemas';
 import { addTemplate, updateTemplate } from '../templatesSlice';
-import { NewTemplateFormData, newTemplateSchema } from '../schemas';
-import { Template, TemplateType } from '@/types/template';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface TemplateFormModalProps {
   isOpen: boolean;
@@ -14,7 +21,16 @@ interface TemplateFormModalProps {
   template?: Template;
 }
 
-const templateTypes: TemplateType[] = ['BASE', 'PRODUCTIVITY', 'HYBRID', 'HOSPITALIST'];
+interface NewTemplateFormData {
+  name: string;
+  version: string;
+  compensationModel: CompensationModel;
+  placeholders: string[];
+  clauseIds: string[];
+  docxTemplate: string;
+}
+
+const templateTypes: CompensationModel[] = ['BASE', 'PRODUCTIVITY', 'HYBRID', 'HOSPITALIST', 'LEADERSHIP'];
 
 export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormModalProps) {
   const dispatch = useDispatch();
@@ -32,10 +48,13 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
   } = useForm<NewTemplateFormData>({
     resolver: zodResolver(newTemplateSchema),
     defaultValues: template
-      ? { 
-          ...template, 
+      ? {
+          name: template.name,
+          version: template.version,
           compensationModel: template.compensationModel,
-          docxTemplate: typeof template.docxTemplate === 'string' ? template.docxTemplate : ''
+          placeholders: template.placeholders,
+          clauseIds: template.clauseIds,
+          docxTemplate: template.docxTemplate || '',
         }
       : {
           placeholders: [],
@@ -44,19 +63,18 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
         },
   });
 
-  // Reset form when template changes
   React.useEffect(() => {
     if (template) {
-      reset({ 
-        ...template, 
+      reset({
+        name: template.name,
+        version: template.version,
         compensationModel: template.compensationModel,
-        docxTemplate: typeof template.docxTemplate === 'string' ? template.docxTemplate : ''
+        placeholders: template.placeholders,
+        clauseIds: template.clauseIds,
+        docxTemplate: template.docxTemplate || '',
       });
     }
   }, [template, reset]);
-
-  const placeholders = watch('placeholders');
-  const clauseIds = watch('clauseIds');
 
   const onSubmit = async (data: NewTemplateFormData) => {
     try {
@@ -67,16 +85,11 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
         dispatch(updateTemplate({
           ...template,
           ...data,
-          compensationModel: data.compensationModel,
           metadata: {
-            createdAt: new Date().toISOString(),
+            ...template.metadata,
             updatedAt: new Date().toISOString(),
-            createdBy: 'system',
             lastModifiedBy: 'system',
           },
-          tags: [],
-          clauses: [],
-          versionHistory: [],
         }));
       } else {
         const now = new Date().toISOString();
@@ -84,15 +97,15 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
           addTemplate({
             id: uuidv4(),
             ...data,
-            compensationModel: data.compensationModel,
+            description: '',
+            tags: [],
+            clauses: [],
             metadata: {
               createdAt: now,
               updatedAt: now,
               createdBy: 'system',
               lastModifiedBy: 'system',
             },
-            tags: [],
-            clauses: [],
             versionHistory: [],
           })
         );
@@ -108,214 +121,78 @@ export function TemplateFormModal({ isOpen, onClose, template }: TemplateFormMod
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold">
-            {isEditMode ? 'Edit Template' : 'Create New Template'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-            disabled={isSubmitting}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={() => onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isEditMode ? 'Edit Template' : 'Create New Template'}</DialogTitle>
+        </DialogHeader>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-600">
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Template Name */}
           <div>
-            <label className="block text-sm font-medium mb-1">Template Name</label>
-            <input
+            <Label htmlFor="name">Template Name</Label>
+            <Input
+              id="name"
               {...register('name')}
-              className="w-full p-2 border rounded-md"
               placeholder="Enter template name"
               disabled={isSubmitting}
             />
             {errors.name && (
-              <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
+              <p className="text-sm text-red-500 mt-1">{errors.name.message}</p>
             )}
           </div>
 
-          {/* Version */}
           <div>
-            <label className="block text-sm font-medium mb-1">Version</label>
-            <input
+            <Label htmlFor="version">Version</Label>
+            <Input
+              id="version"
               {...register('version')}
-              className="w-full p-2 border rounded-md"
-              placeholder="e.g., 2025.1"
+              placeholder="e.g., 1.0.0"
               disabled={isSubmitting}
             />
             {errors.version && (
-              <p className="text-red-500 text-sm mt-1">{errors.version.message}</p>
+              <p className="text-sm text-red-500 mt-1">{errors.version.message}</p>
             )}
           </div>
 
-          {/* Compensation Model */}
           <div>
-            <label className="block text-sm font-medium mb-1">Compensation Model</label>
-            <select
-              {...register('compensationModel')}
-              className="w-full p-2 border rounded-md"
-              disabled={isSubmitting}
+            <Label htmlFor="compensationModel">Compensation Model</Label>
+            <Select
+              value={watch('compensationModel')}
+              onValueChange={(value: CompensationModel) => setValue('compensationModel', value)}
             >
-              <option value="">Select compensation model</option>
-              {templateTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select compensation model" />
+              </SelectTrigger>
+              <SelectContent>
+                {templateTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {errors.compensationModel && (
-              <p className="text-red-500 text-sm mt-1">{errors.compensationModel.message}</p>
+              <p className="text-sm text-red-500 mt-1">{errors.compensationModel.message}</p>
             )}
           </div>
 
-          {/* Placeholders */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Placeholders</label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                className="flex-1 p-2 border rounded-md"
-                placeholder="Add placeholder (e.g., ProviderName)"
-                disabled={isSubmitting}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const input = e.target as HTMLInputElement;
-                    const value = input.value.trim();
-                    if (value && !placeholders.includes(value)) {
-                      setValue('placeholders', [...placeholders, value]);
-                      input.value = '';
-                    }
-                  }
-                }}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {placeholders.map((placeholder) => (
-                <span
-                  key={placeholder}
-                  className="inline-flex items-center px-2 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
-                >
-                  {placeholder}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setValue(
-                        'placeholders',
-                        placeholders.filter((p) => p !== placeholder)
-                      )
-                    }
-                    className="ml-1 text-blue-600 hover:text-blue-800"
-                    disabled={isSubmitting}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </span>
-              ))}
-            </div>
-            {errors.placeholders && (
-              <p className="text-red-500 text-sm mt-1">
-                {errors.placeholders.message}
-              </p>
-            )}
-          </div>
-
-          {/* Clause IDs */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Clause IDs</label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                className="flex-1 p-2 border rounded-md"
-                placeholder="Add clause ID"
-                disabled={isSubmitting}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const input = e.target as HTMLInputElement;
-                    const value = input.value.trim();
-                    if (value && !clauseIds.includes(value)) {
-                      setValue('clauseIds', [...clauseIds, value]);
-                      input.value = '';
-                    }
-                  }
-                }}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {clauseIds.map((id) => (
-                <span
-                  key={id}
-                  className="inline-flex items-center px-2 py-1 rounded-full text-sm bg-gray-100 text-gray-800"
-                >
-                  {id}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setValue(
-                        'clauseIds',
-                        clauseIds.filter((c) => c !== id)
-                      )
-                    }
-                    className="ml-1 text-gray-600 hover:text-gray-800"
-                    disabled={isSubmitting}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Docx Template */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Docx Template File
-            </label>
-            <input
-              {...register('docxTemplate')}
-              className="w-full p-2 border rounded-md"
-              placeholder="Enter template filename"
-              disabled={isSubmitting}
-            />
-            {errors.docxTemplate && (
-              <p className="text-red-500 text-sm mt-1">
-                {errors.docxTemplate.message}
-              </p>
-            )}
-          </div>
-
-          {/* Submit Button */}
-          <div className="flex justify-end gap-2 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border rounded-md hover:bg-gray-50"
-              disabled={isSubmitting}
-            >
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
-              disabled={isSubmitting}
-            >
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditMode ? 'Save Changes' : 'Create Template'}
-            </button>
-          </div>
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 } 

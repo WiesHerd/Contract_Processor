@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { fetchAuthSession, signIn as amplifySignIn, signOut as amplifySignOut, signUp as amplifySignUp, confirmSignUp as amplifyConfirmSignUp, getCurrentUser, AuthUser } from 'aws-amplify/auth';
+import { getUserAdminStatus } from '../config/admin';
 
 interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isAdmin: boolean;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   signUp: (username: string, password: string, email: string) => Promise<void>;
@@ -16,6 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     checkUser();
@@ -25,8 +28,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const currentUser = await getCurrentUser();
       setUser(currentUser);
+      
+      // Check admin status
+      const adminStatus = getUserAdminStatus(currentUser);
+      setIsAdmin(adminStatus);
+      
+      // Debug logging
+      console.log('=== Admin Access Debug ===');
+      console.log('Current user:', currentUser);
+      console.log('User username:', currentUser.username);
+      console.log('Admin status:', adminStatus);
+      console.log('========================');
     } catch (error) {
       setUser(null);
+      setIsAdmin(false);
     } finally {
       setIsLoading(false);
     }
@@ -37,6 +52,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await amplifySignIn({ username, password });
       const currentUser = await getCurrentUser();
       setUser(currentUser);
+      
+      const adminStatus = getUserAdminStatus(currentUser);
+      setIsAdmin(adminStatus);
     } catch (error) {
       console.error('Error signing in:', error);
       throw error;
@@ -47,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await amplifySignOut();
       setUser(null);
+      setIsAdmin(false);
     } catch (error) {
       console.error('Error signing out:', error);
       throw error;
@@ -83,6 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     isAuthenticated: !!user,
     isLoading,
+    isAdmin,
     signIn,
     signOut,
     signUp,

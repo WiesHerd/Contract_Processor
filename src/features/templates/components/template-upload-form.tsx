@@ -10,54 +10,73 @@ import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { CompensationModel } from '../../../types/provider';
+import { v4 as uuidv4 } from 'uuid';
 
 export const TemplateUploadForm: React.FC = () => {
   const dispatch = useDispatch();
-  const [error, setLocalError] = useState<string | null>(null);
-  const [metadata, setMetadata] = useState({
+  const [error, setError] = useState<string | null>(null);
+  const [metadata, setMetadata] = useState<{
+    name: string;
+    description: string;
+    version: string;
+    compensationModel: CompensationModel;
+  }>({
     name: '',
     description: '',
-    version: '1.0.0',
-    compensationModel: 'BASE' as CompensationModel,
-    tags: [] as string[],
+    version: '',
+    compensationModel: 'BASE',
   });
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-
-    dispatch(setLoading(true));
-    setLocalError(null);
-
-    try {
-      const text = await file.text();
-      const template: Template = {
-        id: crypto.randomUUID(),
-        ...metadata,
-        clauses: [],
-        placeholders: [],
-        clauseIds: [],
-        metadata: {
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          createdBy: 'system',
-          lastModifiedBy: 'system',
-        },
-      };
-
-      // Validate the template
-      const validationResult = TemplateSchema.safeParse(template);
-      if (!validationResult.success) {
-        throw new Error('Invalid template data: ' + validationResult.error.message);
-      }
-
-      dispatch(addTemplate(template));
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Failed to parse template');
-      dispatch(setError(err instanceof Error ? err.message : 'Failed to parse template'));
-    } finally {
-      dispatch(setLoading(false));
+    if (acceptedFiles.length === 0) {
+      setError('Please upload a valid template file');
+      return;
     }
+
+    const file = acceptedFiles[0];
+    const reader = new FileReader();
+
+    reader.onload = async () => {
+      try {
+        const content = reader.result as string;
+        const placeholders = Array.from(content.matchAll(/{{([^}]+)}}/g))
+          .map(match => match[1])
+          .filter((value, index, self) => self.indexOf(value) === index);
+
+        const now = new Date().toISOString();
+        const template: Template = {
+          id: uuidv4(),
+          name: metadata.name,
+          description: metadata.description,
+          version: metadata.version,
+          compensationModel: metadata.compensationModel,
+          tags: [],
+          clauses: [],
+          metadata: {
+            createdAt: now,
+            updatedAt: now,
+            createdBy: 'system',
+            lastModifiedBy: 'system',
+          },
+          docxTemplate: content,
+          placeholders,
+          clauseIds: [],
+          versionHistory: [],
+        };
+
+        dispatch(addTemplate(template));
+        setMetadata({
+          name: '',
+          description: '',
+          version: '',
+          compensationModel: 'BASE',
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to process template');
+      }
+    };
+
+    reader.readAsText(file);
   }, [dispatch, metadata]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -65,7 +84,7 @@ export const TemplateUploadForm: React.FC = () => {
     accept: {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
-    multiple: false,
+    maxFiles: 1,
   });
 
   return (
@@ -123,19 +142,16 @@ export const TemplateUploadForm: React.FC = () => {
 
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-          ${isDragActive ? 'border-primary bg-primary/5' : 'border-gray-300 hover:border-primary'}`}
+        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+          isDragActive ? 'border-primary bg-primary/10' : 'border-gray-300 hover:border-primary'
+        }`}
       >
         <input {...getInputProps()} />
         <Upload className="mx-auto h-12 w-12 text-gray-400" />
         <p className="mt-2 text-sm text-gray-600">
-          {isDragActive
-            ? 'Drop the template file here'
-            : 'Drag and drop a template file here, or click to select'}
+          {isDragActive ? 'Drop the file here' : 'Drag and drop a template file, or click to select'}
         </p>
-        <p className="mt-1 text-xs text-gray-500">
-          Only DOCX files are supported
-        </p>
+        <p className="text-xs text-gray-500 mt-1">Only .docx files are supported</p>
       </div>
 
       {error && (

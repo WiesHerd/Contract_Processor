@@ -1,6 +1,5 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import templatesReducer from '@/features/templates/templatesSlice';
-import providersReducer from '@/features/providers/providersSlice';
 import mappingsReducer from '@/features/templates/mappingsSlice';
 import generatorReducer from '@/features/generator/generatorSlice';
 import clauseReducer from './slices/clauseSlice';
@@ -9,7 +8,6 @@ import providerReducer from './slices/providerSlice';
 
 const rootReducer = combineReducers({
   templates: templatesReducer,
-  providers: providersReducer,
   mappings: mappingsReducer,
   generator: generatorReducer,
   clauses: clauseReducer,
@@ -27,7 +25,7 @@ export const store = configureStore({
         // Ignore these field paths in all actions
         ignoredActionPaths: ['payload.file'],
         // Ignore these paths in the state
-        ignoredPaths: ['providers.providers'],
+        ignoredPaths: ['provider.providers'],
       },
     }),
 });

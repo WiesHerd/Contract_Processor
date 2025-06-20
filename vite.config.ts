@@ -5,7 +5,21 @@ import path from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   base: '/',
-  plugins: [react()],
+  plugins: [
+    react({
+      jsxRuntime: 'automatic',
+      jsxImportSource: 'react',
+      babel: {
+        plugins: [
+          ['@babel/plugin-transform-react-jsx', { runtime: 'automatic' }]
+        ],
+        presets: [
+          ['@babel/preset-react', { runtime: 'automatic' }],
+          ['@babel/preset-typescript', { isTSX: true, allExtensions: true }]
+        ]
+      }
+    })
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -20,5 +34,5 @@ export default defineConfig({
         manualChunks: undefined,
       },
     },
-  },
+  }
 }) 
