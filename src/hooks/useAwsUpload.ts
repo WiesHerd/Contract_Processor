@@ -10,9 +10,9 @@ import {
   compressFile,
   checkS3Health
 } from '@/utils/s3Storage';
-import { awsTemplates, awsProviders, awsMappings, checkAWSHealth } from '@/utils/awsServices';
+import { awsTemplates, awsProviders, awsMappings, awsBulkOperations, checkAWSHealth } from '@/utils/awsServices';
 import { addAuditLog } from '@/store/slices/auditSlice';
-import { Template } from '@/types/template';
+import { Template, TemplateType } from '@/types/template';
 import { Provider } from '@/types/provider';
 
 interface UploadProgress {
@@ -127,8 +127,8 @@ export function useAwsUpload(): UseAwsUploadReturn {
         name: template.name,
         description: template.description,
         version: template.version,
-        s3Key: template.docxTemplate,
-        type: template.compensationModel,
+        s3Key: template.docxTemplate || '',
+        type: template.compensationModel as TemplateType,
         contractYear: new Date().getFullYear().toString(),
       });
 
@@ -152,7 +152,23 @@ export function useAwsUpload(): UseAwsUploadReturn {
         progress: { loaded: fileToUpload.size, total: fileToUpload.size, percentage: 100 }
       }));
 
-      return savedTemplate;
+      // Convert the saved template back to the local Template type
+      const localTemplate: Template = {
+        id: savedTemplate?.id || template.id,
+        name: savedTemplate?.name || template.name,
+        description: savedTemplate?.description || template.description,
+        version: savedTemplate?.version || template.version,
+        compensationModel: (savedTemplate?.type as any) || template.compensationModel,
+        tags: template.tags,
+        clauses: template.clauses,
+        metadata: template.metadata,
+        docxTemplate: savedTemplate?.s3Key || template.docxTemplate,
+        placeholders: template.placeholders,
+        clauseIds: template.clauseIds,
+        versionHistory: template.versionHistory,
+      };
+
+      return localTemplate;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Upload failed';
       setUploadState(prev => ({ 
@@ -254,7 +270,7 @@ export function useAwsUpload(): UseAwsUploadReturn {
         );
 
         const successful = batchResults
-          .filter((result): result is PromiseFulfilledResult<Provider | null> => 
+          .filter((result): result is PromiseFulfilledResult<any> => 
             result.status === 'fulfilled' && result.value !== null
           )
           .map(result => result.value!);
@@ -273,7 +289,7 @@ export function useAwsUpload(): UseAwsUploadReturn {
           providers: successfulProviders.map(p => p.id),
           template: 'bulk_upload',
           outputType: 'provider_upload',
-          status: successfulProviders.length === providers.length ? 'success' : 'partial_success',
+          status: successfulProviders.length === providers.length ? 'success' : 'failed',
         }));
       }
 

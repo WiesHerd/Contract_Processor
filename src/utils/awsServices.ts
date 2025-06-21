@@ -16,6 +16,7 @@ import {
   UpdateAuditLogInput,
   DeleteAuditLogInput,
   Template,
+  TemplateType,
   Provider,
   Mapping,
   Clause,
@@ -58,7 +59,7 @@ import {
 
 // Direct DynamoDB client for advanced operations
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, BatchWriteCommand, ScanCommand, ScanCommandInput, ScanCommandOutput, BatchWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { Provider as LocalProvider } from '../types/provider';
 
 const client = generateClient();
@@ -242,6 +243,26 @@ export const awsTemplates = {
         throw error;
       }
     });
+  },
+
+  async updateTemplate(id: string, template: Partial<Omit<Template, 'id'>>): Promise<Template> {
+    const input: UpdateTemplateInput = { id };
+    if (template.name) input.name = template.name;
+    if (template.description) input.description = template.description;
+    if (template.version) input.version = template.version;
+    if ('s3Key' in template && template.s3Key) input.s3Key = template.s3Key;
+    if ('type' in template && template.type) input.type = template.type as TemplateType;
+    
+    try {
+      const response = await client.graphql({
+        query: updateTemplate,
+        variables: { input }
+      });
+      return response.data?.updateTemplate as Template;
+    } catch (error) {
+      console.error('Error updating template:', error);
+      throw error;
+    }
   }
 };
 
@@ -307,23 +328,33 @@ export const awsProviders = {
     });
   },
 
-  async list(limit?: number, nextToken?: string): Promise<ListProvidersQuery['listProviders']> {
-    return withRetry(async () => {
+  async list(): Promise<Provider[]> {
+    const allProviders: Provider[] = [];
+    let nextToken: string | null | undefined = null;
+
+    do {
       try {
-        const result = await client.graphql({
+        const result: any = await client.graphql({
           query: listProviders,
-          variables: { limit, nextToken },
-          selectionSet: providerSelectionSet,
+          variables: { limit: 1000, nextToken },
         });
-        return result.data?.listProviders || null;
+        
+        const providerData = result.data?.listProviders;
+        if (providerData?.items) {
+          allProviders.push(...providerData.items.filter(Boolean));
+        }
+        nextToken = providerData?.nextToken;
       } catch (error) {
         console.error('Error listing providers:', error);
-        throw error;
+        // On error, break the loop and return what we have so far
+        break;
       }
-    });
+    } while (nextToken);
+
+    return allProviders;
   },
 
-  // Direct DynamoDB operations for bulk operations
+  // Direct DynamoDB operations for advanced use cases
   async batchCreate(providers: CreateProviderInput[]): Promise<Provider[]> {
     return withRetry(async () => {
       try {
@@ -344,6 +375,60 @@ export const awsProviders = {
         throw error;
       }
     });
+  },
+
+  async deleteAllProviders(onProgress?: (progress: { deleted: number; total: number }) => void): Promise<void> {
+    const tableName = import.meta.env.VITE_DYNAMODB_PROVIDER_TABLE as string;
+    if (!tableName) {
+      throw new Error("Provider table name is not configured in environment variables.");
+    }
+
+    // 1. Scan the table to get all item keys and count them.
+    let lastEvaluatedKey: Record<string, any> | undefined;
+    const allItems: Record<string, any>[] = [];
+    do {
+      const scanParams: ScanCommandInput = {
+        TableName: tableName,
+        ProjectionExpression: "id", // Only fetch the primary key
+        ExclusiveStartKey: lastEvaluatedKey,
+      };
+      const command = new ScanCommand(scanParams);
+      const scanResult: ScanCommandOutput = await docClient.send(command);
+      if (scanResult.Items) {
+        allItems.push(...scanResult.Items);
+      }
+      lastEvaluatedKey = scanResult.LastEvaluatedKey;
+    } while (lastEvaluatedKey);
+
+    const total = allItems.length;
+    if (total === 0) {
+      onProgress?.({ deleted: 0, total: 0 });
+      return; // Nothing to delete
+    }
+
+    // 2. Batch delete all items
+    const batchSize = 25; // DynamoDB BatchWriteItem limit
+    let deletedCount = 0;
+    onProgress?.({ deleted: 0, total });
+
+    for (let i = 0; i < allItems.length; i += batchSize) {
+      const batch = allItems.slice(i, i + batchSize);
+      const deleteRequests = batch.map(item => ({
+        DeleteRequest: {
+          Key: { id: item.id },
+        },
+      }));
+
+      const batchWriteParams: BatchWriteCommandInput = {
+        RequestItems: {
+          [tableName]: deleteRequests,
+        },
+      };
+      const command = new BatchWriteCommand(batchWriteParams);
+      await docClient.send(command);
+      deletedCount += batch.length;
+      onProgress?.({ deleted: deletedCount, total: total });
+    }
   }
 };
 
@@ -624,43 +709,107 @@ export const awsAuditLogs = {
 
 // Bulk Operations
 export const awsBulkOperations = {
-  async createProviders(providers: CreateProviderInput[]): Promise<Provider[]> {
-    const results = await Promise.allSettled(
-      providers.map(provider => awsProviders.create(provider))
-    );
-    
-    const successful = results
-      .filter((result): result is PromiseFulfilledResult<Provider | null> => 
-        result.status === 'fulfilled' && result.value !== null
-      )
-      .map(result => result.value!);
-    
-    const failed = results
-      .filter((result): result is PromiseRejectedResult => 
-        result.status === 'rejected'
-      );
-    
-    if (failed.length > 0) {
-      console.warn(`${failed.length} providers failed to create:`, failed);
+  async countAllProviders(): Promise<number> {
+    const tableName = import.meta.env.VITE_DYNAMODB_PROVIDER_TABLE as string;
+    if (!tableName) {
+      throw new Error("Provider table name is not configured in environment variables.");
     }
-    
-    return successful;
+    const command = new ScanCommand({
+      TableName: tableName,
+      Select: "COUNT",
+    });
+    const result = await docClient.send(command);
+    return result.Count || 0;
   },
 
-  async deleteAllProviders(): Promise<void> {
-    try {
-      const providers = await awsProviders.list(1000);
-      if (providers?.items) {
-        await Promise.allSettled(
-          providers.items
-            .filter((provider): provider is Provider => provider !== null)
-            .map(provider => awsProviders.delete({ id: provider.id }))
-        );
-      }
-    } catch (error) {
-      console.error('Error deleting all providers:', error);
-      throw error;
+  async deleteAllProviders(onProgress?: (progress: { deleted: number; total: number }) => void): Promise<void> {
+    const tableName = import.meta.env.VITE_DYNAMODB_PROVIDER_TABLE as string;
+    if (!tableName) {
+      throw new Error("Provider table name is not configured in environment variables.");
     }
+
+    const total = await this.countAllProviders();
+    if (total === 0) {
+      onProgress?.({ deleted: 0, total: 0 });
+      return;
+    }
+
+    // 1. Scan the table to get all item keys
+    let lastEvaluatedKey: Record<string, any> | undefined;
+    const allItems: Record<string, any>[] = [];
+    do {
+      const scanParams: ScanCommandInput = {
+        TableName: tableName,
+        ProjectionExpression: "id", // Only fetch the primary key
+        ExclusiveStartKey: lastEvaluatedKey,
+      };
+      const command = new ScanCommand(scanParams);
+      const scanResult: ScanCommandOutput = await docClient.send(command);
+      if (scanResult.Items) {
+        allItems.push(...scanResult.Items);
+      }
+      lastEvaluatedKey = scanResult.LastEvaluatedKey;
+    } while (lastEvaluatedKey);
+
+    if (allItems.length === 0) {
+      onProgress?.({ deleted: 0, total: total });
+      return; // Nothing to delete
+    }
+
+    // 2. Batch delete all items
+    const batchSize = 25; // DynamoDB BatchWriteItem limit
+    let deletedCount = 0;
+    for (let i = 0; i < allItems.length; i += batchSize) {
+      const batch = allItems.slice(i, i + batchSize);
+      const deleteRequests = batch.map(item => ({
+        DeleteRequest: {
+          Key: { id: item.id },
+        },
+      }));
+
+      const batchWriteParams: BatchWriteCommandInput = {
+        RequestItems: {
+          [tableName]: deleteRequests,
+        },
+      };
+      const command = new BatchWriteCommand(batchWriteParams);
+      await docClient.send(command);
+      deletedCount += batch.length;
+      onProgress?.({ deleted: deletedCount, total: total });
+    }
+  },
+
+  async createProviders(
+    providers: CreateProviderInput[],
+    onProgress?: (progress: { uploaded: number; total: number }) => void
+  ): Promise<Provider[]> {
+    const total = providers.length;
+    if (total === 0) {
+      onProgress?.({ uploaded: 0, total: 0 });
+      return [];
+    }
+
+    const successfulProviders: Provider[] = [];
+    const batchSize = 25;
+    let uploadedCount = 0;
+    onProgress?.({ uploaded: 0, total });
+
+    for (let i = 0; i < total; i += batchSize) {
+      const batch = providers.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(p => awsProviders.create(p))
+      );
+
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          successfulProviders.push(result.value);
+        }
+      });
+
+      uploadedCount += batch.length;
+      onProgress?.({ uploaded: uploadedCount, total });
+    }
+    return successfulProviders;
   },
 
   // Batch create mappings for a template-provider combination
