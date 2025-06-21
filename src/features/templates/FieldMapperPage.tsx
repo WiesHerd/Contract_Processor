@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft, Loader2 } from 'lucide-react';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { CommandDialog } from '@/components/ui/command';
 import localforage from 'localforage';
@@ -16,8 +16,12 @@ import { updateMapping, setMapping, FieldMapping, TemplateMapping } from './mapp
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { awsMappings } from '@/utils/awsServices';
+import { addAuditLog } from '@/store/slices/auditSlice';
+import { v4 as uuidv4 } from 'uuid';
+import { Mapping as AWSMapping } from '@/API';
 
-interface Mapping {
+interface LocalMapping {
   placeholder: string;
   mappedColumn?: string;
   notes?: string;
@@ -66,6 +70,9 @@ export default function FieldMapperPage() {
   // Get providers and derive columns directly from live data, not localforage
   const providers = useSelector((state: RootState) => state.provider.providers);
   const [columns, setColumns] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (providers && providers.length > 0) {
@@ -89,6 +96,55 @@ export default function FieldMapperPage() {
   const [search, setSearch] = useState('');
   const [autoMapActive, setAutoMapActive] = useState(false);
   const [filter, setFilter] = useState<'all' | 'mapped' | 'unmapped'>('all');
+
+  // Load existing mappings from AWS when component mounts
+  useEffect(() => {
+    const loadMappingsFromAWS = async () => {
+      if (!templateId || !providers.length) return;
+      
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // Get mappings for the first provider (as a template-level mapping)
+        const existingMappings = await awsMappings.getMappingsByTemplateAndProvider(
+          templateId,
+          providers[0].id
+        );
+        
+        if (existingMappings.length > 0) {
+          // Convert AWS mappings to our format
+          const awsMappingData: FieldMapping[] = template?.placeholders.map((ph: string) => {
+            const awsMapping = existingMappings.find(m => m.field === ph);
+            return {
+              placeholder: ph,
+              mappedColumn: awsMapping?.value || undefined,
+              notes: '',
+            };
+          }) || [];
+          
+          setMappingState(awsMappingData);
+          
+          // Also update Redux
+          dispatch(setMapping({
+            templateId,
+            mapping: {
+              templateId,
+              mappings: awsMappingData,
+              lastModified: new Date().toISOString(),
+            },
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to load mappings from AWS:', err);
+        setError('Failed to load existing mappings from AWS');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadMappingsFromAWS();
+  }, [templateId, providers, template, dispatch]);
 
   // Hydrate columns from localforage if empty
   /*
@@ -159,19 +215,63 @@ export default function FieldMapperPage() {
     setTimeout(() => setAutoMapActive(false), 1200);
   };
 
-  const handleSave = () => {
-    const mappingData: TemplateMapping = {
-      templateId: templateId as string,
-      mappings: mapping,
-      lastModified: new Date().toISOString(),
-    };
+  const handleSave = async () => {
+    if (!templateId || !providers.length) return;
     
-    dispatch(setMapping({
-      templateId: templateId as string,
-      mapping: mappingData,
-    }));
+    setIsSaving(true);
+    setError(null);
     
-    navigate('/templates');
+    try {
+      // Save to Redux first
+      const mappingData: TemplateMapping = {
+        templateId: templateId as string,
+        mappings: mapping,
+        lastModified: new Date().toISOString(),
+      };
+      
+      dispatch(setMapping({
+        templateId: templateId as string,
+        mapping: mappingData,
+      }));
+      
+      // Save to AWS - create individual mapping records for each placeholder
+      const provider = providers[0]; // Use first provider as template-level mapping
+      const mappingPromises = mapping
+        .filter(m => m.mappedColumn) // Only save mapped fields
+        .map(m => awsMappings.create({
+          templateID: templateId,
+          providerID: provider.id,
+          field: m.placeholder,
+          value: m.mappedColumn!,
+        }));
+      
+      const mappingResults = await Promise.allSettled(mappingPromises);
+      const successfulMappings = mappingResults
+        .filter(result => result.status === 'fulfilled' && result.value !== null)
+        .map(result => (result as PromiseFulfilledResult<AWSMapping | null>).value!);
+      
+      if (successfulMappings.length > 0) {
+        // Log audit entry
+        dispatch(addAuditLog({
+          id: uuidv4(),
+          timestamp: new Date().toISOString(),
+          user: 'system',
+          providers: [provider.id],
+          template: template?.name || 'Unknown',
+          outputType: 'template_mapping_saved',
+          status: 'success',
+        }));
+        
+        navigate('/templates');
+      } else {
+        throw new Error('Failed to save any mappings to AWS');
+      }
+    } catch (err) {
+      console.error('Failed to save mappings:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save mappings');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Update mapping in Redux when it changes
@@ -204,6 +304,16 @@ export default function FieldMapperPage() {
     );
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
+        <h2 className="text-xl font-semibold text-gray-700 mb-2">Loading Mappings</h2>
+        <p className="text-gray-500">Loading existing field mappings from AWS...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 space-y-6">
       <div className="flex items-center justify-between border-b pb-4 mb-4 bg-white px-4 pt-6 rounded-lg shadow-sm">
@@ -223,6 +333,7 @@ export default function FieldMapperPage() {
             variant="outline" 
             onClick={handleAutoMap}
             className={`gap-2 ${autoMapActive ? 'bg-blue-50 text-blue-700' : ''}`}
+            disabled={isSaving}
           >
             <Sparkles className="h-4 w-4" /> 
             Auto-Map
@@ -231,11 +342,29 @@ export default function FieldMapperPage() {
             variant="default"
             onClick={handleSave}
             className="gap-2"
+            disabled={isSaving || hasUnmapped}
           >
-            Save & Continue
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save & Continue'
+            )}
           </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-red-700">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="font-medium">Error:</span>
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-12 gap-6">
         {/* Left: Placeholders */}
