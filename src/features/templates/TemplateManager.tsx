@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Plus, Trash2, Edit, Eye } from 'lucide-react';
 import mammoth from 'mammoth';
-import { addTemplate, updateTemplate, deleteTemplate, setTemplates, clearTemplates, hydrateTemplates, hydrateTemplatesFromS3 } from './templatesSlice';
+import { addTemplate, updateTemplate, deleteTemplate, setTemplates, clearTemplates, hydrateTemplates, hydrateTemplatesFromS3, fetchTemplatesIfNeeded } from './templatesSlice';
 import { Template, TemplateType } from '@/types/template';
 import { RootState } from '@/store';
 import { useNavigate } from 'react-router-dom';
@@ -45,7 +45,7 @@ export default function TemplateManager() {
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
-    dispatch(hydrateTemplatesFromS3());
+    dispatch(fetchTemplatesIfNeeded());
   }, [dispatch]);
 
   const handleCreateTemplate = () => {

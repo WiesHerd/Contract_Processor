@@ -3,6 +3,7 @@ import type { Provider, ProviderState } from '../../types/provider';
 import { awsProviders } from '@/utils/awsServices';
 import { CreateProviderInput } from '@/API';
 import { RootState } from '../index';
+import { awsBulkOperations } from '@/utils/awsServices';
 
 // Selectors
 export const selectProviders = (state: RootState) => state.provider.providers;
@@ -11,33 +12,36 @@ export const selectProvidersError = (state: RootState) => state.provider.error;
 
 // Async thunks
 export const fetchProviders = createAsyncThunk(
-  'providers/fetchProviders',
+  'providers/fetchAll',
   async () => {
-    const result = await awsProviders.list();
-    return result?.items?.filter((item): item is NonNullable<typeof item> => item !== null) || [];
+    const response = await awsProviders.list();
+    return response;
   }
 );
 
 export const uploadProviders = createAsyncThunk(
-  'providers/uploadProviders',
-  async (providers: CreateProviderInput[]) => {
-    const result = await awsProviders.batchCreate(providers);
-    return result;
+  'providers/upload',
+  async (providers: CreateProviderInput[], { dispatch }) => {
+    const onProgress = ({ uploaded, total }: { uploaded: number, total: number }) => {
+      dispatch(providerSlice.actions.setUploadProgress({ progress: uploaded, total: total }));
+    };
+    await awsBulkOperations.createProviders(providers, onProgress);
+    return true;
   }
 );
 
 export const clearAllProviders = createAsyncThunk(
   'providers/clearAllProviders',
-  async () => {
-    const result = await awsProviders.list();
-    if (result?.items) {
-      await Promise.all(
-        result.items
-          .filter((provider): provider is NonNullable<typeof provider> => provider !== null)
-          .map(provider => awsProviders.delete({ id: provider.id }))
-      );
+  async (_, { dispatch, rejectWithValue }) => {
+    try {
+      const onProgress = ({ deleted, total }: { deleted: number, total: number }) => {
+        dispatch(providerSlice.actions.setClearProgress({ progress: deleted, total: total }));
+      };
+      await awsBulkOperations.deleteAllProviders(onProgress);
+      return true;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to clear providers');
     }
-    return true;
   }
 );
 
@@ -46,14 +50,22 @@ const initialState: ProviderState = {
   selectedProviders: [],
   error: null,
   loading: false,
+  loadingAction: null,
   lastSync: null,
   uploadedColumns: [],
+  clearProgress: undefined,
+  clearTotal: undefined,
+  uploadProgress: undefined,
+  uploadTotal: undefined,
 };
 
 const providerSlice = createSlice({
   name: 'provider',
   initialState,
   reducers: {
+    setProviders: (state, action: PayloadAction<Provider[]>) => {
+      state.providers = action.payload;
+    },
     setUploadedColumns: (state, action: PayloadAction<string[]>) => {
       state.uploadedColumns = action.payload;
     },
@@ -97,58 +109,88 @@ const providerSlice = createSlice({
       state.selectedProviders = [];
       state.lastSync = null;
     },
+    setClearProgress: (state, action: PayloadAction<{ progress: number; total: number }>) => {
+      state.clearProgress = action.payload.progress;
+      state.clearTotal = action.payload.total;
+    },
+    setUploadProgress: (state, action: PayloadAction<{ progress: number; total: number }>) => {
+      state.uploadProgress = action.payload.progress;
+      state.uploadTotal = action.payload.total;
+    },
   },
   extraReducers: (builder) => {
     // Fetch Providers
     builder.addCase(fetchProviders.pending, (state) => {
       state.loading = true;
+      state.loadingAction = 'fetching';
       state.error = null;
     });
     builder.addCase(fetchProviders.fulfilled, (state, action) => {
       return {
         ...state,
         loading: false,
+        loadingAction: null,
         providers: action.payload as Provider[],
         lastSync: new Date().toISOString(),
       };
     });
     builder.addCase(fetchProviders.rejected, (state, action) => {
       state.loading = false;
+      state.loadingAction = null;
       state.error = action.error.message || 'Failed to fetch providers';
     });
 
     // Upload Providers
     builder.addCase(uploadProviders.pending, (state) => {
       state.loading = true;
+      state.loadingAction = 'uploading';
       state.error = null;
+      state.uploadProgress = 0;
+      state.uploadTotal = 0;
     });
     builder.addCase(uploadProviders.fulfilled, (state) => {
       state.loading = false;
+      state.loadingAction = null;
+      state.uploadProgress = undefined;
+      state.uploadTotal = undefined;
     });
     builder.addCase(uploadProviders.rejected, (state, action) => {
       state.loading = false;
+      state.loadingAction = null;
       state.error = action.error.message || 'Failed to upload providers';
+      state.uploadProgress = undefined;
+      state.uploadTotal = undefined;
     });
 
     // Clear All Providers
     builder.addCase(clearAllProviders.pending, (state) => {
       state.loading = true;
+      state.loadingAction = 'clearing';
       state.error = null;
+      state.clearProgress = 0;
+      state.clearTotal = 0;
     });
     builder.addCase(clearAllProviders.fulfilled, (state) => {
       state.loading = false;
+      state.loadingAction = null;
       state.providers = [];
       state.selectedProviders = [];
       state.lastSync = new Date().toISOString();
+      state.clearProgress = undefined;
+      state.clearTotal = undefined;
     });
     builder.addCase(clearAllProviders.rejected, (state, action) => {
       state.loading = false;
+      state.loadingAction = null;
       state.error = action.error.message || 'Failed to clear providers';
+      state.clearProgress = undefined;
+      state.clearTotal = undefined;
     });
   },
 });
 
 export const {
+  setProviders,
   setUploadedColumns,
   addProvidersFromCSV,
   setError,
@@ -158,6 +200,8 @@ export const {
   updateProvider,
   removeProvider,
   clearProviders,
+  setClearProgress,
+  setUploadProgress,
 } = providerSlice.actions;
 
 export default providerSlice.reducer; 

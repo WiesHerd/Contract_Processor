@@ -15,6 +15,7 @@ import { useAwsUpload } from '@/hooks/useAwsUpload';
 import { awsMappings } from '@/utils/awsServices';
 import { addAuditLog } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface PlaceholderMappingUIProps {
   template: Template;
@@ -351,7 +352,7 @@ export function PlaceholderMappingUI({
             {uploadState.isUploading && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <LoadingSpinner size="sm" inline />
                   <span>Saving mappings...</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">

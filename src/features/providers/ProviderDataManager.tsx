@@ -14,6 +14,9 @@ import type { Provider } from '@/types/provider';
 import type { CreateProviderInput } from '@/API';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import ProgressModal from '@/components/ui/ProgressModal';
+import type { RootState } from '@/store';
 
 const REQUIRED_COLUMNS = [
   'Provider Name', 'Provider Type', 'Specialty', 'FTE', 'BaseSalary', 'StartDate', 'ContractTerm',
@@ -49,13 +52,36 @@ export default function ProviderDataManager() {
   const providers = useSelector(selectProviders);
   const loading = useSelector(selectProvidersLoading);
   const error = useSelector(selectProvidersError);
+  const lastSync = useSelector((state: RootState) => state.provider.lastSync);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { 
+    clearProgress, 
+    clearTotal, 
+    loadingAction,
+    uploadProgress,
+    uploadTotal
+  } = useSelector((state: RootState) => ({
+    clearProgress: state.provider.clearProgress,
+    clearTotal: state.provider.clearTotal,
+    loadingAction: state.provider.loadingAction,
+    uploadProgress: state.provider.uploadProgress,
+    uploadTotal: state.provider.uploadTotal,
+  }));
 
-  // Load providers from DynamoDB on component mount
+  // Load providers from DynamoDB on component mount if they are stale or not present
   useEffect(() => {
-    dispatch(fetchProviders());
-  }, [dispatch]);
+    const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+    const now = new Date().getTime();
+    const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
+    
+    // Fetch if:
+    // 1. There are no providers loaded.
+    // 2. The data is stale (older than 5 minutes).
+    if (providers.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS)) {
+      dispatch(fetchProviders());
+    }
+  }, [dispatch, providers.length, lastSync]);
 
   // Show error toast if there's an error
   useEffect(() => {
@@ -162,15 +188,9 @@ export default function ProviderDataManager() {
   }, [dispatch]);
 
   // Handle clear table with DynamoDB sync
-  const handleClearTable = async () => {
-    try {
-      await dispatch(clearAllProviders()).unwrap();
-      toast.success('Provider data cleared successfully');
-    } catch (error) {
-      console.error('Failed to clear providers:', error);
-      toast.error('Failed to clear provider data');
-    }
+  const handleClearTable = () => {
     setShowConfirm(false);
+    dispatch(clearAllProviders());
   };
 
   return (
@@ -256,20 +276,6 @@ export default function ProviderDataManager() {
         </div>
       </div>
 
-      {showConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 shadow-xl">
-            <h3 className="text-lg font-bold">Are you sure?</h3>
-            <p className="mt-2 text-sm text-gray-600">
-              This will permanently delete all provider data. This action cannot be undone.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowConfirm(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleClearTable}>Confirm</Button>
-            </div>
-          </div>
-        </div>
-      )}
       {showValidationModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
               <div className="bg-white rounded-lg p-6 shadow-xl max-w-2xl w-full">
@@ -302,6 +308,47 @@ export default function ProviderDataManager() {
                   </div>
               </div>
           </div>
+      )}
+
+      {loadingAction === 'clearing' && (
+        <ProgressModal
+          isOpen={true}
+          title="Clearing Provider Table"
+          message={
+            clearTotal && clearTotal > 0
+              ? `Deleting ${clearProgress || 0} of ${clearTotal} providers...`
+              : 'Preparing to delete providers...'
+          }
+          progress={clearTotal ? ((clearProgress || 0) / clearTotal) * 100 : 0}
+        />
+      )}
+
+      {loadingAction === 'uploading' && (
+        <ProgressModal
+          isOpen={true}
+          title="Uploading Providers"
+          message={
+            uploadTotal && uploadTotal > 0
+              ? `Uploading ${uploadProgress || 0} of ${uploadTotal} providers...`
+              : 'Preparing to upload providers...'
+          }
+          progress={uploadTotal ? ((uploadProgress || 0) / uploadTotal) * 100 : 0}
+        />
+      )}
+
+      {showConfirm && !loadingAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg p-8 shadow-xl w-full max-w-md flex flex-col items-center">
+            <h3 className="text-lg font-bold">Are you sure?</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              This will permanently delete all provider data. This action cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowConfirm(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleClearTable}>Confirm</Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

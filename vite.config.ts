@@ -25,6 +25,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    exclude: ['html-docx-js'],
+  },
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      host: 'localhost',
+      port: 5173,
+      protocol: 'ws'
+    }
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',

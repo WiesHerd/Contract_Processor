@@ -218,6 +218,63 @@ export const deleteProvider = /* GraphQL */ `mutation DeleteProvider(
   APITypes.DeleteProviderMutationVariables,
   APITypes.DeleteProviderMutation
 >;
+export const createTemplateMapping = /* GraphQL */ `mutation CreateTemplateMapping(
+  $input: CreateTemplateMappingInput!
+  $condition: ModelTemplateMappingConditionInput
+) {
+  createTemplateMapping(input: $input, condition: $condition) {
+    id
+    templateID
+    field
+    value
+    notes
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateTemplateMappingMutationVariables,
+  APITypes.CreateTemplateMappingMutation
+>;
+export const updateTemplateMapping = /* GraphQL */ `mutation UpdateTemplateMapping(
+  $input: UpdateTemplateMappingInput!
+  $condition: ModelTemplateMappingConditionInput
+) {
+  updateTemplateMapping(input: $input, condition: $condition) {
+    id
+    templateID
+    field
+    value
+    notes
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateTemplateMappingMutationVariables,
+  APITypes.UpdateTemplateMappingMutation
+>;
+export const deleteTemplateMapping = /* GraphQL */ `mutation DeleteTemplateMapping(
+  $input: DeleteTemplateMappingInput!
+  $condition: ModelTemplateMappingConditionInput
+) {
+  deleteTemplateMapping(input: $input, condition: $condition) {
+    id
+    templateID
+    field
+    value
+    notes
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteTemplateMappingMutationVariables,
+  APITypes.DeleteTemplateMappingMutation
+>;
 export const createMapping = /* GraphQL */ `mutation CreateMapping(
   $input: CreateMappingInput!
   $condition: ModelMappingConditionInput

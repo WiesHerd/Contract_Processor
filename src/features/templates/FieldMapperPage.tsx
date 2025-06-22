@@ -20,6 +20,7 @@ import { awsMappings } from '@/utils/awsServices';
 import { addAuditLog } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
 import { Mapping as AWSMapping } from '@/API';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface LocalMapping {
   placeholder: string;
@@ -234,37 +235,44 @@ export default function FieldMapperPage() {
         mapping: mappingData,
       }));
       
-      // Save to AWS - create individual mapping records for each placeholder
-      const provider = providers[0]; // Use first provider as template-level mapping
-      const mappingPromises = mapping
+      // Use the first provider as template-level mapping
+      const provider = providers[0];
+      
+      // Step 1: Delete existing mappings for this template-provider combination
+      await awsMappings.deleteMappingsByTemplateAndProvider(templateId, provider.id);
+      
+      // Step 2: Create new mappings using batch operation
+      const mappingsToCreate = mapping
         .filter(m => m.mappedColumn) // Only save mapped fields
-        .map(m => awsMappings.create({
+        .map(m => ({
           templateID: templateId,
           providerID: provider.id,
           field: m.placeholder,
           value: m.mappedColumn!,
         }));
       
-      const mappingResults = await Promise.allSettled(mappingPromises);
-      const successfulMappings = mappingResults
-        .filter(result => result.status === 'fulfilled' && result.value !== null)
-        .map(result => (result as PromiseFulfilledResult<AWSMapping | null>).value!);
-      
-      if (successfulMappings.length > 0) {
-        // Log audit entry
-        dispatch(addAuditLog({
-          id: uuidv4(),
-          timestamp: new Date().toISOString(),
-          user: 'system',
-          providers: [provider.id],
-          template: template?.name || 'Unknown',
-          outputType: 'template_mapping_saved',
-          status: 'success',
-        }));
+      if (mappingsToCreate.length > 0) {
+        const createdMappings = await awsMappings.batchCreate(mappingsToCreate);
         
-        navigate('/templates');
+        if (createdMappings.length > 0) {
+          // Log audit entry
+          dispatch(addAuditLog({
+            id: uuidv4(),
+            timestamp: new Date().toISOString(),
+            user: 'system',
+            providers: [provider.id],
+            template: template?.name || 'Unknown',
+            outputType: 'template_mapping_saved',
+            status: 'success',
+          }));
+          
+          navigate('/templates');
+        } else {
+          throw new Error('Failed to save mappings to AWS');
+        }
       } else {
-        throw new Error('Failed to save any mappings to AWS');
+        // No mappings to save, but that's okay - just navigate
+        navigate('/templates');
       }
     } catch (err) {
       console.error('Failed to save mappings:', err);
@@ -307,9 +315,11 @@ export default function FieldMapperPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
-        <h2 className="text-xl font-semibold text-gray-700 mb-2">Loading Mappings</h2>
-        <p className="text-gray-500">Loading existing field mappings from AWS...</p>
+        <LoadingSpinner 
+          size="md" 
+          message="Loading existing field mappings from AWS..." 
+          color="primary"
+        />
       </div>
     );
   }
@@ -346,8 +356,8 @@ export default function FieldMapperPage() {
           >
             {isSaving ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Saving...
+                <LoadingSpinner size="sm" inline />
+                <span>Saving...</span>
               </>
             ) : (
               'Save & Continue'

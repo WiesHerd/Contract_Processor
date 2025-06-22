@@ -1,19 +1,58 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '@/store';
+import { RootState, AppDispatch } from '@/store';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { fetchMappingsIfNeeded } from './mappingsSlice';
+import { fetchTemplatesIfNeeded } from './templatesSlice';
 
 export default function MappingListPage() {
-  const templates = useSelector((state: RootState) => state.templates.templates);
-  const mappings = useSelector((state: RootState) => state.mappings.mappings);
+  const { templates, status: templatesStatus, error: templatesError } = useSelector((state: RootState) => state.templates);
+  const { mappings, loading: mappingsLoading, error: mappingsError } = useSelector((state: RootState) => state.mappings);
   const navigate = useNavigate();
-  const dispatch = useDispatch();
+  const dispatch: AppDispatch = useDispatch();
 
+  // Load templates and mappings with caching
+  useEffect(() => {
+    dispatch(fetchTemplatesIfNeeded());
+  }, [dispatch]);
+
+  useEffect(() => {
+    dispatch(fetchMappingsIfNeeded());
+  }, [dispatch]);
+
+  const isLoading = templatesStatus === 'loading' || templatesStatus === 'idle' || mappingsLoading;
+  const error = templatesError || mappingsError;
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <LoadingSpinner 
+          size="lg" 
+          message="Loading Page Data..." 
+          color="primary"
+        />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen text-red-500">
+        <AlertTriangle className="h-16 w-16" />
+        <p className="mt-4 text-lg text-center">{error}</p>
+        <Button onClick={() => window.location.reload()} className="mt-4">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6 overflow-y-auto min-h-screen">
       <PageHeader
@@ -36,14 +75,14 @@ export default function MappingListPage() {
           <TableBody>
             {templates.map(template => {
               const templateMapping = mappings[template.id];
-              const mappedCount = templateMapping?.mappings.filter(m => m.mappedColumn).length || 0;
+              const mappedCount = templateMapping?.mappings?.filter(m => m.mappedColumn).length || 0;
               const totalCount = template.placeholders.length;
               const percent = totalCount === 0 ? 0 : Math.round((mappedCount / totalCount) * 100);
               const isComplete = mappedCount === totalCount && totalCount > 0;
               return (
                 <TableRow key={template.id} className="hover:bg-slate-50">
                   <TableCell className="font-semibold text-lg">{template.name}</TableCell>
-                  <TableCell>{template?.metadata?.updatedAt || ''}</TableCell>
+                  <TableCell>{templateMapping?.lastModified ? new Date(templateMapping.lastModified).toLocaleString() : (template as any)?.metadata?.updatedAt || ''}</TableCell>
                   <TableCell>{totalCount}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -69,7 +108,7 @@ export default function MappingListPage() {
                       className="px-6 py-2 rounded-lg shadow-md"
                       onClick={() => navigate(`/map-fields/${template.id}`)}
                     >
-                      {templateMapping ? 'Continue Mapping' : 'Start Mapping'}
+                      {isComplete || mappedCount > 0 ? 'Continue Mapping' : 'Start Mapping'}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -80,4 +119,4 @@ export default function MappingListPage() {
       </Card>
     </div>
   );
-} 
+}

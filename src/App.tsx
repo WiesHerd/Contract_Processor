@@ -7,13 +7,12 @@ import MappingListPage from './features/templates/MappingListPage';
 import FieldMapperPage from './features/templates/FieldMapperPage';
 import ProviderDataManager from './features/providers/ProviderDataManager';
 import ContractGenerator from './features/generator/ContractGenerator';
-import ClauseManager from './features/templates/ClauseManager';
+import ClauseManager from './features/clauses/ClauseManager';
 import AuditPage from './features/audit/AuditPage';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { Logo } from './components/Logo';
 import InstructionsPage from './components/InstructionsPage';
-import { AuthProvider } from './contexts/AuthContext';
-import { ProvidersPage } from './features/providers/pages/providers-page';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import SignIn from './features/auth/SignIn';
 import SignUp from './features/auth/SignUp';
 import VerifyEmail from './features/auth/VerifyEmail';
@@ -22,13 +21,31 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import AdminDashboard from './features/admin/AdminDashboard';
 import { Toaster } from 'sonner';
+import { useSessionTimeout } from './hooks/useSessionTimeout';
+import { SessionTimeoutModal } from './components/ui/SessionTimeoutModal';
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isWelcome = location.pathname === '/';
+  
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Error signing out: ', error);
+    } finally {
+      navigate('/signin');
+    }
+  };
+
+  const { isWarningModalOpen, countdown, handleStayLoggedIn } = useSessionTimeout(isAuthenticated ? handleSignOut : () => {});
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {!isWelcome && <TopNav />}
+      {!isWelcome && <TopNav onSignOut={handleSignOut} />}
       <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${!isWelcome ? 'pt-20' : ''}`}>
         {children}
       </main>
@@ -37,20 +54,21 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           © {new Date().getFullYear()} ContractEngine. All rights reserved.
         </div>
       </footer>
+      {isAuthenticated && (
+        <SessionTimeoutModal
+          isOpen={isWarningModalOpen}
+          countdown={countdown}
+          onStay={handleStayLoggedIn}
+          onSignOut={handleSignOut}
+        />
+      )}
     </div>
   );
 }
 
-function TopNav() {
+function TopNav({ onSignOut }: { onSignOut: () => void }) {
   const location = useLocation();
-  const navigate = useNavigate();
-  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-
-  const handleSignOut = async () => {
-    await signOut();
-    localStorage.removeItem('isAuthenticated');
-    navigate('/signin');
-  };
+  const { isAuthenticated } = useAuth();
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -89,7 +107,6 @@ function TopNav() {
     }
   ];
 
-  // Group navItems by group
   const groupedNav = navItems.reduce((acc, item) => {
     if (!acc[item.group]) acc[item.group] = [];
     acc[item.group].push(item);
@@ -110,7 +127,6 @@ function TopNav() {
               <div className="hidden sm:ml-6 sm:flex items-center space-x-4">
                 {groupOrder.map((group) => {
                   if (!groupedNav[group]) return null;
-                  // For the 'setup' group, add vertical lines only before the first and after the last item
                   if (group === 'setup') {
                     return (
                       <div key={group} className="flex items-center px-3 py-1">
@@ -132,7 +148,6 @@ function TopNav() {
                       </div>
                     );
                   }
-                  // Default for other groups
                   return (
                     <div key={group} className="flex items-center space-x-2 px-3 py-1">
                       {groupedNav[group].map((item) => (
@@ -164,7 +179,7 @@ function TopNav() {
               </Link>
             ) : (
               <button
-                onClick={handleSignOut}
+                onClick={onSignOut}
                 className="text-sm font-medium text-gray-600 hover:text-red-600 px-3 py-2 rounded-md border border-gray-100 hover:border-red-200 transition"
               >
                 Sign Out

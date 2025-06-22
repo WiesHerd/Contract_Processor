@@ -1,1 +1,3 @@
-declare module 'html-docx-js/dist/html-docx'; 
+declare var htmlDocx: {
+  asBlob: (html: string, options?: any) => Blob;
+}; 

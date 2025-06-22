@@ -1,3 +1,4 @@
+/// <reference types="html-docx-js" />
 import React, { useMemo, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Template } from '@/types/template';
@@ -7,8 +8,6 @@ import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
 import Select from 'react-select';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { FieldMapping } from '@/features/templates/mappingsSlice';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, BorderStyle, WidthType, AlignmentType } from 'docx';
-import { getDocxFile } from '@/utils/docxStorage';
 import { addAuditLog } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
 import { Provider } from '@/types/provider';
@@ -64,261 +63,68 @@ interface ProviderOption {
   label: string;
 }
 
-// Helper to merge placeholders with data, highlighting unresolved
-function mergePlaceholders(html: string, data: Record<string, string>): { merged: string; unresolved: string[] } {
-  const unresolved: string[] = [];
-  const merged = html.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-    if (data[key] !== undefined) {
-      return data[key];
-    } else {
-      unresolved.push(key);
-      // Highlight unresolved placeholders in red
-      return `<span style=\"color: #dc2626; background: #fee2e2;\">{{${key}}}</span>`;
-    }
-  });
-  return { merged, unresolved };
-}
-
-// Helper function to parse HTML and convert to docx elements
-function parseHtmlToDocxElements(html: string) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const elements: any[] = [];
-
-  function processNode(node: Node) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent?.trim();
-      if (text) {
-        elements.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text,
-                size: 24,
-              }),
-            ],
-          })
-        );
-      }
-      return;
-    }
-
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const element = node as HTMLElement;
-      
-      switch (element.tagName.toLowerCase()) {
-        case 'h1':
-          elements.push(
-            new Paragraph({
-              text: element.textContent || '',
-              heading: HeadingLevel.HEADING_1,
-              spacing: { after: 200 },
-            })
-          );
-          break;
-        case 'h2':
-          elements.push(
-            new Paragraph({
-              text: element.textContent || '',
-              heading: HeadingLevel.HEADING_2,
-              spacing: { after: 160 },
-            })
-          );
-          break;
-        case 'p':
-          elements.push(
-            new Paragraph({
-              text: element.textContent || '',
-              spacing: { after: 120 },
-            })
-          );
-          break;
-        case 'table':
-          const tableElement = element as HTMLTableElement;
-          const table = new Table({
-            width: {
-              size: 100,
-              type: WidthType.PERCENTAGE,
-            },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 1 },
-              bottom: { style: BorderStyle.SINGLE, size: 1 },
-              left: { style: BorderStyle.SINGLE, size: 1 },
-              right: { style: BorderStyle.SINGLE, size: 1 },
-              insideHorizontal: { style: BorderStyle.SINGLE, size: 1 },
-              insideVertical: { style: BorderStyle.SINGLE, size: 1 },
-            },
-            rows: Array.from(tableElement.rows).map(row => 
-              new TableRow({
-                children: Array.from(row.cells).map(cell =>
-                  new TableCell({
-                    children: [
-                      new Paragraph({
-                        text: cell.textContent || '',
-                        alignment: AlignmentType.CENTER,
-                      }),
-                    ],
-                  })
-                ),
-              })
-            ),
-          });
-          elements.push(table);
-          break;
-        default:
-          // Process child nodes for other elements
-          Array.from(element.childNodes).forEach(processNode);
-      }
-    }
-  }
-
-  // Process all nodes
-  Array.from(doc.body.childNodes).forEach(processNode);
-  return elements;
-}
-
-// Helper function to convert HTML to DOCX with proper formatting
-async function convertHtmlToDocx(html: string): Promise<Blob> {
-  try {
-    // Create a new document
-    const doc = new Document({
-      styles: {
-        paragraphStyles: [
-          {
-            id: 'Heading1',
-            name: 'Heading 1',
-            basedOn: 'Normal',
-            next: 'Normal',
-            quickFormat: true,
-            run: {
-              size: 28,
-              bold: true,
-              color: '000000',
-            },
-            paragraph: {
-              spacing: {
-                after: 120,
-              },
-            },
-          },
-          {
-            id: 'Heading2',
-            name: 'Heading 2',
-            basedOn: 'Normal',
-            next: 'Normal',
-            quickFormat: true,
-            run: {
-              size: 24,
-              bold: true,
-              color: '000000',
-            },
-            paragraph: {
-              spacing: {
-                after: 100,
-              },
-            },
-          },
-          {
-            id: 'Normal',
-            name: 'Normal',
-            run: {
-              size: 24,
-              color: '000000',
-            },
-            paragraph: {
-              spacing: {
-                line: 360,
-              },
-            },
-          },
-        ],
-      },
-      sections: [{
-        properties: {
-          page: {
-            margin: {
-              top: 1440,
-              right: 1440,
-              bottom: 1440,
-              left: 1440,
-            },
-          },
-        },
-        children: parseHtmlToDocxElements(html),
-      }],
-    });
-
-    // Generate the document
-    const buffer = await Packer.toBuffer(doc);
-    return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-  } catch (error) {
-    console.error('Error converting HTML to DOCX:', error);
-    throw error;
-  }
-}
-
 const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId, providerData }) => {
-  const template: Template | undefined = useSelector((state: any) => state.templates.templates.find((t: Template) => t.id === templateId));
-  const providers = useSelector((state: any) => state.provider.providers);
-  const mappings = useSelector((state: any) => state.mappings.mappings);
   const dispatch = useDispatch();
-  // State for selected provider and editor modal
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(providers[0]?.id || null);
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<Provider>(sampleData);
 
-  // Find the selected provider or use sampleData
-  const selectedProvider = providerData || providers.find((p: any) => p.id === selectedProviderId) || sampleData;
-
-  const html = template?.editedHtmlContent || template?.htmlPreviewContent || '';
-
-  // Get mapping for this template
-  const mapping: FieldMapping[] | undefined = mappings?.[templateId]?.mappings;
-  // Merge placeholders using mergeTemplateWithData for proper formatting and mapping
-  const { content: mergedHtml, warnings: unresolvedPlaceholders } = useMemo(() => {
+  const template = useSelector((state: any) =>
+    state.templates.templates.find((t: Template) => t.id === templateId)
+  );
+  const providers = useSelector((state: any) => state.provider.providers);
+  const providerOptions: ProviderOption[] = useMemo(() =>
+    providers.map((p: Provider) => ({ value: p.id, label: p.name })),
+    [providers]
+  );
+  const mappings = useSelector((state: any) => state.mappings.mappings);
+  const mapping: FieldMapping[] | undefined = template ? mappings?.[template.id]?.mappings : undefined;
+  
+  const { content: mergedHtml, warnings } = useMemo(() => {
     if (!template) return { content: '', warnings: [] };
+    const html = template.editedHtmlContent || template.htmlPreviewContent || '';
     return mergeTemplateWithData(template, selectedProvider, html, mapping);
-  }, [template, selectedProvider, html, mapping]);
+  }, [template, selectedProvider, mapping]);
+
+  const handleProviderChange = (option: ProviderOption | null) => {
+    const provider = providers.find((p: Provider) => p.id === option?.value);
+    if (provider) {
+      setSelectedProvider(provider);
+    }
+  };
 
   const handleDownload = async () => {
     if (!template) return;
+    try {
+      const htmlContent = `<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>${mergedHtml}</body></html>`;
+      const docxBlob = htmlDocx.asBlob(htmlContent);
+      const fileName = `${selectedProvider.name.replace(/\s+/g, '_')}_ScheduleA.docx`;
+      saveAs(docxBlob, fileName);
 
-    // Use the S3 download logic
-    if (template.docxTemplate) {
-      // docxTemplate is the key, e.g., "templates/TEMPLATE_ID/FILENAME.docx"
-      // We need to extract the fileName part.
-      const fileName = template.docxTemplate.split('/').pop();
-      if (!fileName) {
-        alert('Could not determine the file name from the S3 key.');
-        return;
-      }
-      const file = await getDocxFile(template.id, fileName);
-      if (file) {
-        saveAs(file, `${template.name}.docx`);
-      } else {
-        alert('Could not download the template file from S3.');
-      }
-      return;
+      dispatch(addAuditLog({
+        id: uuidv4(),
+        user: 'system',
+        template: template.name,
+        providers: [selectedProvider.id],
+        outputType: 'DOCX',
+        status: 'success',
+        timestamp: new Date().toISOString(),
+      }));
+    } catch (error) {
+      console.error("Error generating DOCX:", error);
     }
-
-    // Fallback for non-S3/older templates
-    const blob = await convertHtmlToDocx(mergedHtml);
-    saveAs(blob, `${template.name}.docx`);
   };
-  
+
   const handleSaveEditedHtml = (editedHtml: string) => {
-    // Logic to save edited HTML
+    // This should dispatch an action to update the template in Redux store
+    console.log("Saving edited HTML for template:", templateId, editedHtml);
   };
 
   if (!template) {
-    return <div className="text-red-500">Template not found.</div>;
+    return <div className="p-4 text-center text-gray-500">Select a template to see a preview.</div>;
   }
 
   // Prepare options for react-select
-  const providerOptions: ProviderOption[] = providers.map((p: any) => ({
-    value: p.id,
-    label: p.name || p.ProviderName || p.id,
-  }));
-  const selectedOption = providerOptions.find(opt => opt.value === selectedProviderId) || null;
+  const selectedOption = providerOptions.find(opt => opt.value === selectedProvider.id) || null;
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -331,7 +137,7 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
               <Select
                 options={providerOptions}
                 value={selectedOption}
-                onChange={option => setSelectedProviderId(option?.value || null)}
+                onChange={handleProviderChange}
                 isSearchable
                 placeholder="Search provider..."
               />
@@ -339,7 +145,7 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setEditorOpen(true)}>Edit HTML</Button>
+          <Button variant="outline" onClick={() => setIsEditorOpen(true)}>Edit HTML</Button>
           <Button onClick={handleDownload}>Download as Word</Button>
         </div>
       </div>
@@ -347,17 +153,17 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
         {/* Render merged HTML */}
         <div dangerouslySetInnerHTML={{ __html: mergedHtml }} />
       </div>
-      {unresolvedPlaceholders && unresolvedPlaceholders.length > 0 && (
+      {warnings && warnings.length > 0 && (
         <div className="mt-4 text-sm text-red-600">
-          <strong>Unresolved placeholders:</strong> {unresolvedPlaceholders.join(', ')}
+          {warnings.join(', ')}
         </div>
       )}
       {/* HTML Editor Modal */}
-      {editorOpen && (
+      {isEditorOpen && (
         <TemplateHtmlEditorModal
           templateId={templateId}
-          isOpen={editorOpen}
-          onClose={() => setEditorOpen(false)}
+          isOpen={isEditorOpen}
+          onClose={() => setIsEditorOpen(false)}
         />
       )}
     </div>

@@ -7,12 +7,14 @@ export interface TemplatesState {
   templates: Template[];
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
   error: string | null;
+  lastSync: string | null; // Add caching timestamp
 }
 
 const initialState: TemplatesState = {
   templates: [],
   status: 'idle',
   error: null,
+  lastSync: null,
 };
 
 // Async thunk to hydrate templates from S3
@@ -49,6 +51,30 @@ export const hydrateTemplates = createAsyncThunk(
     });
     return templates;
 });
+
+// Add a new thunk for conditional fetching with caching
+export const fetchTemplatesIfNeeded = createAsyncThunk(
+  'templates/fetchIfNeeded',
+  async (_, { getState, dispatch }) => {
+    const state = getState() as any;
+    const { templates, lastSync, status } = state.templates;
+    
+    const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+    const now = new Date().getTime();
+    const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
+    
+    // Fetch if:
+    // 1. Status is idle (no data loaded yet)
+    // 2. There are no templates loaded
+    // 3. The data is stale (older than 5 minutes)
+    if (status === 'idle' || templates.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS)) {
+      return dispatch(hydrateTemplatesFromS3());
+    }
+    
+    // Return existing data if cache is still valid
+    return { payload: templates };
+  }
+);
 
 export const addTemplate = createAsyncThunk(
   'templates/addTemplate',
@@ -97,6 +123,7 @@ const templatesSlice = createSlice({
     },
     clearTemplates: (state) => {
       state.templates = [];
+      state.lastSync = null;
     },
   },
   extraReducers: (builder) => {
@@ -104,6 +131,7 @@ const templatesSlice = createSlice({
       .addCase(hydrateTemplates.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.templates = action.payload;
+        state.lastSync = new Date().toISOString();
       })
       .addCase(hydrateTemplatesFromS3.pending, (state) => {
         state.status = 'loading';
@@ -111,14 +139,23 @@ const templatesSlice = createSlice({
       .addCase(hydrateTemplatesFromS3.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.templates = action.payload;
+        state.lastSync = new Date().toISOString();
       })
       .addCase(hydrateTemplatesFromS3.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload as string;
+      })
+      .addCase(fetchTemplatesIfNeeded.fulfilled, (state, action) => {
+        // Only update if we actually fetched new data
+        if (action.payload && Array.isArray(action.payload)) {
+          state.templates = action.payload;
+          state.lastSync = new Date().toISOString();
+        }
+        state.status = 'succeeded';
       });
   },
 });
 
-export const { updateTemplate, setTemplates, clearTemplates } = templatesSlice.actions;
+export const { updateTemplate, setTemplates, clearTemplates, addTemplateSync, deleteTemplateSync } = templatesSlice.actions;
 
 export default templatesSlice.reducer; 

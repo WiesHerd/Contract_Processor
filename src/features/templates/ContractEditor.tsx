@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { setClauses, addClause, updateClause, deleteClause, setLoading, setError } from '@/store/slices/clauseSlice';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Clause } from '@/types/clause';
 
 const ContractEditor: React.FC = () => {
@@ -59,7 +60,15 @@ const ContractEditor: React.FC = () => {
     dispatch(deleteClause(id));
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <LoadingSpinner 
+        size="md" 
+        message="Loading contract editor..." 
+        color="primary"
+      />
+    </div>
+  );
   if (error) return <div>Error: {error}</div>;
 
   return (

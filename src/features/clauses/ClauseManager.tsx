@@ -1,37 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/PageHeader';
 import { CLAUSES as SHARED_CLAUSES } from '@/features/clauses/clausesData';
 import { saveClause } from '@/utils/s3Storage';
 import { Clause } from '@/types/clause';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { fetchClausesIfNeeded, addClause, updateClause, deleteClause } from '@/store/slices/clauseSlice';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
-const initialClauses: Clause[] = SHARED_CLAUSES;
+const clauseCategories: Clause['category'][] = ['compensation', 'benefits', 'termination', 'restrictive', 'other'];
 
 function generateId() {
   return Math.random().toString(36).substr(2, 9);
 }
 
 export default function ClauseManager() {
-  const [clauses, setClauses] = useState<Clause[]>(initialClauses);
+  const dispatch: AppDispatch = useDispatch();
+  const { clauses, loading, error } = useSelector((state: RootState) => state.clauses);
   const [modalOpen, setModalOpen] = useState(false);
   const [editClause, setEditClause] = useState<Clause | null>(null);
-  const [form, setForm] = useState({ title: '', content: '' });
+  const [form, setForm] = useState<{ title: string; content: string; category: Clause['category'] }>({ title: '', content: '', category: 'other' });
+
+  // Load clauses with caching
+  useEffect(() => {
+    dispatch(fetchClausesIfNeeded());
+  }, [dispatch]);
+
+  // Fallback to static clauses if Redux state is empty and not loading
+  const displayClauses = clauses.length > 0 ? clauses : (!loading ? SHARED_CLAUSES : []);
 
   const openAddModal = () => {
     setEditClause(null);
-    setForm({ title: '', content: '' });
+    setForm({ title: '', content: '', category: 'other' });
     setModalOpen(true);
   };
 
   const openEditModal = (clause: Clause) => {
     setEditClause(clause);
-    setForm({ title: clause.title, content: clause.content });
+    setForm({ title: clause.title, content: clause.content, category: clause.category });
     setModalOpen(true);
   };
 
   const handleDelete = (id: string) => {
     if (window.confirm('Are you sure you want to delete this clause?')) {
-      setClauses(clauses.filter(c => c.id !== id));
+      dispatch(deleteClause(id));
     }
   };
 
@@ -43,17 +57,18 @@ export default function ClauseManager() {
         ...editClause,
         title: form.title,
         content: form.content,
+        category: form.category,
         updatedAt: now,
       };
       await saveClause(updatedClause);
-      setClauses(clauses.map(c => c.id === editClause.id ? updatedClause : c));
+      dispatch(updateClause(updatedClause));
     } else {
       const newClause: Clause = {
         id: generateId(),
         title: form.title,
         content: form.content,
         type: 'custom',
-        category: 'other',
+        category: form.category,
         tags: [],
         applicableProviderTypes: ['physician'],
         applicableCompensationModels: ['base'],
@@ -62,10 +77,33 @@ export default function ClauseManager() {
         version: '1.0.0',
       };
       await saveClause(newClause);
-      setClauses([...clauses, newClause]);
+      dispatch(addClause(newClause));
     }
     setModalOpen(false);
   };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <LoadingSpinner 
+          size="lg" 
+          message="Loading Clauses..." 
+          color="primary"
+        />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen text-red-500">
+        <p className="mt-4 text-lg text-center">{error}</p>
+        <Button onClick={() => dispatch(fetchClausesIfNeeded())} className="mt-4">
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
@@ -86,7 +124,7 @@ export default function ClauseManager() {
             </tr>
           </thead>
           <tbody>
-            {clauses.map(clause => (
+            {displayClauses.map(clause => (
               <tr key={clause.id} className="hover:bg-gray-50">
                 <td className="p-2 border-b font-medium text-gray-900">{clause.title}</td>
                 <td className="p-2 border-b text-gray-700">{clause.category}</td>
@@ -113,6 +151,24 @@ export default function ClauseManager() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium mb-1">Category</label>
+                <Select
+                  value={form.category}
+                  onValueChange={(value: Clause['category']) => setForm(f => ({ ...f, category: value }))}
+                >
+                  <SelectTrigger className="w-full border rounded px-3 py-2">
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clauseCategories.map(cat => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium mb-1">Content</label>
                 <textarea
                   className="w-full border rounded px-3 py-2 min-h-[100px]"
@@ -130,4 +186,4 @@ export default function ClauseManager() {
       )}
     </div>
   );
-} 
+}

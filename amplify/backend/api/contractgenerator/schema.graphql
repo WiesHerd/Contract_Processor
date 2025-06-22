@@ -51,6 +51,18 @@ type FTEBreakdownComponent {
   percentage: Float!
 }
 
+# Template-level field mappings (independent of providers)
+type TemplateMapping @model @auth(rules: [{ allow: public }]) {
+  id: ID!
+  templateID: ID! @index(name: "byTemplate", queryField: "templateMappingsByTemplateID")
+  field: String!
+  value: String
+  notes: String
+  createdAt: AWSDateTime
+  updatedAt: AWSDateTime
+}
+
+# Provider-specific field mappings (for custom overrides)
 type Mapping @model @auth(rules: [{ allow: public }]) {
   id: ID!
   templateID: ID! @index(name: "byTemplate", queryField: "mappingsByTemplateID") @index(name: "byTemplateAndProvider", queryField: "mappingsByTemplateAndProvider", sortKeyFields: ["providerID"])
@@ -84,5 +96,9 @@ input DeleteProviderInput {
 }
 
 input DeleteMappingInput {
+  id: ID!
+}
+
+input DeleteTemplateMappingInput {
   id: ID!
 }

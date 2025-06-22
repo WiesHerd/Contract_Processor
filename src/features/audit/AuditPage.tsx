@@ -1,13 +1,42 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '@/store';
-import { clearAuditLogs } from '@/store/slices/auditSlice';
+import { RootState, AppDispatch } from '@/store';
+import { clearAuditLogs, fetchAuditLogsIfNeeded } from '@/store/slices/auditSlice';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/PageHeader';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 export default function AuditPage() {
-  const logs = useSelector((state: RootState) => state.audit.logs);
-  const dispatch = useDispatch();
+  const { logs, loading, error } = useSelector((state: RootState) => state.audit);
+  const dispatch: AppDispatch = useDispatch();
+
+  // Load audit logs with caching
+  useEffect(() => {
+    dispatch(fetchAuditLogsIfNeeded());
+  }, [dispatch]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <LoadingSpinner 
+          size="lg" 
+          message="Loading Audit Logs..." 
+          color="primary"
+        />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen text-red-500">
+        <p className="mt-4 text-lg text-center">{error}</p>
+        <Button onClick={() => dispatch(fetchAuditLogsIfNeeded())} className="mt-4">
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">

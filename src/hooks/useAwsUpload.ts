@@ -340,23 +340,38 @@ export function useAwsUpload(): UseAwsUploadReturn {
         throw new Error('DynamoDB service is not available');
       }
 
-      // Create mappings
-      const mappingResults = await awsBulkOperations.createMappingsForTemplate(
-        templateId, 
-        providerId, 
-        mappings
-      );
-
-      const success = mappingResults.length === Object.keys(mappings).length;
-
-      setUploadState(prev => ({ 
-        ...prev, 
-        isUploading: false, 
-        success,
-        progress: { loaded: mappingResults.length, total: Object.keys(mappings).length, percentage: 100 }
+      // Step 1: Delete existing mappings for this template-provider combination
+      await awsMappings.deleteMappingsByTemplateAndProvider(templateId, providerId);
+      
+      // Step 2: Create new mappings using batch operation
+      const mappingsToCreate = Object.entries(mappings).map(([field, value]) => ({
+        templateID: templateId,
+        providerID: providerId,
+        field,
+        value,
       }));
 
-      return success;
+      if (mappingsToCreate.length > 0) {
+        const createdMappings = await awsMappings.batchCreate(mappingsToCreate);
+        const success = createdMappings.length === Object.keys(mappings).length;
+
+        setUploadState(prev => ({ 
+          ...prev, 
+          isUploading: false, 
+          success,
+          progress: { loaded: createdMappings.length, total: Object.keys(mappings).length, percentage: 100 }
+        }));
+
+        return success;
+      } else {
+        setUploadState(prev => ({ 
+          ...prev, 
+          isUploading: false, 
+          success: true,
+          progress: { loaded: 0, total: 0, percentage: 100 }
+        }));
+        return true; // No mappings to create, but that's successful
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Mapping upload failed';
       setUploadState(prev => ({ 

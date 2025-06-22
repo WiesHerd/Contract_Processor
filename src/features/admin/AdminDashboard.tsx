@@ -4,6 +4,15 @@ import { generateClient } from 'aws-amplify/api';
 import { listProviders, listTemplates, listAuditLogs } from '../../graphql/queries';
 import { deleteProvider } from '../../graphql/mutations';
 import { toast } from 'sonner';
+import { useDispatch, useSelector } from 'react-redux';
+import { clearAllProviders } from '../../store/slices/providerSlice';
+import { RootState } from '../../store';
+import { awsBulkOperations } from '../../utils/awsServices';
+import { CachePerformanceDashboard } from '../../components/ui/CachePerformanceDashboard';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { LoadingSpinner } from '../../components/ui/loading-spinner';
+import { Users, FileText, Activity, Trash2, BarChart3 } from 'lucide-react';
 
 const client = generateClient();
 
@@ -17,12 +26,19 @@ interface AdminStats {
 
 export default function AdminDashboard() {
   const { user, isAdmin } = useAuth();
+  const dispatch = useDispatch();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [bulkDeleteProgress, setBulkDeleteProgress] = useState(0);
-
+  const [activeTab, setActiveTab] = useState<'overview' | 'cache'>('overview');
+  
+  const { loadingAction, clearProgress, clearTotal } = useSelector((state: RootState) => ({
+    loadingAction: state.provider.loadingAction,
+    clearProgress: state.provider.clearProgress,
+    clearTotal: state.provider.clearTotal,
+  }));
+  
   useEffect(() => {
     if (isAdmin) {
       loadAdminStats();
@@ -33,11 +49,7 @@ export default function AdminDashboard() {
     try {
       setIsLoading(true);
       
-      // Get provider count
-      const providersResult = await client.graphql({
-        query: listProviders,
-        variables: { limit: 1 }
-      });
+      const providerCount = await awsBulkOperations.countAllProviders();
       
       // Get template count
       const templatesResult = await client.graphql({
@@ -54,7 +66,7 @@ export default function AdminDashboard() {
       const lastAudit = auditResult.data.listAuditLogs.items[0];
       
       setStats({
-        totalProviders: providersResult.data.listProviders.items.length,
+        totalProviders: providerCount,
         totalTemplates: templatesResult.data.listTemplates.items.length,
         totalAuditLogs: auditResult.data.listAuditLogs.items.length,
         lastAuditAction: lastAudit?.action || 'None',
@@ -68,203 +80,211 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleBulkDelete = async () => {
-    if (deleteConfirmation !== 'DELETE') {
-      toast.error('Please type "DELETE" to confirm');
+  const handleDeleteAllProviders = async () => {
+    if (deleteConfirmation !== 'DELETE ALL') {
+      toast.error('Please type "DELETE ALL" to confirm');
       return;
     }
 
     try {
+      await dispatch(clearAllProviders() as any);
+      toast.success('All providers have been deleted');
       setShowDeleteDialog(false);
-      setBulkDeleteProgress(0);
-      
-      // Get all providers
-      const result = await client.graphql({
-        query: listProviders,
-        variables: { limit: 1000 }
-      });
-      
-      const providers = result.data.listProviders.items;
-      const total = providers.length;
-      
-      if (total === 0) {
-        toast.info('No providers to delete');
-        return;
-      }
-      
-      // Delete in batches
-      const batchSize = 25;
-      let deleted = 0;
-      
-      for (let i = 0; i < total; i += batchSize) {
-        const batch = providers.slice(i, i + batchSize);
-        
-        // Delete each provider in the batch
-        for (const provider of batch) {
-          try {
-            await client.graphql({
-              query: deleteProvider,
-              variables: { input: { id: provider.id } }
-            });
-            deleted++;
-            setBulkDeleteProgress((deleted / total) * 100);
-          } catch (error) {
-            console.error(`Failed to delete provider ${provider.id}:`, error);
-          }
-        }
-        
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      
-      toast.success(`Successfully deleted ${deleted} providers`);
-      setBulkDeleteProgress(0);
+      setDeleteConfirmation('');
       loadAdminStats(); // Refresh stats
-      
     } catch (error) {
-      console.error('Error during bulk delete:', error);
-      toast.error('Failed to complete bulk delete operation');
+      console.error('Error deleting providers:', error);
+      toast.error('Failed to delete providers');
     }
   };
 
   if (!isAdmin) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md">
-          <div className="text-red-500 text-6xl mb-4">🚫</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
-          <p className="text-gray-600 mb-4">
-            You don't have permission to access this page. Admin privileges are required.
-          </p>
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Access Denied</h1>
+          <p className="text-gray-600">You don't have permission to access the admin dashboard.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <p className="text-gray-600">System administration and bulk operations</p>
-        </div>
-        <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-          Admin Access
+        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <div className="text-sm text-gray-600">
+          Welcome, {user?.username || 'Admin'}
         </div>
       </div>
 
-      <hr className="border-gray-200" />
-
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-900">Providers</h3>
-          <p className="text-sm text-gray-600 mb-2">Total provider records</p>
-          <div className="text-2xl font-bold text-blue-600">
-            {isLoading ? '...' : stats?.totalProviders || 0}
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-900">Templates</h3>
-          <p className="text-sm text-gray-600 mb-2">Total contract templates</p>
-          <div className="text-2xl font-bold text-green-600">
-            {isLoading ? '...' : stats?.totalTemplates || 0}
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-900">Audit Logs</h3>
-          <p className="text-sm text-gray-600 mb-2">System activity records</p>
-          <div className="text-2xl font-bold text-purple-600">
-            {isLoading ? '...' : stats?.totalAuditLogs || 0}
-          </div>
-        </div>
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'overview'
+              ? 'bg-white shadow-sm text-blue-600'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Activity className="h-4 w-4" />
+          <span>Overview</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('cache')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'cache'
+              ? 'bg-white shadow-sm text-blue-600'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <BarChart3 className="h-4 w-4" />
+          <span>Cache Performance</span>
+        </button>
       </div>
 
-      <hr className="border-gray-200" />
-
-      {/* Bulk Operations */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Bulk Operations</h2>
-        <p className="text-sm text-gray-600 mb-6">Dangerous operations - use with caution</p>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div>
-              <h3 className="font-semibold text-gray-900">Delete All Providers</h3>
-              <p className="text-sm text-gray-600">
-                Permanently delete all provider records from the database
-              </p>
+      {activeTab === 'overview' ? (
+        <>
+          {/* Stats Cards */}
+          {isLoading ? (
+            <div className="flex justify-center items-center py-12">
+              <LoadingSpinner size="lg" message="Loading Admin Stats..." color="primary" />
             </div>
-            <button
-              onClick={() => setShowDeleteDialog(true)}
-              disabled={isLoading}
-              className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md font-medium transition-colors"
-            >
-              Delete All
-            </button>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Providers</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats?.totalProviders || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Registered in the system
+                  </p>
+                </CardContent>
+              </Card>
 
-          {bulkDeleteProgress > 0 && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Deleting providers...</span>
-                <span>{Math.round(bulkDeleteProgress)}%</span>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Templates</CardTitle>
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats?.totalTemplates || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Available templates
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Audit Logs</CardTitle>
+                  <Activity className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats?.totalAuditLogs || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Last action: {stats?.lastAuditAction || 'None'}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Admin Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Trash2 className="h-5 w-5 text-red-500" />
+                <span>Dangerous Actions</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div>
+                  <h3 className="font-semibold text-red-600">Delete All Providers</h3>
+                  <p className="text-sm text-gray-600">
+                    This will permanently delete all provider data from the system.
+                  </p>
+                </div>
+                <Button
+                  variant="destructive"
+                  onClick={() => setShowDeleteDialog(true)}
+                  disabled={loadingAction === 'clearing'}
+                >
+                  {loadingAction === 'clearing' ? (
+                    <LoadingSpinner size="sm" message="Clearing..." color="white" />
+                  ) : (
+                    'Delete All'
+                  )}
+                </Button>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-red-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${bulkDeleteProgress}%` }}
-                />
+
+              {clearProgress !== undefined && clearTotal !== undefined && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Progress</span>
+                    <span>{clearProgress} / {clearTotal}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-red-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${clearProgress && clearTotal ? (clearProgress / clearTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Delete Confirmation Dialog */}
+          {showDeleteDialog && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 className="text-lg font-semibold text-red-600 mb-4">
+                  Confirm Deletion
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  This action cannot be undone. All provider data will be permanently deleted.
+                </p>
+                <div className="space-y-4">
+                  <input
+                    type="text"
+                    placeholder="Type 'DELETE ALL' to confirm"
+                    value={deleteConfirmation}
+                    onChange={(e) => setDeleteConfirmation(e.target.value)}
+                    className="w-full border rounded px-3 py-2"
+                  />
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowDeleteDialog(false);
+                        setDeleteConfirmation('');
+                      }}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteAllProviders}
+                      disabled={deleteConfirmation !== 'DELETE ALL'}
+                      className="flex-1"
+                    >
+                      Delete All
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Delete Confirmation Dialog */}
-      {showDeleteDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Confirm Bulk Delete</h3>
-            <p className="text-gray-600 mb-4">
-              This action will permanently delete ALL provider records. This cannot be undone.
-            </p>
-            
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="confirmation" className="block text-sm font-medium text-gray-700 mb-1">
-                  Type "DELETE" to confirm:
-                </label>
-                <input
-                  id="confirmation"
-                  type="text"
-                  value={deleteConfirmation}
-                  onChange={(e) => setDeleteConfirmation(e.target.value)}
-                  placeholder="DELETE"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                />
-              </div>
-              
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setShowDeleteDialog(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleBulkDelete}
-                  disabled={deleteConfirmation !== 'DELETE'}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        </>
+      ) : (
+        <CachePerformanceDashboard />
       )}
     </div>
   );

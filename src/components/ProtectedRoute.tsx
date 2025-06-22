@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -35,7 +36,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <LoadingSpinner 
+          size="lg" 
+          message="Checking authentication..." 
+          color="primary"
+        />
       </div>
     );
   }

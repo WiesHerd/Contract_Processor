@@ -2,14 +2,16 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Template } from '@/types/template';
 import localforage from 'localforage';
 import mammoth from 'mammoth';
-import htmlDocx from 'html-docx-js/dist/html-docx';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { FieldMapping } from '@/features/templates/mappingsSlice';
 import { Provider } from '@/types/provider';
 import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
+import { downloadFile } from '@/utils/s3Storage';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface TemplatePreviewModalProps {
   open: boolean;
@@ -22,9 +24,18 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
-  const providers = useSelector((state: any) => state.providers.providers);
+  const providers = useSelector((state: any) => state.provider.providers);
   const mappings = useSelector((state: any) => state.mappings.mappings);
-  const selectedProvider = providers[0]; // Use first provider for now
+
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+    providers.length > 0 ? providers[0].id : null
+  );
+
+  const selectedProvider = useMemo(
+    () => providers.find((p: Provider) => p.id === selectedProviderId),
+    [providers, selectedProviderId]
+  );
+  
   const html = template?.editedHtmlContent || template?.htmlPreviewContent || '';
   const mapping: FieldMapping[] | undefined = template ? mappings?.[template.id]?.mappings : undefined;
   const { content: mergedHtml } = useMemo(() => {
@@ -37,7 +48,7 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
       setLoading(true);
       setError(null);
       setDocxText('');
-      localforage.getItem<Blob>(template.docxTemplate as string)
+      downloadFile(template.docxTemplate)
         .then(blob => {
           if (!blob) throw new Error('DOCX file not found');
           return blob.arrayBuffer();
@@ -109,42 +120,56 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Template Preview</DialogTitle>
+          <DialogTitle>Contract Preview</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold mb-1">{template.name}</h2>
-            <p className="text-sm text-gray-500 mb-1">
-              Version {template.version} • {template.compensationModel} • Last modified {template.metadata?.updatedAt || ''}
-            </p>
-            <p className="text-sm text-gray-500 mb-1">
-              {template.placeholders.length} placeholders • {template.clauseIds.length} clauses
-            </p>
-          </div>
-          <div>
-            <h3 className="font-semibold mb-1">Placeholders</h3>
-            <div className="flex flex-wrap gap-2">
-              {template.placeholders.length === 0 ? <span className="text-gray-400">None found</span> :
-                template.placeholders.map(ph => (
-                  <span key={ph} className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">{ph}</span>
-                ))}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h2 className="text-lg font-semibold mb-1">{template.name}</h2>
+              <p className="text-sm text-gray-500 mb-1">
+                Version {template.version} • {template.compensationModel}
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Select Provider to Preview</label>
+              <Select
+                value={selectedProviderId || ''}
+                onValueChange={(value) => setSelectedProviderId(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((p: Provider) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          <div>
-            <h3 className="font-semibold mb-1">Plain Text Preview</h3>
+          <div className="border-t pt-4">
+            <h3 className="font-semibold mb-1">Merged Preview</h3>
             {loading ? (
-              <div className="text-gray-500 text-sm">Loading preview...</div>
+              <div className="flex items-center justify-center py-8">
+                <LoadingSpinner 
+                  size="sm" 
+                  message="Loading preview..." 
+                  color="gray"
+                />
+              </div>
             ) : error ? (
               <div className="text-red-500 text-sm">{error}</div>
             ) : (
-              <pre className="bg-gray-100 rounded p-2 max-h-64 overflow-auto text-xs whitespace-pre-wrap">{docxText}</pre>
+              <div
+                className="prose prose-sm max-w-none max-h-96 overflow-auto border p-2 rounded"
+                dangerouslySetInnerHTML={{ __html: mergedHtml }}
+              />
             )}
           </div>
         </div>
         <DialogFooter className="flex justify-end gap-2 mt-6">
           <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button onClick={handleDownload}>Download DOCX</Button>
-          <Button onClick={handleGenerateDOCX}>Generate DOCX</Button>
+          <Button onClick={handleDownload} disabled={!selectedProvider}>Download as Word</Button>
           <Button onClick={() => setEditorOpen(true)}>Edit HTML</Button>
         </DialogFooter>
         {editorOpen && (

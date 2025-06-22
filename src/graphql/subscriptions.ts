@@ -200,6 +200,60 @@ export const onDeleteProvider = /* GraphQL */ `subscription OnDeleteProvider($fi
   APITypes.OnDeleteProviderSubscriptionVariables,
   APITypes.OnDeleteProviderSubscription
 >;
+export const onCreateTemplateMapping = /* GraphQL */ `subscription OnCreateTemplateMapping(
+  $filter: ModelSubscriptionTemplateMappingFilterInput
+) {
+  onCreateTemplateMapping(filter: $filter) {
+    id
+    templateID
+    field
+    value
+    notes
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnCreateTemplateMappingSubscriptionVariables,
+  APITypes.OnCreateTemplateMappingSubscription
+>;
+export const onUpdateTemplateMapping = /* GraphQL */ `subscription OnUpdateTemplateMapping(
+  $filter: ModelSubscriptionTemplateMappingFilterInput
+) {
+  onUpdateTemplateMapping(filter: $filter) {
+    id
+    templateID
+    field
+    value
+    notes
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnUpdateTemplateMappingSubscriptionVariables,
+  APITypes.OnUpdateTemplateMappingSubscription
+>;
+export const onDeleteTemplateMapping = /* GraphQL */ `subscription OnDeleteTemplateMapping(
+  $filter: ModelSubscriptionTemplateMappingFilterInput
+) {
+  onDeleteTemplateMapping(filter: $filter) {
+    id
+    templateID
+    field
+    value
+    notes
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnDeleteTemplateMappingSubscriptionVariables,
+  APITypes.OnDeleteTemplateMappingSubscription
+>;
 export const onCreateMapping = /* GraphQL */ `subscription OnCreateMapping($filter: ModelSubscriptionMappingFilterInput) {
   onCreateMapping(filter: $filter) {
     id

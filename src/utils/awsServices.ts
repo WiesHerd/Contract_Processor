@@ -16,7 +16,6 @@ import {
   UpdateAuditLogInput,
   DeleteAuditLogInput,
   Template,
-  TemplateType,
   Provider,
   Mapping,
   Clause,
@@ -27,6 +26,7 @@ import {
   ListClausesQuery,
   ListAuditLogsQuery
 } from '../API';
+import { TemplateType } from '../types/template';
 import { 
   createTemplate,
   updateTemplate,
@@ -61,6 +61,7 @@ import {
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, BatchWriteCommand, ScanCommand, ScanCommandInput, ScanCommandOutput, BatchWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { Provider as LocalProvider } from '../types/provider';
+import { withRetry, isRetryableError, AWSError } from './retry';
 
 const client = generateClient();
 
@@ -74,38 +75,6 @@ const dynamoClient = new DynamoDBClient({
 });
 
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
-
-// Retry configuration
-const RETRY_CONFIG = {
-  maxRetries: 3,
-  retryDelay: 1000,
-};
-
-// Utility function for retrying operations
-async function withRetry<T>(operation: () => Promise<T>, retries = RETRY_CONFIG.maxRetries): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
-    if (retries > 0 && isRetryableError(error)) {
-      await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.retryDelay));
-      return withRetry(operation, retries - 1);
-    }
-    throw error;
-  }
-}
-
-function isRetryableError(error: any): boolean {
-  const retryableErrors = [
-    'ThrottlingException',
-    'ProvisionedThroughputExceededException',
-    'RequestLimitExceeded',
-    'ServiceUnavailable',
-    'InternalServerError',
-  ];
-  return retryableErrors.some(errType => 
-    error.name?.includes(errType) || error.message?.includes(errType)
-  );
-}
 
 // This defines the fields we want to get back from the GraphQL API.
 const providerSelectionSet = [
@@ -509,24 +478,119 @@ export const awsMappings = {
     });
   },
 
-  // Get mappings by template and provider
   async getMappingsByTemplateAndProvider(templateId: string, providerId: string): Promise<Mapping[]> {
     return withRetry(async () => {
-      const tableName = import.meta.env.VITE_DYNAMODB_MAPPING_TABLE;
-      const command = new QueryCommand({
+      try {
+        const result = await client.graphql({
+          query: listMappings,
+          variables: { 
+            filter: { 
+              templateID: { eq: templateId },
+              providerID: { eq: providerId }
+            },
+            limit: 1000 
+          }
+        });
+        
+        return (result.data?.listMappings?.items || [])
+          .filter((item): item is Mapping => item !== null);
+      } catch (error) {
+        console.error(`Error getting mappings for template ${templateId} and provider ${providerId}:`, error);
+        throw error;
+      }
+    });
+  },
+
+  async batchCreate(mappings: CreateMappingInput[]): Promise<Mapping[]> {
+    const appId = import.meta.env.VITE_AWS_APP_ID || 'uncqgyngxvgzfceslcwqtprza4';
+    const env = import.meta.env.VITE_AWS_ENV || 'dev';
+    const tableName = `Mapping-${appId}-${env}`;
+
+    const writeRequests = mappings.map(mapping => ({
+      PutRequest: {
+        Item: {
+          id: mapping.id || crypto.randomUUID(),
+          ...mapping,
+          __typename: 'Mapping',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    }));
+
+    // BatchWriteCommand can only handle 25 items at a time
+    const batches = [];
+    for (let i = 0; i < writeRequests.length; i += 25) {
+      batches.push(writeRequests.slice(i, i + 25));
+    }
+
+    try {
+      for (const batch of batches) {
+        const params: BatchWriteCommandInput = {
+          RequestItems: {
+            [tableName]: batch,
+          },
+        };
+        await withRetry(async () => docClient.send(new BatchWriteCommand(params)));
+      }
+      // Note: BatchWrite does not return the created items in the same way as single Put.
+      // We return the input as a representation of what was created.
+      return mappings as Mapping[];
+    } catch (error: any) {
+      console.error('Error batch creating mappings:', error);
+      throw new AWSError('Failed to batch create mappings', error.name, error.$metadata?.httpStatusCode, isRetryableError(error));
+    }
+  },
+
+  async deleteMappingsByTemplateAndProvider(templateId: string, providerId: string): Promise<void> {
+    const appId = import.meta.env.VITE_AWS_APP_ID || 'uncqgyngxvgzfceslcwqtprza4';
+    const env = import.meta.env.VITE_AWS_ENV || 'dev';
+    const tableName = `Mapping-${appId}-${env}`;
+
+    // 1. Query for mappings to get their primary keys (id)
+    const queryParams = {
         TableName: tableName,
         IndexName: 'byTemplateAndProvider',
         KeyConditionExpression: 'templateID = :templateId AND providerID = :providerId',
         ExpressionAttributeValues: {
-          ':templateId': templateId,
-          ':providerId': providerId
-        }
-      });
+            ':templateId': templateId,
+            ':providerId': providerId,
+        },
+    };
 
-      const result = await docClient.send(command);
-      return (result.Items || []) as Mapping[];
-    });
-  }
+    try {
+        const queryResult = await withRetry(async () => docClient.send(new QueryCommand(queryParams)));
+        const mappingsToDelete = queryResult.Items;
+
+        if (!mappingsToDelete || mappingsToDelete.length === 0) {
+            return; // Nothing to delete
+        }
+
+        // 2. Batch delete the mappings
+        const deleteRequests = mappingsToDelete.map(mapping => ({
+            DeleteRequest: {
+                Key: { id: mapping.id },
+            },
+        }));
+
+        const batches = [];
+        for (let i = 0; i < deleteRequests.length; i += 25) {
+            batches.push(deleteRequests.slice(i, i + 25));
+        }
+
+        for (const batch of batches) {
+            const batchParams: BatchWriteCommandInput = {
+                RequestItems: {
+                    [tableName]: batch,
+                },
+            };
+            await withRetry(async () => docClient.send(new BatchWriteCommand(batchParams)));
+        }
+    } catch (error: any) {
+        console.error(`Error deleting mappings for template ${templateId} and provider ${providerId}:`, error);
+        throw new AWSError('Failed to delete mappings', error.name, error.$metadata?.httpStatusCode, isRetryableError(error));
+    }
+  },
 };
 
 // Enhanced Clause Operations
@@ -832,19 +896,6 @@ export const awsBulkOperations = {
       .map(result => result.value!);
   }
 };
-
-// Error handling utilities
-export class AWSError extends Error {
-  constructor(
-    message: string,
-    public readonly code?: string,
-    public readonly statusCode?: number,
-    public readonly retryable?: boolean
-  ) {
-    super(message);
-    this.name = 'AWSError';
-  }
-}
 
 // Health check utility
 export async function checkAWSHealth(): Promise<{

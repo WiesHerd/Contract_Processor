@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateTemplate } from '../templatesSlice';
 import { Template } from '@/types/template';
@@ -91,7 +92,13 @@ const TemplateHtmlEditorModal: React.FC<TemplateHtmlEditorModalProps> = ({ templ
           <DialogTitle>Edit Template HTML</DialogTitle>
         </DialogHeader>
         {loading ? (
-          <div className="flex items-center justify-center h-64 text-gray-500">Loading editor...</div>
+          <div className="flex items-center justify-center h-64">
+            <LoadingSpinner 
+              size="md" 
+              message="Loading editor..." 
+              color="gray"
+            />
+          </div>
         ) : !template ? (
           <div className="text-red-500">Template not found.</div>
         ) : (

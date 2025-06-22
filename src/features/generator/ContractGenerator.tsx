@@ -24,11 +24,13 @@ import localforage from 'localforage';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { Input } from '@/components/ui/input';
 import { Editor } from '@tinymce/tinymce-react';
-import { CLAUSES as SHARED_CLAUSES } from '@/features/clauses/clausesData';
 import { getContractFileName } from '@/utils/filename';
 import { addAuditLog } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
 import { PageHeader } from '@/components/PageHeader';
+import { fetchClausesIfNeeded } from '@/store/slices/clauseSlice';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { AppDispatch } from '@/store';
 
 // Utility to normalize smart quotes and special characters
 function normalizeSmartQuotes(text: string): string {
@@ -43,10 +45,11 @@ function normalizeSmartQuotes(text: string): string {
 }
 
 export default function ContractGenerator() {
-  const dispatch = useDispatch();
-  const templates = useSelector((state: RootState) => state.templates.templates);
-  const providers = useSelector((state: RootState) => state.providers.providers);
-  const mappings = useSelector((state: RootState) => state.mappings.mappings);
+  const dispatch: AppDispatch = useDispatch();
+  const { providers, loading: providersLoading, error: providersError } = useSelector((state: RootState) => state.provider);
+  const { templates, status: templatesStatus, error: templatesError } = useSelector((state: RootState) => state.templates);
+  const { clauses, loading: clausesLoading } = useSelector((state: RootState) => state.clauses);
+  const { mappings } = useSelector((state: RootState) => state.mappings);
   const selectedTemplate = useSelector((state: RootState) => state.generator.selectedTemplate);
   const selectedProvider = useSelector((state: RootState) => state.generator.selectedProvider);
   const isGenerating = useSelector((state: RootState) => state.generator.isGenerating);
@@ -63,6 +66,17 @@ export default function ContractGenerator() {
   const [editorModalOpen, setEditorModalOpen] = useState(false);
   const editorRef = useRef<any>(null);
   const [clauseSearch, setClauseSearch] = useState('');
+
+  // Load clauses with caching
+  useEffect(() => {
+    dispatch(fetchClausesIfNeeded());
+  }, [dispatch]);
+
+  // Create filtered clauses for the sidebar
+  const filteredClauses = clauses.filter((clause: { title: string; content: string }) =>
+    clause.title.toLowerCase().includes(clauseSearch.toLowerCase()) ||
+    clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
+  );
 
   // Update selected template when ID changes
   useEffect(() => {
@@ -532,10 +546,7 @@ export default function ContractGenerator() {
             />
             {/* Scrollable clause list with fixed max height */}
             <div className="flex-1 overflow-y-auto space-y-2 max-h-[400px]">
-              {SHARED_CLAUSES.filter((clause: { title: string; content: string }) =>
-                clause.title.toLowerCase().includes(clauseSearch.toLowerCase()) ||
-                clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
-              ).map((clause: { id: string; title: string; content: string }) => (
+              {filteredClauses.map((clause: { id: string; title: string; content: string }) => (
                 <div key={clause.id} className="bg-white rounded shadow p-2 flex flex-col gap-1">
                   <div className="font-semibold text-sm">{clause.title}</div>
                   <div className="text-xs text-gray-600 line-clamp-2">{clause.content}</div>
@@ -552,10 +563,7 @@ export default function ContractGenerator() {
                   </Button>
                 </div>
               ))}
-              {SHARED_CLAUSES.filter((clause: { title: string; content: string }) =>
-                clause.title.toLowerCase().includes(clauseSearch.toLowerCase()) ||
-                clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
-              ).length === 0 && (
+              {filteredClauses.length === 0 && (
                 <div className="text-xs text-gray-400">No clauses found.</div>
               )}
             </div>

@@ -147,6 +147,46 @@ export const listProviders = /* GraphQL */ `query ListProviders(
   APITypes.ListProvidersQueryVariables,
   APITypes.ListProvidersQuery
 >;
+export const getTemplateMapping = /* GraphQL */ `query GetTemplateMapping($id: ID!) {
+  getTemplateMapping(id: $id) {
+    id
+    templateID
+    field
+    value
+    notes
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetTemplateMappingQueryVariables,
+  APITypes.GetTemplateMappingQuery
+>;
+export const listTemplateMappings = /* GraphQL */ `query ListTemplateMappings(
+  $filter: ModelTemplateMappingFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listTemplateMappings(filter: $filter, limit: $limit, nextToken: $nextToken) {
+    items {
+      id
+      templateID
+      field
+      value
+      notes
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListTemplateMappingsQueryVariables,
+  APITypes.ListTemplateMappingsQuery
+>;
 export const getMapping = /* GraphQL */ `query GetMapping($id: ID!) {
   getMapping(id: $id) {
     id
@@ -261,4 +301,134 @@ export const listAuditLogs = /* GraphQL */ `query ListAuditLogs(
 ` as GeneratedQuery<
   APITypes.ListAuditLogsQueryVariables,
   APITypes.ListAuditLogsQuery
+>;
+export const templateMappingsByTemplateID = /* GraphQL */ `query TemplateMappingsByTemplateID(
+  $templateID: ID!
+  $sortDirection: ModelSortDirection
+  $filter: ModelTemplateMappingFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  templateMappingsByTemplateID(
+    templateID: $templateID
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      templateID
+      field
+      value
+      notes
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.TemplateMappingsByTemplateIDQueryVariables,
+  APITypes.TemplateMappingsByTemplateIDQuery
+>;
+export const mappingsByTemplateID = /* GraphQL */ `query MappingsByTemplateID(
+  $templateID: ID!
+  $sortDirection: ModelSortDirection
+  $filter: ModelMappingFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  mappingsByTemplateID(
+    templateID: $templateID
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      templateID
+      providerID
+      field
+      value
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.MappingsByTemplateIDQueryVariables,
+  APITypes.MappingsByTemplateIDQuery
+>;
+export const mappingsByTemplateAndProvider = /* GraphQL */ `query MappingsByTemplateAndProvider(
+  $templateID: ID!
+  $providerID: ModelIDKeyConditionInput
+  $sortDirection: ModelSortDirection
+  $filter: ModelMappingFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  mappingsByTemplateAndProvider(
+    templateID: $templateID
+    providerID: $providerID
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      templateID
+      providerID
+      field
+      value
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.MappingsByTemplateAndProviderQueryVariables,
+  APITypes.MappingsByTemplateAndProviderQuery
+>;
+export const mappingsByProviderID = /* GraphQL */ `query MappingsByProviderID(
+  $providerID: ID!
+  $sortDirection: ModelSortDirection
+  $filter: ModelMappingFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  mappingsByProviderID(
+    providerID: $providerID
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      templateID
+      providerID
+      field
+      value
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.MappingsByProviderIDQueryVariables,
+  APITypes.MappingsByProviderIDQuery
 >;

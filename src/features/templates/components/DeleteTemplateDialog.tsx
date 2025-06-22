@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { X, Loader2 } from 'lucide-react';
+import { X } from 'lucide-react';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { deleteTemplate } from '../templatesSlice';
 import { Template } from '@/types/template';
 
@@ -67,7 +68,7 @@ export function DeleteTemplateDialog({ isOpen, onClose, template }: DeleteTempla
             className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
             disabled={isDeleting}
           >
-            {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isDeleting && <LoadingSpinner size="sm" inline />}
             Delete Template
           </button>
         </div>

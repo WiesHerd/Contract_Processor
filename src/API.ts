@@ -280,6 +280,70 @@ export type UpdateProviderInput = {
 
 export type DeleteProviderInput = {
   id: string,
+  _version?: number | null,
+};
+
+export type CreateTemplateMappingInput = {
+  id?: string | null,
+  templateID: string,
+  field: string,
+  value?: string | null,
+  notes?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+};
+
+export type ModelTemplateMappingConditionInput = {
+  templateID?: ModelIDInput | null,
+  field?: ModelStringInput | null,
+  value?: ModelStringInput | null,
+  notes?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  and?: Array< ModelTemplateMappingConditionInput | null > | null,
+  or?: Array< ModelTemplateMappingConditionInput | null > | null,
+  not?: ModelTemplateMappingConditionInput | null,
+};
+
+export type ModelIDInput = {
+  ne?: string | null,
+  eq?: string | null,
+  le?: string | null,
+  lt?: string | null,
+  ge?: string | null,
+  gt?: string | null,
+  contains?: string | null,
+  notContains?: string | null,
+  between?: Array< string | null > | null,
+  beginsWith?: string | null,
+  attributeExists?: boolean | null,
+  attributeType?: ModelAttributeTypes | null,
+  size?: ModelSizeInput | null,
+};
+
+export type TemplateMapping = {
+  __typename: "TemplateMapping",
+  id: string,
+  templateID: string,
+  field: string,
+  value?: string | null,
+  notes?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+};
+
+export type UpdateTemplateMappingInput = {
+  id: string,
+  templateID?: string | null,
+  field?: string | null,
+  value?: string | null,
+  notes?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+};
+
+export type DeleteTemplateMappingInput = {
+  id: string,
 };
 
 export type CreateMappingInput = {
@@ -300,22 +364,6 @@ export type ModelMappingConditionInput = {
   not?: ModelMappingConditionInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
-};
-
-export type ModelIDInput = {
-  ne?: string | null,
-  eq?: string | null,
-  le?: string | null,
-  lt?: string | null,
-  ge?: string | null,
-  gt?: string | null,
-  contains?: string | null,
-  notContains?: string | null,
-  between?: Array< string | null > | null,
-  beginsWith?: string | null,
-  attributeExists?: boolean | null,
-  attributeType?: ModelAttributeTypes | null,
-  size?: ModelSizeInput | null,
 };
 
 export type Mapping = {
@@ -488,6 +536,25 @@ export type ModelProviderConnection = {
   nextToken?: string | null,
 };
 
+export type ModelTemplateMappingFilterInput = {
+  id?: ModelIDInput | null,
+  templateID?: ModelIDInput | null,
+  field?: ModelStringInput | null,
+  value?: ModelStringInput | null,
+  notes?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  and?: Array< ModelTemplateMappingFilterInput | null > | null,
+  or?: Array< ModelTemplateMappingFilterInput | null > | null,
+  not?: ModelTemplateMappingFilterInput | null,
+};
+
+export type ModelTemplateMappingConnection = {
+  __typename: "ModelTemplateMappingConnection",
+  items:  Array<TemplateMapping | null >,
+  nextToken?: string | null,
+};
+
 export type ModelMappingFilterInput = {
   id?: ModelIDInput | null,
   templateID?: ModelIDInput | null,
@@ -542,6 +609,22 @@ export type ModelAuditLogConnection = {
   __typename: "ModelAuditLogConnection",
   items:  Array<AuditLog | null >,
   nextToken?: string | null,
+};
+
+export enum ModelSortDirection {
+  ASC = "ASC",
+  DESC = "DESC",
+}
+
+
+export type ModelIDKeyConditionInput = {
+  eq?: string | null,
+  le?: string | null,
+  lt?: string | null,
+  ge?: string | null,
+  gt?: string | null,
+  between?: Array< string | null > | null,
+  beginsWith?: string | null,
 };
 
 export type ModelSubscriptionTemplateFilterInput = {
@@ -647,6 +730,18 @@ export type ModelSubscriptionIntInput = {
   between?: Array< number | null > | null,
   in?: Array< number | null > | null,
   notIn?: Array< number | null > | null,
+};
+
+export type ModelSubscriptionTemplateMappingFilterInput = {
+  id?: ModelSubscriptionIDInput | null,
+  templateID?: ModelSubscriptionIDInput | null,
+  field?: ModelSubscriptionStringInput | null,
+  value?: ModelSubscriptionStringInput | null,
+  notes?: ModelSubscriptionStringInput | null,
+  createdAt?: ModelSubscriptionStringInput | null,
+  updatedAt?: ModelSubscriptionStringInput | null,
+  and?: Array< ModelSubscriptionTemplateMappingFilterInput | null > | null,
+  or?: Array< ModelSubscriptionTemplateMappingFilterInput | null > | null,
 };
 
 export type ModelSubscriptionMappingFilterInput = {
@@ -883,6 +978,60 @@ export type DeleteProviderMutation = {
       percentage: number,
     } | null > | null,
     templateTag?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+  } | null,
+};
+
+export type CreateTemplateMappingMutationVariables = {
+  input: CreateTemplateMappingInput,
+  condition?: ModelTemplateMappingConditionInput | null,
+};
+
+export type CreateTemplateMappingMutation = {
+  createTemplateMapping?:  {
+    __typename: "TemplateMapping",
+    id: string,
+    templateID: string,
+    field: string,
+    value?: string | null,
+    notes?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+  } | null,
+};
+
+export type UpdateTemplateMappingMutationVariables = {
+  input: UpdateTemplateMappingInput,
+  condition?: ModelTemplateMappingConditionInput | null,
+};
+
+export type UpdateTemplateMappingMutation = {
+  updateTemplateMapping?:  {
+    __typename: "TemplateMapping",
+    id: string,
+    templateID: string,
+    field: string,
+    value?: string | null,
+    notes?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+  } | null,
+};
+
+export type DeleteTemplateMappingMutationVariables = {
+  input: DeleteTemplateMappingInput,
+  condition?: ModelTemplateMappingConditionInput | null,
+};
+
+export type DeleteTemplateMappingMutation = {
+  deleteTemplateMapping?:  {
+    __typename: "TemplateMapping",
+    id: string,
+    templateID: string,
+    field: string,
+    value?: string | null,
+    notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
   } | null,
@@ -1186,6 +1335,46 @@ export type ListProvidersQuery = {
   } | null,
 };
 
+export type GetTemplateMappingQueryVariables = {
+  id: string,
+};
+
+export type GetTemplateMappingQuery = {
+  getTemplateMapping?:  {
+    __typename: "TemplateMapping",
+    id: string,
+    templateID: string,
+    field: string,
+    value?: string | null,
+    notes?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+  } | null,
+};
+
+export type ListTemplateMappingsQueryVariables = {
+  filter?: ModelTemplateMappingFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type ListTemplateMappingsQuery = {
+  listTemplateMappings?:  {
+    __typename: "ModelTemplateMappingConnection",
+    items:  Array< {
+      __typename: "TemplateMapping",
+      id: string,
+      templateID: string,
+      field: string,
+      value?: string | null,
+      notes?: string | null,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
 export type GetMappingQueryVariables = {
   id: string,
 };
@@ -1297,6 +1486,107 @@ export type ListAuditLogsQuery = {
       user?: string | null,
       timestamp: string,
       details?: string | null,
+      createdAt: string,
+      updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type TemplateMappingsByTemplateIDQueryVariables = {
+  templateID: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelTemplateMappingFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type TemplateMappingsByTemplateIDQuery = {
+  templateMappingsByTemplateID?:  {
+    __typename: "ModelTemplateMappingConnection",
+    items:  Array< {
+      __typename: "TemplateMapping",
+      id: string,
+      templateID: string,
+      field: string,
+      value?: string | null,
+      notes?: string | null,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type MappingsByTemplateIDQueryVariables = {
+  templateID: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelMappingFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type MappingsByTemplateIDQuery = {
+  mappingsByTemplateID?:  {
+    __typename: "ModelMappingConnection",
+    items:  Array< {
+      __typename: "Mapping",
+      id: string,
+      templateID: string,
+      providerID: string,
+      field: string,
+      value?: string | null,
+      createdAt: string,
+      updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type MappingsByTemplateAndProviderQueryVariables = {
+  templateID: string,
+  providerID?: ModelIDKeyConditionInput | null,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelMappingFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type MappingsByTemplateAndProviderQuery = {
+  mappingsByTemplateAndProvider?:  {
+    __typename: "ModelMappingConnection",
+    items:  Array< {
+      __typename: "Mapping",
+      id: string,
+      templateID: string,
+      providerID: string,
+      field: string,
+      value?: string | null,
+      createdAt: string,
+      updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type MappingsByProviderIDQueryVariables = {
+  providerID: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelMappingFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type MappingsByProviderIDQuery = {
+  mappingsByProviderID?:  {
+    __typename: "ModelMappingConnection",
+    items:  Array< {
+      __typename: "Mapping",
+      id: string,
+      templateID: string,
+      providerID: string,
+      field: string,
+      value?: string | null,
       createdAt: string,
       updatedAt: string,
     } | null >,
@@ -1497,6 +1787,57 @@ export type OnDeleteProviderSubscription = {
       percentage: number,
     } | null > | null,
     templateTag?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+  } | null,
+};
+
+export type OnCreateTemplateMappingSubscriptionVariables = {
+  filter?: ModelSubscriptionTemplateMappingFilterInput | null,
+};
+
+export type OnCreateTemplateMappingSubscription = {
+  onCreateTemplateMapping?:  {
+    __typename: "TemplateMapping",
+    id: string,
+    templateID: string,
+    field: string,
+    value?: string | null,
+    notes?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+  } | null,
+};
+
+export type OnUpdateTemplateMappingSubscriptionVariables = {
+  filter?: ModelSubscriptionTemplateMappingFilterInput | null,
+};
+
+export type OnUpdateTemplateMappingSubscription = {
+  onUpdateTemplateMapping?:  {
+    __typename: "TemplateMapping",
+    id: string,
+    templateID: string,
+    field: string,
+    value?: string | null,
+    notes?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+  } | null,
+};
+
+export type OnDeleteTemplateMappingSubscriptionVariables = {
+  filter?: ModelSubscriptionTemplateMappingFilterInput | null,
+};
+
+export type OnDeleteTemplateMappingSubscription = {
+  onDeleteTemplateMapping?:  {
+    __typename: "TemplateMapping",
+    id: string,
+    templateID: string,
+    field: string,
+    value?: string | null,
+    notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
   } | null,

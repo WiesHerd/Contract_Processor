@@ -3,12 +3,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useDispatch } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 import { X, CheckCircle } from 'lucide-react';
-import { addTemplate } from '../templatesSlice';
+import { addTemplate as addTemplateToSlice } from '../templatesSlice';
 import { NewTemplateFormData, newTemplateSchema } from '../schemas';
 import { TemplateType } from '@/types/template';
 import localforage from 'localforage';
 import { useState } from 'react';
 import PizZip from 'pizzip';
+import { useAwsUpload } from '@/hooks/useAwsUpload';
+import { awsTemplates } from '@/utils/awsServices';
+import { CreateTemplateInput, Template as APITemplate } from '@/API';
+import { Template } from '@/types/template';
 
 // Enhanced DOCX validation utility
 async function validateDocxTemplate(file: File): Promise<{ issues: string[]; placeholders: string[] }> {
@@ -94,6 +98,7 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
   const [docxFile, setDocxFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [scanIssues, setScanIssues] = useState<string[]>([]);
+  const { upload, isUploading, error: uploadError } = useAwsUpload();
 
   // Handle file input and scan for issues
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,33 +126,37 @@ export function NewTemplateModal({ isOpen, onClose }: NewTemplateModalProps) {
       return;
     }
     setFileError(null);
+
     try {
-      await localforage.setItem(docxFile.name, docxFile);
-      const now = new Date().toISOString();
-      dispatch(
-        addTemplate({
-          id: uuidv4(),
-          ...data,
-          compensationModel: data.compensationModel,
-          metadata: {
-            createdAt: now,
-            updatedAt: now,
-            createdBy: 'system',
-            lastModifiedBy: 'system',
-          },
-          docxTemplate: docxFile.name,
-          description: (data as any).description ?? '',
-          content: '',
-          placeholders: data.placeholders || [],
-          clauseIds: data.clauseIds || [],
-          tags: [],
-          clauses: [],
-          versionHistory: [],
-        })
-      );
-      onClose();
+      const { s3Key } = await upload(docxFile, `templates/${docxFile.name}`);
+      if (!s3Key) {
+        setFileError('Failed to upload template to storage.');
+        return;
+      }
+
+      const newTemplateInput: CreateTemplateInput = {
+        id: uuidv4(),
+        name: data.name,
+        version: data.version,
+        description: (data as any).description ?? '',
+        s3Key: s3Key,
+        type: data.compensationModel,
+        placeholders: data.placeholders || [],
+      };
+
+      const createdTemplate = await awsTemplates.create(newTemplateInput);
+
+      if (createdTemplate) {
+        // We need to cast the API response to the local Template type for the slice
+        dispatch(addTemplateToSlice(createdTemplate as unknown as Template));
+        onClose();
+        reset();
+      } else {
+        setFileError('Failed to save template metadata.');
+      }
     } catch (err) {
-      setFileError('Failed to save DOCX file.');
+      setFileError('An unexpected error occurred while saving the template.');
+      console.error(err);
     }
   };
 

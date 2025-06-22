@@ -7,7 +7,7 @@ import { Button } from '../../../components/ui/button';
 import { Download } from 'lucide-react';
 
 export const ProvidersPage: React.FC = () => {
-  const { providers, selectedProviders } = useSelector((state: RootState) => state.providers);
+  const { providers, selectedProviders } = useSelector((state: RootState) => state.provider);
 
   const handleBulkDownload = async () => {
     if (selectedProviders.length === 0) return;

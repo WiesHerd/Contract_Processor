@@ -63,11 +63,23 @@ export const ProviderUploadSchema = z.object({
 
 export type ProviderUpload = z.infer<typeof ProviderUploadSchema>;
 
+export interface ExtendedProvider extends Provider {
+  templateMatch?: string;
+  generationStatus?: 'pending' | 'success' | 'error';
+}
+
+export type LoadingAction = 'uploading' | 'clearing' | 'fetching' | null;
+
 export interface ProviderState {
   providers: Provider[];
   selectedProviders: string[];
-  loading: boolean;
   error: string | null;
+  loading: boolean;
+  loadingAction: LoadingAction;
   lastSync: string | null;
-  uploadedColumns?: string[];
+  uploadedColumns: string[];
+  clearProgress?: number;
+  clearTotal?: number;
+  uploadProgress?: number;
+  uploadTotal?: number;
 } 

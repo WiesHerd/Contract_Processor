@@ -6,6 +6,9 @@ import { Provider } from '@/types/provider';
 import { Clause } from '@/types/clause';
 import { AuditLogEntry } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
+import { saveAs } from 'file-saver';
+import pako from 'pako';
+import { withRetry, isRetryableError } from './retry';
 
 // Initialize S3 client with retry configuration
 const s3Client = new S3Client({
@@ -29,38 +32,6 @@ const PATHS = {
   METADATA: 'metadata/',
   TEMP: 'temp/',
 } as const;
-
-// Retry configuration
-const RETRY_CONFIG = {
-  maxRetries: 3,
-  retryDelay: 1000,
-};
-
-// Utility function for retrying operations
-async function withRetry<T>(operation: () => Promise<T>, retries = RETRY_CONFIG.maxRetries): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
-    if (retries > 0 && isRetryableError(error)) {
-      await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.retryDelay));
-      return withRetry(operation, retries - 1);
-    }
-    throw error;
-  }
-}
-
-function isRetryableError(error: any): boolean {
-  const retryableErrors = [
-    'ThrottlingException',
-    'RequestTimeout',
-    'ServiceUnavailable',
-    'InternalServerError',
-    'NetworkingError',
-  ];
-  return retryableErrors.some(errType => 
-    error.name?.includes(errType) || error.message?.includes(errType)
-  );
-}
 
 // Base file operations with enhanced error handling
 export async function uploadFile(
@@ -437,4 +408,22 @@ export async function deleteTemplate(templateId: string): Promise<void> {
     console.error(`Failed to delete template ${templateId}:`, error);
     throw new Error(`Failed to delete template from S3: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
-} 
+}
+
+export const downloadFile = async (key: string): Promise<Blob> => {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: import.meta.env.VITE_S3_BUCKET_NAME,
+      Key: key,
+    });
+    const response = await s3Client.send(command);
+    if (!response.Body) {
+      throw new Error('No file body found in S3 response');
+    }
+    const blob = await response.Body.transformToByteArray();
+    return new Blob([blob], { type: response.ContentType });
+  } catch (error) {
+    console.error(`Failed to download file from S3 (key: ${key}):`, error);
+    throw new Error('Could not download the template file from S3.');
+  }
+}; 

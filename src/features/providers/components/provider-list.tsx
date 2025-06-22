@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '../../../store';
-import { setProviders, setSelectedProviders, setError, setLoading } from '../../../store/slices/providerSlice';
+import { RootState } from '@/store';
+import { setSelectedProviders } from '@/store/slices/providerSlice';
 import {
   Table,
   TableBody,
@@ -9,121 +9,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '../../../components/ui/table';
-import { Checkbox } from '../../../components/ui/checkbox';
-import { Badge } from '../../../components/ui/badge';
-import { formatCurrency } from '../../../utils/format';
-import { generateClient } from 'aws-amplify/api';
-import { listProviders } from '../../../graphql/queries';
-import { Alert, AlertDescription } from '../../../components/ui/alert';
+} from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { formatCurrency } from '@/utils/format';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
-import type { Provider } from '../../../types/provider';
-import type { ListProvidersQuery, ModelProviderConnection } from '../../../API';
-import type { GraphQLResult } from '@aws-amplify/api-graphql';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 export const ProviderList: React.FC = () => {
   const dispatch = useDispatch();
-  const { providers, selectedProviders, error, loading } = useSelector((state: RootState) => state.providers);
-  const client = generateClient();
-
-  useEffect(() => {
-    const fetchProviders = async () => {
-      dispatch(setLoading(true));
-      dispatch(setError(null));
-
-      try {
-        console.log('Fetching providers...');
-        const result = await client.graphql<ListProvidersQuery>({
-          query: listProviders,
-          authMode: 'apiKey'
-        }) as GraphQLResult<ListProvidersQuery>;
-
-        console.log('Raw provider data:', JSON.stringify(result, null, 2));
-
-        const listProvidersData = result.data?.listProviders as ModelProviderConnection | null | undefined;
-        const items = listProvidersData?.items ?? [];
-
-        if (items.length > 0) {
-          // Transform the data to match our Provider type
-          const transformedProviders = items
-            .filter((item): item is NonNullable<typeof item> => item !== null)
-            .map((item) => {
-              console.log('Processing provider:', JSON.stringify(item, null, 2));
-              
-              // Ensure required fields have default values
-              const provider: Provider = {
-                id: item.id,
-                name: item.name ?? '',
-                fte: item.fte ?? 1.0,
-                baseSalary: item.baseSalary ?? 0,
-                startDate: item.startDate ?? new Date().toISOString().split('T')[0],
-                compensationModel: item.compensationType === 'BASE' ? 'BASE' :
-                                 item.compensationType === 'PRODUCTIVITY' ? 'PRODUCTIVITY' :
-                                 item.compensationType === 'HYBRID' ? 'HYBRID' :
-                                 item.compensationType === 'HOSPITALIST' ? 'HOSPITALIST' :
-                                 item.compensationType === 'LEADERSHIP' ? 'LEADERSHIP' : 'BASE',
-                employeeId: item.employeeId ?? undefined,
-                providerType: item.providerType ?? undefined,
-                specialty: item.specialty ?? undefined,
-                subspecialty: item.subspecialty ?? undefined,
-                administrativeFte: item.administrativeFte ?? undefined,
-                administrativeRole: item.administrativeRole ?? undefined,
-                yearsExperience: item.yearsExperience ?? undefined,
-                hourlyWage: item.hourlyWage ?? undefined,
-                originalAgreementDate: item.originalAgreementDate ?? undefined,
-                organizationName: item.organizationName ?? undefined,
-                contractTerm: item.contractTerm ?? undefined,
-                ptoDays: item.ptoDays ?? undefined,
-                holidayDays: item.holidayDays ?? undefined,
-                cmeDays: item.cmeDays ?? undefined,
-                cmeAmount: item.cmeAmount ?? undefined,
-                signingBonus: item.signingBonus ?? undefined,
-                educationBonus: item.educationBonus ?? undefined,
-                qualityBonus: item.qualityBonus ?? undefined,
-                conversionFactor: item.conversionFactor ?? undefined,
-                wRVUTarget: item.wRVUTarget ?? undefined,
-                compensationYear: item.compensationYear ?? undefined,
-                credentials: item.credentials ?? undefined,
-                fteBreakdown: [{
-                  activity: 'Clinical',
-                  percentage: 100,
-                }],
-                createdAt: item.createdAt ?? undefined,
-                updatedAt: item.updatedAt ?? undefined,
-              };
-
-              console.log('Transformed provider:', JSON.stringify(provider, null, 2));
-              return provider;
-            });
-
-          console.log('All transformed providers:', JSON.stringify(transformedProviders, null, 2));
-          dispatch(setProviders(transformedProviders));
-        } else {
-          console.log('No providers found in response');
-          dispatch(setProviders([]));
-        }
-      } catch (err) {
-        console.error('Error fetching providers:', err);
-        let errorMessage = 'Failed to fetch providers';
-        
-        if (err instanceof Error) {
-          errorMessage = `${err.name}: ${err.message}`;
-          if (err.message?.includes('API key')) {
-            errorMessage = 'API key authentication failed. Please check your AWS configuration.';
-          }
-          if ('cause' in err) {
-            errorMessage += `\nCause: ${JSON.stringify(err.cause)}`;
-          }
-        }
-        
-        dispatch(setError(errorMessage));
-      } finally {
-        dispatch(setLoading(false));
-      }
-    };
-
-    fetchProviders();
-  }, [dispatch]);
+  const { providers, selectedProviders, error, loading } = useSelector((state: RootState) => state.provider);
 
   const handleSelectAll = (checked: boolean) => {
     dispatch(setSelectedProviders(checked ? providers.map(p => p.id) : []));
@@ -137,15 +33,6 @@ export const ProviderList: React.FC = () => {
     ));
   };
 
-  if (loading) {
-    return (
-      <div className="text-center py-8">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading providers...</p>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <Alert variant="destructive">
@@ -154,6 +41,19 @@ export const ProviderList: React.FC = () => {
           <pre className="whitespace-pre-wrap font-mono text-sm">{error}</pre>
         </AlertDescription>
       </Alert>
+    );
+  }
+
+  // Initial loading state
+  if (loading && providers.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <LoadingSpinner 
+          size="md" 
+          message="Loading providers..." 
+          color="primary"
+        />
+      </div>
     );
   }
 
@@ -166,13 +66,23 @@ export const ProviderList: React.FC = () => {
   }
 
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="relative w-full overflow-x-auto">
+      {/* Refreshing overlay */}
+      {loading && (
+        <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+          <LoadingSpinner 
+            size="md" 
+            message="Refreshing providers..." 
+            color="primary"
+          />
+        </div>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead className="w-[50px]">
               <Checkbox
-                checked={selectedProviders.length === providers.length}
+                checked={selectedProviders.length > 0 && selectedProviders.length === providers.length}
                 onCheckedChange={handleSelectAll}
                 aria-label="Select all providers"
               />
@@ -196,9 +106,9 @@ export const ProviderList: React.FC = () => {
                 />
               </TableCell>
               <TableCell className="font-medium">{provider.name}</TableCell>
-              <TableCell>{new Date(provider.startDate).toLocaleDateString()}</TableCell>
+              <TableCell>{provider.startDate ? new Date(provider.startDate).toLocaleDateString() : 'N/A'}</TableCell>
               <TableCell>{provider.fte}</TableCell>
-              <TableCell>{formatCurrency(provider.baseSalary)}</TableCell>
+              <TableCell>{formatCurrency(provider.baseSalary ?? 0)}</TableCell>
               <TableCell>
                 <Badge variant="outline">
                   {provider.compensationModel || 'BASE'}
