@@ -89,6 +89,7 @@ export const getProvider = /* GraphQL */ `query GetProvider($id: ID!) {
       __typename
     }
     templateTag
+    dynamicFields
     createdAt
     updatedAt
     __typename
@@ -135,6 +136,7 @@ export const listProviders = /* GraphQL */ `query ListProviders(
       credentials
       compensationModel
       templateTag
+      dynamicFields
       createdAt
       updatedAt
       __typename

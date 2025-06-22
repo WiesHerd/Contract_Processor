@@ -111,6 +111,7 @@ export const createProvider = /* GraphQL */ `mutation CreateProvider(
       __typename
     }
     templateTag
+    dynamicFields
     createdAt
     updatedAt
     __typename
@@ -160,6 +161,7 @@ export const updateProvider = /* GraphQL */ `mutation UpdateProvider(
       __typename
     }
     templateTag
+    dynamicFields
     createdAt
     updatedAt
     __typename
@@ -209,6 +211,7 @@ export const deleteProvider = /* GraphQL */ `mutation DeleteProvider(
       __typename
     }
     templateTag
+    dynamicFields
     createdAt
     updatedAt
     __typename

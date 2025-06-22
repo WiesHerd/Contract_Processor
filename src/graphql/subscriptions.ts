@@ -99,6 +99,7 @@ export const onCreateProvider = /* GraphQL */ `subscription OnCreateProvider($fi
       __typename
     }
     templateTag
+    dynamicFields
     createdAt
     updatedAt
     __typename
@@ -145,6 +146,7 @@ export const onUpdateProvider = /* GraphQL */ `subscription OnUpdateProvider($fi
       __typename
     }
     templateTag
+    dynamicFields
     createdAt
     updatedAt
     __typename
@@ -191,6 +193,7 @@ export const onDeleteProvider = /* GraphQL */ `subscription OnDeleteProvider($fi
       __typename
     }
     templateTag
+    dynamicFields
     createdAt
     updatedAt
     __typename
