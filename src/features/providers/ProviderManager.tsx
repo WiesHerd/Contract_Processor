@@ -34,6 +34,7 @@ import { createProvider } from '@/graphql/mutations';
 import { v4 as uuidv4 } from 'uuid';
 import type { ButtonProps } from '@/components/ui/button';
 import type { LucideProps } from 'lucide-react';
+import { parseDynamicFields, getAllProviderFieldNames, getProviderFieldValue } from '@/utils/dynamicFields';
 
 // JSX types are already provided by React 18+ TypeScript types
 
@@ -209,6 +210,56 @@ const defaultColumns: ColumnDef<ExtendedProvider>[] = [
   { accessorKey: 'wRVUTarget', header: 'wRVU Target' },
   { accessorKey: 'conversionFactor', header: 'CF' },
 ];
+
+// Generate dynamic columns based on available data
+function generateDynamicColumns(providers: ExtendedProvider[]): ColumnDef<ExtendedProvider>[] {
+  if (providers.length === 0) return [];
+
+  // Get all unique field names from all providers
+  const allFieldNames = new Set<string>();
+  
+  providers.forEach(provider => {
+    const fieldNames = getAllProviderFieldNames(provider);
+    fieldNames.forEach(field => allFieldNames.add(field));
+  });
+
+  // Filter out schema fields that are already defined
+  const schemaFields = [
+    'id', 'name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 
+    'fte', 'baseSalary', 'startDate', 'administrativeFte', 'administrativeRole',
+    'yearsExperience', 'hourlyWage', 'originalAgreementDate', 'organizationName',
+    'contractTerm', 'ptoDays', 'holidayDays', 'cmeDays', 'cmeAmount', 'signingBonus',
+    'educationBonus', 'qualityBonus', 'compensationType', 'conversionFactor',
+    'wRVUTarget', 'compensationYear', 'credentials', 'compensationModel',
+    'fteBreakdown', 'templateTag', 'dynamicFields', 'createdAt', 'updatedAt'
+  ];
+
+  const dynamicFieldNames = Array.from(allFieldNames).filter(field => !schemaFields.includes(field));
+
+  // Create column definitions for dynamic fields
+  return dynamicFieldNames.map(fieldName => ({
+    accessorKey: fieldName,
+    header: fieldName,
+    cell: info => {
+      const value = getProviderFieldValue(info.row.original, fieldName);
+      if (value === null || value === undefined) return '';
+      
+      // Format based on value type
+      if (typeof value === 'number') {
+        if (fieldName.toLowerCase().includes('salary') || fieldName.toLowerCase().includes('bonus') || fieldName.toLowerCase().includes('amount')) {
+          return formatCurrency(value);
+        }
+        return formatNumber(value);
+      }
+      
+      if (fieldName.toLowerCase().includes('date')) {
+        return formatDate(value);
+      }
+      
+      return String(value);
+    }
+  }));
+}
 
 const ProviderManager = forwardRef<HTMLDivElement, ProviderManagerProps>(
   function ProviderManager({ 
@@ -410,20 +461,21 @@ const ProviderManager = forwardRef<HTMLDivElement, ProviderManagerProps>(
         };
       });
 
-      return dynamicColumns.concat([
-        {
-          id: 'actions',
-          header: '',
-          cell: ({ row }: { row: any }) => (
-            <Button size="icon" variant="ghost" onClick={() => handleEdit(row.index)}>
-              <Pencil className="h-4 w-4" />
-            </Button>
-          ),
-          enableSorting: false,
-          size: 60,
-        } as any,
-      ]);
-    }, [uploadedColumns, handleEdit, providerNameCol, isSticky]);
+      // Add dynamic fields from JSON data
+      const dynamicFieldColumns = generateDynamicColumns(providers);
+
+      return [...dynamicColumns, ...dynamicFieldColumns, {
+        id: 'actions',
+        header: '',
+        cell: ({ row }: { row: any }) => (
+          <Button size="icon" variant="ghost" onClick={() => handleEdit(row.index)}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ),
+        enableSorting: false,
+        size: 60,
+      } as any];
+    }, [uploadedColumns, handleEdit, providerNameCol, isSticky, providers]);
 
     const table = useReactTable({
       data: filteredProviders,

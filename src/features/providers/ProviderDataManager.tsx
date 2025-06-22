@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import ProgressModal from '@/components/ui/ProgressModal';
 import type { RootState } from '@/store';
+import { extractDynamicFields, stringifyDynamicFields } from '@/utils/dynamicFields';
 
 const REQUIRED_COLUMNS = [
   'Provider Name', 'Provider Type', 'Specialty', 'FTE', 'BaseSalary', 'StartDate', 'ContractTerm',
@@ -140,34 +141,50 @@ export default function ProviderDataManager() {
           setShowValidationModal(true);
         } else {
           try {
-            // Convert to CreateProviderInput format
-            const providersToCreate: CreateProviderInput[] = mappedData.map(row => ({
-              id: crypto.randomUUID(),
-              name: row['Provider Name'],
-              specialty: row['Specialty'],
-              fte: parseFloat(row['FTE']),
-              baseSalary: parseFloat(row['BaseSalary']),
-              startDate: row['StartDate'],
-              contractTerm: row['ContractTerm'],
-              providerType: row['Provider Type'],
-              subspecialty: row['Subspecialty'],
-              administrativeFte: row['Administrative FTE'] ? parseFloat(row['Administrative FTE']) : undefined,
-              administrativeRole: row['Administrative Role'],
-              yearsExperience: row['Years of Experience'] ? parseInt(row['Years of Experience']) : undefined,
-              hourlyWage: row['Hourly Wage'] ? parseFloat(row['Hourly Wage']) : undefined,
-              originalAgreementDate: row['OriginalAgreementDate'],
-              organizationName: row['OrganizationName'],
-              ptoDays: row['PTODays'] ? parseInt(row['PTODays']) : undefined,
-              holidayDays: row['HolidayDays'] ? parseInt(row['HolidayDays']) : undefined,
-              cmeDays: row['CMEDays'] ? parseInt(row['CMEDays']) : undefined,
-              cmeAmount: row['CMEAmount'] ? parseFloat(row['CMEAmount']) : undefined,
-              signingBonus: row['SigningBonus'] ? parseFloat(row['SigningBonus']) : undefined,
-              educationBonus: row['EducationBonus'] ? parseFloat(row['EducationBonus']) : undefined,
-              qualityBonus: row['QualityBonus'] ? parseFloat(row['QualityBonus']) : undefined,
-              compensationType: row['CompensationType'],
-              conversionFactor: row['ConversionFactor'] ? parseFloat(row['ConversionFactor']) : undefined,
-              wRVUTarget: row['wRVUTarget'] ? parseFloat(row['wRVUTarget']) : undefined
-            }));
+            // Convert to CreateProviderInput format with dynamic fields support
+            const providersToCreate: CreateProviderInput[] = mappedData.map(row => {
+              // Define schema fields that we handle explicitly
+              const schemaFields = [
+                'Provider Name', 'Specialty', 'FTE', 'BaseSalary', 'StartDate', 'ContractTerm',
+                'Provider Type', 'Subspecialty', 'Administrative FTE', 'Administrative Role',
+                'Years of Experience', 'Hourly Wage', 'OriginalAgreementDate', 'OrganizationName',
+                'PTODays', 'HolidayDays', 'CMEDays', 'CMEAmount', 'SigningBonus', 'EducationBonus',
+                'QualityBonus', 'CompensationType', 'ConversionFactor', 'wRVUTarget'
+              ];
+
+              // Extract dynamic fields (columns not in schema)
+              const dynamicFields = extractDynamicFields(row, schemaFields);
+              const dynamicFieldsJson = stringifyDynamicFields(dynamicFields);
+
+              return {
+                id: crypto.randomUUID(),
+                name: row['Provider Name'],
+                specialty: row['Specialty'],
+                fte: parseFloat(row['FTE']),
+                baseSalary: parseFloat(row['BaseSalary']),
+                startDate: row['StartDate'],
+                contractTerm: row['ContractTerm'],
+                providerType: row['Provider Type'],
+                subspecialty: row['Subspecialty'],
+                administrativeFte: row['Administrative FTE'] ? parseFloat(row['Administrative FTE']) : undefined,
+                administrativeRole: row['Administrative Role'],
+                yearsExperience: row['Years of Experience'] ? parseInt(row['Years of Experience']) : undefined,
+                hourlyWage: row['Hourly Wage'] ? parseFloat(row['Hourly Wage']) : undefined,
+                originalAgreementDate: row['OriginalAgreementDate'],
+                organizationName: row['OrganizationName'],
+                ptoDays: row['PTODays'] ? parseInt(row['PTODays']) : undefined,
+                holidayDays: row['HolidayDays'] ? parseInt(row['HolidayDays']) : undefined,
+                cmeDays: row['CMEDays'] ? parseInt(row['CMEDays']) : undefined,
+                cmeAmount: row['CMEAmount'] ? parseFloat(row['CMEAmount']) : undefined,
+                signingBonus: row['SigningBonus'] ? parseFloat(row['SigningBonus']) : undefined,
+                educationBonus: row['EducationBonus'] ? parseFloat(row['EducationBonus']) : undefined,
+                qualityBonus: row['QualityBonus'] ? parseFloat(row['QualityBonus']) : undefined,
+                compensationType: row['CompensationType'],
+                conversionFactor: row['ConversionFactor'] ? parseFloat(row['ConversionFactor']) : undefined,
+                wRVUTarget: row['wRVUTarget'] ? parseFloat(row['wRVUTarget']) : undefined,
+                dynamicFields: dynamicFieldsJson
+              };
+            });
 
             // Save to DynamoDB using Redux thunk
             await dispatch(uploadProviders(providersToCreate)).unwrap();
