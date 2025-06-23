@@ -2,20 +2,18 @@
 export const ADMIN_CONFIG = {
   // Admin email domains (users with these domains get admin access)
   adminDomains: [
-    'admin.yourcompany.com',
     'yourcompany.com', // Add your company domain
     'contractengine.com', // Add your app domain
-    'gmail.com', // Common email domain for testing
-    'outlook.com', // Common email domain for testing
-    'hotmail.com', // Common email domain for testing
+    // Remove common domains for security - add specific ones only
   ],
   
   // Admin email addresses (specific admin users)
   adminEmails: [
     'admin@yourcompany.com',
     'superadmin@contractengine.com',
-    // Add your specific email here for admin access
-    // 'your-email@gmail.com', // Uncomment and add your email
+    // TODO: ADD YOUR EMAIL HERE FOR ADMIN ACCESS
+    // 'your-email@gmail.com', // Uncomment and add your actual email
+    // 'your-email@outlook.com', // Add your email here
   ],
   
   // Admin mode toggle key combination (Ctrl+Shift+A)

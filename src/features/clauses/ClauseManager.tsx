@@ -186,4 +186,4 @@ export default function ClauseManager() {
       )}
     </div>
   );
-}
+} 

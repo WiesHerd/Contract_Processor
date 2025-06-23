@@ -29,7 +29,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const isWelcome = location.pathname === '/';
   
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated: authState } = useAuth();
 
   const handleSignOut = async () => {
     try {
@@ -41,7 +41,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const { isWarningModalOpen, countdown, handleStayLoggedIn } = useSessionTimeout(isAuthenticated ? handleSignOut : () => {});
+  const { isWarningModalOpen, countdown, handleStayLoggedIn } = useSessionTimeout(authState ? handleSignOut : () => {});
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -54,7 +54,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           © {new Date().getFullYear()} ContractEngine. All rights reserved.
         </div>
       </footer>
-      {isAuthenticated && (
+      {authState && (
         <SessionTimeoutModal
           isOpen={isWarningModalOpen}
           countdown={countdown}
@@ -68,7 +68,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 function TopNav({ onSignOut }: { onSignOut: () => void }) {
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -107,13 +107,22 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
     }
   ];
 
+  // Add admin item if user is admin
+  if (isAdmin) {
+    navItems.push({
+      title: 'Admin',
+      path: '/admin',
+      group: 'admin'
+    });
+  }
+
   const groupedNav = navItems.reduce((acc, item) => {
     if (!acc[item.group]) acc[item.group] = [];
     acc[item.group].push(item);
     return acc;
   }, {} as Record<string, typeof navItems>);
 
-  const groupOrder = ['setup', 'content', 'action', 'review'];
+  const groupOrder = ['setup', 'content', 'action', 'review', 'admin'];
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-200">
@@ -148,6 +157,27 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                       </div>
                     );
                   }
+                  if (group === 'admin') {
+                    return (
+                      <div key={group} className="flex items-center px-3 py-1">
+                        <div className="h-6 w-px bg-red-200 mr-3" />
+                        {groupedNav[group].map((item) => (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            className={`inline-flex items-center px-3 pt-1 border-b-2 text-sm font-medium ${
+                              isActive(item.path)
+                                ? 'border-red-500 text-red-600'
+                                : 'border-transparent text-red-500 hover:text-red-700 hover:border-red-300'
+                            }`}
+                          >
+                            {item.title}
+                          </Link>
+                        ))}
+                        <div className="h-6 w-px bg-red-200 ml-3" />
+                      </div>
+                    );
+                  }
                   return (
                     <div key={group} className="flex items-center space-x-2 px-3 py-1">
                       {groupedNav[group].map((item) => (
@@ -178,12 +208,19 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                 Sign In
               </Link>
             ) : (
-              <button
-                onClick={onSignOut}
-                className="text-sm font-medium text-gray-600 hover:text-red-600 px-3 py-2 rounded-md border border-gray-100 hover:border-red-200 transition"
-              >
-                Sign Out
-              </button>
+              <div className="flex items-center space-x-2">
+                {isAdmin && (
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium">
+                    ADMIN
+                  </span>
+                )}
+                <button
+                  onClick={onSignOut}
+                  className="text-sm font-medium text-gray-600 hover:text-red-600 px-3 py-2 rounded-md border border-gray-100 hover:border-red-200 transition"
+                >
+                  Sign Out
+                </button>
+              </div>
             )}
           </div>
         </div>
