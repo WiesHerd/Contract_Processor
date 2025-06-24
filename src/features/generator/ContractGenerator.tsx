@@ -25,12 +25,14 @@ import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { Input } from '@/components/ui/input';
 import { Editor } from '@tinymce/tinymce-react';
 import { getContractFileName } from '@/utils/filename';
-import { addAuditLog } from '@/store/slices/auditSlice';
+import { logSecurityEvent } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
 import { PageHeader } from '@/components/PageHeader';
 import { fetchClausesIfNeeded } from '@/store/slices/clauseSlice';
+import { fetchTemplatesIfNeeded } from '@/features/templates/templatesSlice';
+import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { AppDispatch } from '@/store';
+import type { AppDispatch } from '@/store';
 
 // Utility to normalize smart quotes and special characters
 function normalizeSmartQuotes(text: string): string {
@@ -45,7 +47,7 @@ function normalizeSmartQuotes(text: string): string {
 }
 
 export default function ContractGenerator() {
-  const dispatch: AppDispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { providers, loading: providersLoading, error: providersError } = useSelector((state: RootState) => state.provider);
   const { templates, status: templatesStatus, error: templatesError } = useSelector((state: RootState) => state.templates);
   const { clauses, loading: clausesLoading } = useSelector((state: RootState) => state.clauses);
@@ -70,6 +72,16 @@ export default function ContractGenerator() {
   // Load clauses with caching
   useEffect(() => {
     dispatch(fetchClausesIfNeeded());
+  }, [dispatch]);
+
+  // Load templates with caching
+  useEffect(() => {
+    dispatch(fetchTemplatesIfNeeded());
+  }, [dispatch]);
+
+  // Load providers with caching
+  useEffect(() => {
+    dispatch(fetchProvidersIfNeeded());
   }, [dispatch]);
 
   // Create filtered clauses for the sidebar
@@ -118,8 +130,16 @@ export default function ContractGenerator() {
       const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
       const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
       const htmlClean = normalizeSmartQuotes(mergedHtml);
-      const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
-      const htmlWithFont = calibriStyle + htmlClean;
+      const aptosStyle = `<style>
+body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
+  font-family: Aptos, Arial, sans-serif !important;
+  font-size: 11pt !important;
+}
+h1 { font-size: 16pt !important; font-weight: bold !important; }
+h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
+b, strong { font-weight: bold !important; }
+</style>`;
+      const htmlWithFont = aptosStyle + htmlClean;
       // @ts-ignore
       if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
         dispatch(setError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.'));
@@ -143,28 +163,20 @@ export default function ContractGenerator() {
       a.click();
       document.body.removeChild(a);
       // Audit log for single generation
-      dispatch(addAuditLog({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        user: '-',
-        providers: [provider.name],
-        template: selectedTemplate.name,
-        outputType: 'DOCX',
-        status: 'success' as const,
-        downloadUrl: url,
+      dispatch(logSecurityEvent({
+        action: 'CONTRACT_GENERATION',
+        details: 'Contract generated',
+        severity: 'LOW' as const,
+        // Add other fields as needed
       }));
     } catch (error) {
       dispatch(setError(error instanceof Error ? error.message : 'Failed to generate document'));
       // Audit log for failure
-      dispatch(addAuditLog({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        user: '-',
-        providers: [provider?.name || 'Unknown'],
-        template: selectedTemplate?.name || 'Unknown',
-        outputType: 'DOCX',
-        status: 'failed' as const,
-        downloadUrl: undefined,
+      dispatch(logSecurityEvent({
+        action: 'CONTRACT_GENERATION_FAILURE',
+        details: error instanceof Error ? error.message : 'Failed to generate document',
+        severity: 'HIGH' as const,
+        // Add other fields as needed
       }));
     } finally {
       dispatch(setGenerating(false));
@@ -194,8 +206,16 @@ export default function ContractGenerator() {
         const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
         const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
         const htmlClean = normalizeSmartQuotes(mergedHtml);
-        const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
-        const htmlWithFont = calibriStyle + htmlClean;
+        const aptosStyle = `<style>
+body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
+  font-family: Aptos, Arial, sans-serif !important;
+  font-size: 11pt !important;
+}
+h1 { font-size: 16pt !important; font-weight: bold !important; }
+h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
+b, strong { font-weight: bold !important; }
+</style>`;
+        const htmlWithFont = aptosStyle + htmlClean;
         // @ts-ignore
         const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
         const fileName = `ScheduleA_${String(provider.name).replace(/\s+/g, '')}.docx`;
@@ -208,31 +228,36 @@ export default function ContractGenerator() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         // Audit log for each generated file
-        auditEntries.push({
-          id: uuidv4(),
-          timestamp: new Date().toISOString(),
-          user: '-',
-          providers: [provider.name],
-          template: selectedTemplate.name,
-          outputType: 'DOCX',
-          status: 'success' as const,
-          downloadUrl: url,
-        });
+        const auditEntry = {
+          action: 'BULK_CONTRACT_GENERATION',
+          details: `Generated contract for ${provider.name} using template ${selectedTemplate.name}`,
+          severity: 'LOW' as const,
+          category: 'DATA' as const,
+          resourceType: 'CONTRACT',
+          resourceId: provider.id,
+          metadata: {
+            providerName: provider.name,
+            templateName: selectedTemplate.name,
+            outputType: 'DOCX',
+            status: 'success',
+            downloadUrl: url,
+          },
+        } as const;
+        auditEntries.push(auditEntry);
       }
-      auditEntries.forEach(entry => dispatch(addAuditLog(entry)));
+      // Log each audit entry
+      for (const entry of auditEntries) {
+        dispatch(logSecurityEvent(entry));
+      }
     } catch (error) {
       setUserError('Failed to generate one or more DOCX files. Please check your template and provider data.');
       console.error("Bulk DOCX Generation Error:", error);
       // Audit log for bulk failure
-      dispatch(addAuditLog({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        user: '-',
-        providers: selectedProviders.map(p => p.name),
-        template: selectedTemplate.name,
-        outputType: 'DOCX',
-        status: 'failed' as const,
-        downloadUrl: undefined,
+      dispatch(logSecurityEvent({
+        action: 'CONTRACT_GENERATION_FAILURE',
+        details: 'Failed to generate one or more DOCX files. Please check your template and provider data.',
+        severity: 'HIGH' as const,
+        // Add other fields as needed
       }));
     }
   };
@@ -266,9 +291,17 @@ export default function ContractGenerator() {
     try {
       // Normalize mergedHtml
       const htmlClean = normalizeSmartQuotes(mergedHtml);
-      // Prepend Calibri font style
-      const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
-      const htmlWithFont = calibriStyle + htmlClean;
+      // Prepend Aptos font style
+      const aptosStyle = `<style>
+body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
+  font-family: Aptos, Arial, sans-serif !important;
+  font-size: 11pt !important;
+}
+h1 { font-size: 16pt !important; font-weight: bold !important; }
+h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
+b, strong { font-weight: bold !important; }
+</style>`;
+      const htmlWithFont = aptosStyle + htmlClean;
       // @ts-ignore
       if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
         setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
@@ -367,16 +400,26 @@ export default function ContractGenerator() {
           <Select
             value={selectedTemplateId}
             onValueChange={setSelectedTemplateId}
+            disabled={templatesStatus === 'loading'}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select template" />
+              <SelectValue placeholder={templatesStatus === 'loading' ? 'Loading templates...' : 'Select template'} />
             </SelectTrigger>
             <SelectContent>
-              {templates.map(template => (
-                <SelectItem key={template.id} value={template.id}>
-                  {template.name} (v{template.version})
+              {templatesStatus === 'loading' ? (
+                <SelectItem value="" disabled>
+                  <div className="flex items-center gap-2">
+                    <LoadingSpinner size="sm" />
+                    Loading templates...
+                  </div>
                 </SelectItem>
-              ))}
+              ) : (
+                templates.map((template: any) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name} (v{template.version})
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
         </div>
@@ -420,60 +463,72 @@ export default function ContractGenerator() {
       {/* Provider Table with Multi-Select, Pagination, Sticky Name Column */}
       <Card className="p-4">
         <h2 className="text-lg font-semibold mb-4">Providers</h2>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <input
-                    type="checkbox"
-                    checked={paginatedProviders.length > 0 && paginatedProviders.every(p => selectedProviderIds.includes(p.id))}
-                    onChange={() => {
-                      const ids = paginatedProviders.map(p => p.id);
-                      if (ids.every(id => selectedProviderIds.includes(id))) {
-                        setSelectedProviderIds(selectedProviderIds.filter(id => !ids.includes(id)));
-                      } else {
-                        setSelectedProviderIds([...new Set([...selectedProviderIds, ...ids])]);
-                      }
-                    }}
-                    aria-label="Select all providers"
-                  />
-                </TableHead>
-                {columns.map(col => (
-                  <TableHead
-                    key={col.key}
-                    className={col.key === 'name' ? 'sticky left-0 bg-white z-10' : ''}
-                    style={col.key === 'name' ? { minWidth: 180, maxWidth: 240 } : { minWidth: 120 }}
-                  >
-                    {col.label}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedProviders.map((provider) => (
-                <TableRow key={provider.id}>
-                  <TableCell>
+        {providersLoading ? (
+          <div className="flex justify-center items-center py-8">
+            <LoadingSpinner 
+              size="lg" 
+              message="Loading providers..." 
+              color="primary"
+            />
+          </div>
+        ) : (
+          <>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
                     <input
                       type="checkbox"
-                      checked={selectedProviderIds.includes(provider.id)}
-                      onChange={() => toggleSelectProvider(provider.id)}
-                      aria-label={`Select ${provider.name}`}
+                      checked={paginatedProviders.length > 0 && paginatedProviders.every(p => selectedProviderIds.includes(p.id))}
+                      onChange={() => {
+                        const ids = paginatedProviders.map(p => p.id);
+                        if (ids.every(id => selectedProviderIds.includes(id))) {
+                          setSelectedProviderIds(selectedProviderIds.filter(id => !ids.includes(id)));
+                        } else {
+                          setSelectedProviderIds([...new Set([...selectedProviderIds, ...ids])]);
+                        }
+                      }}
+                      aria-label="Select all providers"
                     />
-                  </TableCell>
-                  <TableCell className="sticky left-0 bg-white z-10" style={{ minWidth: 180, maxWidth: 240 }}>{provider.name}</TableCell>
-                  <TableCell>{(provider as any).specialty || 'N/A'}</TableCell>
-                  <TableCell>{provider.startDate}</TableCell>
-                  <TableCell>{provider.baseSalary ? `$${Number(provider.baseSalary).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}</TableCell>
-                  <TableCell>{provider.fte !== undefined ? Number(provider.fte).toFixed(2) : ''}</TableCell>
+                  </TableHead>
+                  {columns.map(col => (
+                    <TableHead
+                      key={col.key}
+                      className={col.key === 'name' ? 'sticky left-0 bg-white z-10' : ''}
+                      style={col.key === 'name' ? { minWidth: 180, maxWidth: 240 } : { minWidth: 120 }}
+                    >
+                      {col.label}
+                    </TableHead>
+                  ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        <div className="text-sm text-gray-600 mt-2">
-          Showing {pageIndex * pageSize + 1}–{Math.min((pageIndex + 1) * pageSize, filteredProviders.length)} of {filteredProviders.length} providers
-        </div>
+              </TableHeader>
+              <TableBody>
+                {paginatedProviders.map((provider) => (
+                  <TableRow key={provider.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedProviderIds.includes(provider.id)}
+                        onChange={() => toggleSelectProvider(provider.id)}
+                        aria-label={`Select ${provider.name}`}
+                      />
+                    </TableCell>
+                    <TableCell className="sticky left-0 bg-white z-10" style={{ minWidth: 180, maxWidth: 240 }}>{provider.name}</TableCell>
+                    <TableCell>{(provider as any).specialty || 'N/A'}</TableCell>
+                    <TableCell>{provider.startDate}</TableCell>
+                    <TableCell>{provider.baseSalary ? `$${Number(provider.baseSalary).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}</TableCell>
+                    <TableCell>{provider.fte !== undefined ? Number(provider.fte).toFixed(2) : ''}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="text-sm text-gray-600 mt-2">
+            Showing {pageIndex * pageSize + 1}–{Math.min((pageIndex + 1) * pageSize, filteredProviders.length)} of {filteredProviders.length} providers
+          </div>
+          </>
+        )}
       </Card>
       {/* Modal for TinyMCE editor */}
       <Dialog open={editorModalOpen} onOpenChange={setEditorModalOpen}>
@@ -512,9 +567,17 @@ export default function ContractGenerator() {
                     alert('DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
                     return;
                   }
-                  // Prepend Calibri font style
-                  const calibriStyle = `<style>body, p, span, td, th, div { font-family: Calibri, Arial, sans-serif !important; font-size: 11pt !important; }</style>`;
-                  const htmlWithFont = calibriStyle + html;
+                  // Prepend Aptos font style
+                  const aptosStyle = `<style>
+body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
+  font-family: Aptos, Arial, sans-serif !important;
+  font-size: 11pt !important;
+}
+h1 { font-size: 16pt !important; font-weight: bold !important; }
+h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
+b, strong { font-weight: bold !important; }
+</style>`;
+                  const htmlWithFont = aptosStyle + html;
                   // Get provider and template info for filename
                   const contractYear = selectedTemplate ? selectedTemplate.contractYear || new Date().getFullYear().toString() : new Date().getFullYear().toString();
                   const fileName = getContractFileName(contractYear, provider?.name || 'Provider', new Date().toISOString().split('T')[0]);

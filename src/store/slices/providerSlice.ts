@@ -19,6 +19,30 @@ export const fetchProviders = createAsyncThunk(
   }
 );
 
+// Add a new thunk for conditional fetching with caching
+export const fetchProvidersIfNeeded = createAsyncThunk(
+  'providers/fetchIfNeeded',
+  async (_, { getState, dispatch }) => {
+    const state = getState() as any;
+    const { providers, lastSync, loading } = state.provider;
+    
+    const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+    const now = new Date().getTime();
+    const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
+    
+    // Fetch if:
+    // 1. Currently loading (let it finish)
+    // 2. There are no providers loaded
+    // 3. The data is stale (older than 5 minutes)
+    if (!loading && (providers.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS))) {
+      return dispatch(fetchProviders());
+    }
+    
+    // Return existing data if cache is still valid
+    return { payload: providers };
+  }
+);
+
 export const uploadProviders = createAsyncThunk(
   'providers/upload',
   async (providers: CreateProviderInput[], { dispatch }) => {
@@ -185,6 +209,17 @@ const providerSlice = createSlice({
       state.error = action.error.message || 'Failed to clear providers';
       state.clearProgress = undefined;
       state.clearTotal = undefined;
+    });
+
+    // Fetch Providers If Needed
+    builder.addCase(fetchProvidersIfNeeded.fulfilled, (state, action) => {
+      // Only update if we actually fetched new data
+      if (action.payload && Array.isArray(action.payload)) {
+        state.providers = action.payload;
+        state.lastSync = new Date().toISOString();
+      }
+      state.loading = false;
+      state.loadingAction = null;
     });
   },
 });
