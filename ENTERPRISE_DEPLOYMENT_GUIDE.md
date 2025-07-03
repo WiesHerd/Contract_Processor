@@ -38,7 +38,7 @@ Create a `.env.production` file:
 # AWS Configuration
 VITE_AWS_REGION=us-east-1
 VITE_AWS_ACCESS_KEY_ID=your_production_access_key
-VITE_AWS_SECRET_ACCESS_KEY=your_production_secret_key
+VITE_AWS_SECRET_ACCESS_KEY=REDACTED
 
 # S3 Configuration
 VITE_S3_BUCKET=your-production-bucket-name
