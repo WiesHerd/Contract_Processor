@@ -37,7 +37,7 @@ type Provider @model @auth(rules: [{ allow: public }]) {
   compensationType: String
   conversionFactor: Float
   wRVUTarget: Float
-  compensationYear: String
+  compensationYear: String @index(name: "byCompensationYear", queryField: "providersByCompensationYear")
   credentials: String
   compensationModel: String
   fteBreakdown: [FTEBreakdownComponent]
@@ -85,6 +85,16 @@ type AuditLog @model @auth(rules: [{ allow: public }]) {
   user: String
   timestamp: AWSDateTime!
   details: String
+}
+
+# Custom queries
+type Query {
+  listProviderYears: [String]
+}
+
+type ProviderConnection {
+  items: [Provider]
+  nextToken: String
 }
 
 input DeleteTemplateInput {

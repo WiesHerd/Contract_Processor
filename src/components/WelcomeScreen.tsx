@@ -1,7 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from './Logo';
-import { FileText, Users, FilePlus2, ClipboardList } from 'lucide-react';
+import { FileText, Users, FilePlus2, ClipboardList, LogOut } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navigationCards = [
   {
@@ -62,9 +63,27 @@ const navigationCards = [
 
 export const WelcomeScreen = () => {
   const navigate = useNavigate();
+  const { signOut, isAuthenticated } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.href = '/signin';
+  };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="bg-white relative">
+      {/* Log Out button in top-right */}
+      {isAuthenticated && (
+        <button
+          onClick={handleSignOut}
+          className="absolute top-6 right-6 flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow hover:bg-red-100 hover:text-red-700 transition font-medium"
+        >
+          <LogOut className="w-5 h-5" />
+          Log Out
+        </button>
+      )}
       <div className="max-w-7xl mx-auto px-4 py-12">
         <div className="flex flex-col items-center justify-center mb-12">
           <Logo size="large" />

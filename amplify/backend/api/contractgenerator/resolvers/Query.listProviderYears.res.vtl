@@ -1,0 +1,7 @@
+#set($years = [])
+#foreach($item in $ctx.result.items)
+    #if($item.compensationYear && !$years.contains($item.compensationYear))
+        $util.qr($years.add($item.compensationYear))
+    #end
+#end
+$util.toJson($years) 

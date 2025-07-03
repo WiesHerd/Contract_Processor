@@ -4,6 +4,7 @@ import { awsProviders } from '@/utils/awsServices';
 import { CreateProviderInput } from '@/API';
 import { RootState } from '../index';
 import { awsBulkOperations } from '@/utils/awsServices';
+import { toast } from 'sonner';
 
 // Selectors
 export const selectProviders = (state: RootState) => state.provider.providers;
@@ -13,8 +14,8 @@ export const selectProvidersError = (state: RootState) => state.provider.error;
 // Async thunks
 export const fetchProviders = createAsyncThunk(
   'providers/fetchAll',
-  async () => {
-    const response = await awsProviders.list();
+  async (year?: number) => {
+    const response = await awsProviders.list(year);
     return response;
   }
 );
@@ -69,6 +70,20 @@ export const clearAllProviders = createAsyncThunk(
   }
 );
 
+export const updateProvider = createAsyncThunk(
+  'providers/updateProvider',
+  async (provider, { rejectWithValue }) => {
+    try {
+      const updated = await awsProviders.update(provider);
+      toast.success('Provider updated successfully.');
+      return updated;
+    } catch (error: any) {
+      toast.error('Failed to update provider.');
+      return rejectWithValue(error.message || 'Failed to update provider');
+    }
+  }
+);
+
 const initialState: ProviderState = {
   providers: [],
   selectedProviders: [],
@@ -118,12 +133,6 @@ const providerSlice = createSlice({
     addProvider: (state, action: PayloadAction<Provider>) => {
       state.providers.push(action.payload);
     },
-    updateProvider: (state, action: PayloadAction<Provider>) => {
-      const index = state.providers.findIndex(p => p.id === action.payload.id);
-      if (index !== -1) {
-        state.providers[index] = action.payload;
-      }
-    },
     removeProvider: (state, action: PayloadAction<string>) => {
       state.providers = state.providers.filter(p => p.id !== action.payload);
       state.selectedProviders = state.selectedProviders.filter(id => id !== action.payload);
@@ -150,18 +159,17 @@ const providerSlice = createSlice({
       state.error = null;
     });
     builder.addCase(fetchProviders.fulfilled, (state, action) => {
-      return {
-        ...state,
-        loading: false,
-        loadingAction: null,
-        providers: action.payload as Provider[],
-        lastSync: new Date().toISOString(),
-      };
+      state.loading = false;
+      state.loadingAction = null;
+      state.providers = action.payload as Provider[];
+      state.lastSync = new Date().toISOString();
     });
     builder.addCase(fetchProviders.rejected, (state, action) => {
       state.loading = false;
       state.loadingAction = null;
       state.error = action.error.message || 'Failed to fetch providers';
+      // Defensive: clear providers if fetch fails
+      state.providers = [];
     });
 
     // Upload Providers
@@ -221,6 +229,31 @@ const providerSlice = createSlice({
       state.loading = false;
       state.loadingAction = null;
     });
+    builder.addCase(fetchProvidersIfNeeded.rejected, (state, action) => {
+      state.loading = false;
+      state.loadingAction = null;
+      state.error = action.error.message || 'Failed to fetch providers';
+    });
+
+    // Update Provider
+    builder.addCase(updateProvider.fulfilled, (state, action) => {
+      if (action.payload) {
+        const index = state.providers.findIndex(p => p.id === action.payload.id);
+        if (index !== -1) {
+          state.providers[index] = action.payload;
+        }
+      }
+    });
+    builder.addCase(updateProvider.rejected, (state, action) => {
+      state.error = action.error.message || 'Failed to update provider';
+    });
+
+    // Defensive: catch-all for any thunk that leaves loading stuck
+    builder.addDefaultCase((state) => {
+      if (state.loading && !state.loadingAction) {
+        state.loading = false;
+      }
+    });
   },
 });
 
@@ -232,7 +265,6 @@ export const {
   setLoading,
   setSelectedProviders,
   addProvider,
-  updateProvider,
   removeProvider,
   clearProviders,
   setClearProgress,

@@ -65,9 +65,9 @@ export const fetchTemplatesIfNeeded = createAsyncThunk(
     
     // Fetch if:
     // 1. Status is idle (no data loaded yet)
-    // 2. There are no templates loaded
-    // 3. The data is stale (older than 5 minutes)
-    if (status === 'idle' || templates.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS)) {
+    // 2. The data is stale (older than 5 minutes)
+    // NOTE: Don't fetch just because templates.length === 0 (user may have deleted all)
+    if (status === 'idle' || (now - lastSyncTime > CACHE_DURATION_MS)) {
       return dispatch(hydrateTemplatesFromS3());
     }
     
@@ -98,6 +98,34 @@ export const deleteTemplate = createAsyncThunk(
       return templateId;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete template from S3');
+    }
+  }
+);
+
+// Delete all templates from S3/backend and then clear Redux state
+export const deleteAllTemplates = createAsyncThunk(
+  'templates/deleteAllTemplates',
+  async (_, { getState, dispatch, rejectWithValue }) => {
+    try {
+      const state = getState() as { templates: TemplatesState };
+      const templates = state.templates.templates;
+      // Delete each template from S3/backend
+      await Promise.all(
+        templates.map(async (template) => {
+          try {
+            await deleteTemplateFromS3(template.id);
+          } catch (err) {
+            // Log and continue, but collect errors
+            console.error(`Failed to delete template ${template.id}:`, err);
+            throw err;
+          }
+        })
+      );
+      // After all deletes succeed, clear Redux state
+      dispatch(templatesSlice.actions.clearTemplates());
+      return true;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete all templates');
     }
   }
 );

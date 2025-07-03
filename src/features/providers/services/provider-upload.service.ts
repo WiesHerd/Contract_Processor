@@ -104,42 +104,84 @@ export class ProviderUploadService {
         skipEmptyLines: true,
         complete: (results) => {
           try {
+            // Explicit header mapping for robust CSV parsing
+            const headerMap: Record<string, string> = {
+              'Employee ID': 'employeeId',
+              'Provider Name': 'providerName',
+              'Provider Type': 'providerType',
+              'Specialty': 'specialty',
+              'Subspecialty': 'subspecialty',
+              'FTE': 'fte',
+              'Administrative FTE': 'administrativeFte',
+              'Position Title': 'administrativeRole',
+              'Years of Experience': 'yearsExperience',
+              'Hourly Wage': 'hourlyWage',
+              'BaseSalary': 'baseSalary',
+              'OriginalAgreementDate': 'originalAgreementDate',
+              'OrganizationName': 'organizationName',
+              'StartDate': 'startDate',
+              'ContractTerm': 'contractTerm',
+              'PTODays': 'ptoDays',
+              'HolidayDays': 'holidayDays',
+              'CMEDays': 'cmeDays',
+              'CMEAmount': 'cmeAmount',
+              'SigningBonus': 'signingBonus',
+              'RelocationBonus': 'relocationBonus',
+              'QualityBonus': 'qualityBonus',
+              'Compensation Type': 'compensationModel',
+              'ConversionFactor': 'conversionFactor',
+              'wRVUTarget': 'wRVUTarget',
+              'Compensation Year': 'compensationYear',
+              'Credentials': 'credentials',
+              // Add more as needed
+            };
+
+            const normalizeKey = (key: string) =>
+              headerMap[key.trim()] ||
+              key.replace(/[_\s]+(.)?/g, (_, c) => c ? c.toUpperCase() : '').replace(/^[A-Z]/, c => c.toLowerCase());
+
             const providers = results.data.map((row) => {
-              const compensationModel = (row.compensationModel || 'BASE').toUpperCase() as CompensationModel;
+              // Build a new row with normalized keys
+              const normalizedRow: Record<string, string> = {};
+              Object.keys(row).forEach((key) => {
+                normalizedRow[normalizeKey(key)] = row[key];
+              });
+
+              const compensationModel = (normalizedRow.compensationModel || 'BASE').toUpperCase() as CompensationModel;
               return {
-                id: row.id || crypto.randomUUID(),
-                name: row.name || '',
-                startDate: row.startDate || '',
-                fte: parseFloat(row.fte) || 1.0,
-                baseSalary: parseFloat(row.baseSalary) || 0,
+                id: normalizedRow.id || crypto.randomUUID(),
+                name: normalizedRow.name || '',
+                startDate: normalizedRow.startDate || '', // Take as-is, do not parse
+                fte: parseFloat(normalizedRow.fte) || 1.0,
+                baseSalary: parseFloat(normalizedRow.baseSalary) || 0,
                 compensationModel: compensationModel,
-                employeeId: row.employeeId || undefined,
-                providerType: row.providerType || undefined,
-                specialty: row.specialty || undefined,
-                subspecialty: row.subspecialty || undefined,
-                administrativeFte: row.administrativeFte ? parseFloat(row.administrativeFte) : undefined,
-                administrativeRole: row.administrativeRole || undefined,
-                yearsExperience: row.yearsExperience ? parseInt(row.yearsExperience) : undefined,
-                hourlyWage: row.hourlyWage ? parseFloat(row.hourlyWage) : undefined,
-                originalAgreementDate: row.originalAgreementDate || undefined,
-                organizationName: row.organizationName || undefined,
-                contractTerm: row.contractTerm || undefined,
-                ptoDays: row.ptoDays ? parseInt(row.ptoDays) : undefined,
-                holidayDays: row.holidayDays ? parseInt(row.holidayDays) : undefined,
-                cmeDays: row.cmeDays ? parseInt(row.cmeDays) : undefined,
-                cmeAmount: row.cmeAmount ? parseFloat(row.cmeAmount) : undefined,
-                signingBonus: row.signingBonus ? parseFloat(row.signingBonus) : undefined,
-                educationBonus: row.educationBonus ? parseFloat(row.educationBonus) : undefined,
-                qualityBonus: row.qualityBonus ? parseFloat(row.qualityBonus) : undefined,
-                conversionFactor: row.conversionFactor ? parseFloat(row.conversionFactor) : undefined,
-                wRVUTarget: row.wRVUTarget ? parseFloat(row.wRVUTarget) : undefined,
-                compensationYear: row.compensationYear || undefined,
-                credentials: row.credentials || undefined,
-                fteBreakdown: row.fteBreakdown ? JSON.parse(row.fteBreakdown) : [{
+                employeeId: normalizedRow.employeeId || undefined,
+                providerType: normalizedRow.providertype || normalizedRow.providerType || undefined,
+                specialty: normalizedRow.specialty || undefined,
+                subspecialty: normalizedRow.subspecialty || undefined,
+                administrativeFte: normalizedRow.administrativefte ? parseFloat(normalizedRow.administrativefte) : undefined,
+                administrativeRole: normalizedRow.administrativerole || undefined,
+                yearsExperience: normalizedRow.yearsofexperience ? parseInt(normalizedRow.yearsofexperience) : undefined,
+                hourlyWage: normalizedRow.hourlywage ? parseFloat(normalizedRow.hourlywage) : undefined,
+                originalAgreementDate: normalizedRow.originalagreementdate || undefined, // Take as-is, do not parse
+                organizationName: normalizedRow.organizationname || undefined,
+                contractTerm: normalizedRow.contractterm || undefined,
+                ptoDays: normalizedRow.ptodays ? parseInt(normalizedRow.ptodays) : undefined,
+                holidayDays: normalizedRow.holidaydays ? parseInt(normalizedRow.holidaydays) : undefined,
+                cmeDays: normalizedRow.cmedays ? parseInt(normalizedRow.cmedays) : undefined,
+                cmeAmount: normalizedRow.cmeamount ? parseFloat(normalizedRow.cmeamount) : undefined,
+                signingBonus: normalizedRow.signingbonus ? parseFloat(normalizedRow.signingbonus) : undefined,
+                educationBonus: normalizedRow.educationbonus ? parseFloat(normalizedRow.educationbonus) : undefined,
+                qualityBonus: normalizedRow.qualitybonus ? parseFloat(normalizedRow.qualitybonus) : undefined,
+                conversionFactor: normalizedRow.conversionfactor ? parseFloat(normalizedRow.conversionfactor) : undefined,
+                wRVUTarget: normalizedRow.wrvutarget ? parseFloat(normalizedRow.wrvutarget) : undefined,
+                compensationYear: normalizedRow.compensationyear || undefined,
+                credentials: normalizedRow.credentials || undefined,
+                fteBreakdown: normalizedRow.ftebreakdown ? JSON.parse(normalizedRow.ftebreakdown) : [{
                   activity: 'Clinical',
                   percentage: 100,
                 }],
-                templateTag: row.templateTag || undefined,
+                templateTag: normalizedRow.templatetag || undefined,
               } as Provider;
             });
             resolve(providers);

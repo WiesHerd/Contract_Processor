@@ -49,6 +49,7 @@ export const ProviderSchema = z.object({
   compensationModel: CompensationModel.optional().nullable(),
   fteBreakdown: z.array(FTEBreakdownSchema).optional().nullable(),
   templateTag: z.string().optional().nullable(),
+  dynamicFields: z.record(z.any()).optional().nullable(),
   createdAt: z.string().optional().nullable(),
   updatedAt: z.string().optional().nullable(),
   __typename: z.literal('Provider').optional(),

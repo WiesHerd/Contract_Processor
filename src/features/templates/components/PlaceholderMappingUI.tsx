@@ -13,7 +13,8 @@ import { Provider } from '@/types/provider';
 import { RootState } from '@/store';
 import { useAwsUpload } from '@/hooks/useAwsUpload';
 import { awsMappings } from '@/utils/awsServices';
-import { addAuditLog } from '@/store/slices/auditSlice';
+import { logSecurityEvent } from '@/store/slices/auditSlice';
+import type { AppDispatch } from '@/store';
 import { v4 as uuidv4 } from 'uuid';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
@@ -35,7 +36,7 @@ export function PlaceholderMappingUI({
   provider, 
   onMappingComplete 
 }: PlaceholderMappingUIProps) {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { uploadState, uploadMapping, resetUploadState } = useAwsUpload();
   
   const [mappings, setMappings] = useState<MappingField[]>([]);
@@ -171,14 +172,11 @@ export function PlaceholderMappingUI({
         setSuccess(true);
         
         // Log audit entry
-        dispatch(addAuditLog({
-          id: uuidv4(),
-          timestamp: new Date().toISOString(),
-          user: 'system',
-          providers: [provider.id],
-          template: template.name,
-          outputType: 'mapping_saved',
-          status: 'success',
+        dispatch(logSecurityEvent({
+          action: 'PLACEHOLDER_MAPPING',
+          details: 'Placeholder mapping updated',
+          severity: 'LOW',
+          // Add other fields as needed
         }));
 
         // Call completion callback
@@ -191,14 +189,11 @@ export function PlaceholderMappingUI({
       setError(errorMessage);
       
       // Log audit entry for failure
-      dispatch(addAuditLog({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        user: 'system',
-        providers: [provider.id],
-        template: template.name,
-        outputType: 'mapping_saved',
-        status: 'failed',
+      dispatch(logSecurityEvent({
+        action: 'PLACEHOLDER_MAPPING',
+        details: `Failed to save mappings. Error: ${errorMessage}`,
+        severity: 'HIGH',
+        // Add other fields as needed
       }));
     } finally {
       setIsLoading(false);

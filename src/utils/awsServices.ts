@@ -93,6 +93,20 @@ const providerSelectionSet = [
   'listProviders.nextToken'
 ] as const;
 
+// Add a debug logger that appends to a global array for browser inspection
+// Declare the global property for TypeScript
+declare global {
+  interface Window {
+    _providerDebugLog?: string[];
+  }
+}
+function providerDebugLog(msg: string) {
+  if (typeof window !== 'undefined') {
+    (window as any)._providerDebugLog = (window as any)._providerDebugLog || [];
+    (window as any)._providerDebugLog.push(msg);
+  }
+}
+
 // Enhanced Template Operations with direct DynamoDB support
 export const awsTemplates = {
   async create(input: CreateTemplateInput): Promise<Template | null> {
@@ -240,13 +254,21 @@ export const awsProviders = {
   async create(input: CreateProviderInput): Promise<Provider | null> {
     return withRetry(async () => {
       try {
+        console.log('[awsProviders.create] Creating provider with input:', input);
         const result = await client.graphql({
           query: createProvider,
           variables: { input }
         });
+        console.log('[awsProviders.create] Success result:', result);
         return result.data?.createProvider || null;
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error creating provider:', error);
+        console.error('Provider input that failed:', input);
+        if (error.errors) {
+          console.error('GraphQL errors:', error.errors);
+        }
+        // Print the full error object for debugging
+        console.error('Full error object:', JSON.stringify(error, null, 2));
         throw error;
       }
     });
@@ -301,25 +323,27 @@ export const awsProviders = {
     const allProviders: Provider[] = [];
     let nextToken: string | null | undefined = null;
 
+    console.log('[awsProviders.list] Calling listProviders...');
     do {
       try {
         const result: any = await client.graphql({
           query: listProviders,
           variables: { limit: 1000, nextToken },
         });
-        
+        console.log('[awsProviders.list] listProviders result:', result);
         const providerData = result.data?.listProviders;
         if (providerData?.items) {
           allProviders.push(...providerData.items.filter(Boolean));
         }
         nextToken = providerData?.nextToken;
       } catch (error) {
-        console.error('Error listing providers:', error);
+        console.error('[awsProviders.list] Error listing providers:', error);
         // On error, break the loop and return what we have so far
         break;
       }
     } while (nextToken);
 
+    console.log('[awsProviders.list] Returning providers:', allProviders);
     return allProviders;
   },
 
@@ -352,17 +376,22 @@ export const awsProviders = {
       throw new Error("Provider table name is not configured in environment variables.");
     }
 
-    // 1. Scan the table to get all item keys and count them.
+    // 1. Scan the table to get all item keys with strong consistency
     let lastEvaluatedKey: Record<string, any> | undefined;
     const allItems: Record<string, any>[] = [];
+    let scanPageCount = 0;
+    
     do {
       const scanParams: ScanCommandInput = {
         TableName: tableName,
         ProjectionExpression: "id", // Only fetch the primary key
         ExclusiveStartKey: lastEvaluatedKey,
+        ConsistentRead: true, // Force strong consistency to see all items
       };
       const command = new ScanCommand(scanParams);
       const scanResult: ScanCommandOutput = await docClient.send(command);
+      scanPageCount++;
+      console.log(`[awsBulkOperations.deleteAllProviders] Scan page ${scanPageCount}, items: ${scanResult.Items?.length || 0}, LastEvaluatedKey: ${JSON.stringify(scanResult.LastEvaluatedKey)}`);
       if (scanResult.Items) {
         allItems.push(...scanResult.Items);
       }
@@ -370,8 +399,12 @@ export const awsProviders = {
     } while (lastEvaluatedKey);
 
     const total = allItems.length;
+    console.log(`[awsBulkOperations.deleteAllProviders] Total items found: ${total}`);
+    console.log(`[awsBulkOperations.deleteAllProviders] First 10 IDs: ${(allItems.slice(0, 10).map(item => item.id).join(', '))}`);
+    console.log(`[awsBulkOperations.deleteAllProviders] Total scan pages: ${scanPageCount}`);
+
     if (total === 0) {
-      onProgress?.({ deleted: 0, total: 0 });
+      onProgress?.({ deleted: 0, total });
       return; // Nothing to delete
     }
 
@@ -380,7 +413,7 @@ export const awsProviders = {
     let deletedCount = 0;
     onProgress?.({ deleted: 0, total });
 
-    for (let i = 0; i < allItems.length; i += batchSize) {
+    for (let i = 0; i < total; i += batchSize) {
       const batch = allItems.slice(i, i + batchSize);
       const deleteRequests = batch.map(item => ({
         DeleteRequest: {
@@ -396,9 +429,11 @@ export const awsProviders = {
       const command = new BatchWriteCommand(batchWriteParams);
       await docClient.send(command);
       deletedCount += batch.length;
-      onProgress?.({ deleted: deletedCount, total: total });
+      onProgress?.({ deleted: deletedCount, total });
     }
-  }
+    
+    console.log(`[awsBulkOperations.deleteAllProviders] Deletion complete. Deleted: ${deletedCount}, Total scanned: ${total}`);
+  },
 };
 
 // Enhanced Mapping Operations
@@ -589,6 +624,51 @@ export const awsMappings = {
     } catch (error: any) {
         console.error(`Error deleting mappings for template ${templateId} and provider ${providerId}:`, error);
         throw new AWSError('Failed to delete mappings', error.name, error.$metadata?.httpStatusCode, isRetryableError(error));
+    }
+  },
+
+  // Enterprise utility: Delete all mappings for a template (regardless of provider)
+  async deleteAllMappingsForTemplate(templateId: string): Promise<void> {
+    const appId = import.meta.env.VITE_AWS_APP_ID || 'uncqgyngxvgzfceslcwqtprza4';
+    const env = import.meta.env.VITE_AWS_ENV || 'dev';
+    const tableName = `Mapping-${appId}-${env}`;
+
+    // 1. Query for all mappings for this template
+    const scanParams = {
+      TableName: tableName,
+      FilterExpression: 'templateID = :templateId',
+      ExpressionAttributeValues: {
+        ':templateId': templateId,
+      },
+    };
+
+    try {
+      const scanResult = await withRetry(async () => docClient.send(new ScanCommand(scanParams)));
+      const mappingsToDelete = scanResult.Items;
+      if (!mappingsToDelete || mappingsToDelete.length === 0) {
+        return; // Nothing to delete
+      }
+      // 2. Batch delete the mappings
+      const deleteRequests = mappingsToDelete.map(mapping => ({
+        DeleteRequest: {
+          Key: { id: mapping.id },
+        },
+      }));
+      const batches = [];
+      for (let i = 0; i < deleteRequests.length; i += 25) {
+        batches.push(deleteRequests.slice(i, i + 25));
+      }
+      for (const batch of batches) {
+        const batchParams = {
+          RequestItems: {
+            [tableName]: batch,
+          },
+        };
+        await withRetry(async () => docClient.send(new BatchWriteCommand(batchParams)));
+      }
+    } catch (error: any) {
+      console.error(`Error deleting all mappings for template ${templateId}:`, error);
+      throw new AWSError('Failed to delete all mappings for template', error.name, error.$metadata?.httpStatusCode, isRetryableError(error));
     }
   },
 };
@@ -792,38 +872,44 @@ export const awsBulkOperations = {
       throw new Error("Provider table name is not configured in environment variables.");
     }
 
-    const total = await this.countAllProviders();
-    if (total === 0) {
-      onProgress?.({ deleted: 0, total: 0 });
-      return;
-    }
-
-    // 1. Scan the table to get all item keys
+    // 1. Scan the table to get all item keys with strong consistency
     let lastEvaluatedKey: Record<string, any> | undefined;
     const allItems: Record<string, any>[] = [];
+    let scanPageCount = 0;
+    
     do {
       const scanParams: ScanCommandInput = {
         TableName: tableName,
         ProjectionExpression: "id", // Only fetch the primary key
         ExclusiveStartKey: lastEvaluatedKey,
+        ConsistentRead: true, // Force strong consistency to see all items
       };
       const command = new ScanCommand(scanParams);
       const scanResult: ScanCommandOutput = await docClient.send(command);
+      scanPageCount++;
+      console.log(`[awsBulkOperations.deleteAllProviders] Scan page ${scanPageCount}, items: ${scanResult.Items?.length || 0}, LastEvaluatedKey: ${JSON.stringify(scanResult.LastEvaluatedKey)}`);
       if (scanResult.Items) {
         allItems.push(...scanResult.Items);
       }
       lastEvaluatedKey = scanResult.LastEvaluatedKey;
     } while (lastEvaluatedKey);
 
-    if (allItems.length === 0) {
-      onProgress?.({ deleted: 0, total: total });
+    const total = allItems.length;
+    console.log(`[awsBulkOperations.deleteAllProviders] Total items found: ${total}`);
+    console.log(`[awsBulkOperations.deleteAllProviders] First 10 IDs: ${(allItems.slice(0, 10).map(item => item.id).join(', '))}`);
+    console.log(`[awsBulkOperations.deleteAllProviders] Total scan pages: ${scanPageCount}`);
+
+    if (total === 0) {
+      onProgress?.({ deleted: 0, total });
       return; // Nothing to delete
     }
 
     // 2. Batch delete all items
     const batchSize = 25; // DynamoDB BatchWriteItem limit
     let deletedCount = 0;
-    for (let i = 0; i < allItems.length; i += batchSize) {
+    onProgress?.({ deleted: 0, total });
+
+    for (let i = 0; i < total; i += batchSize) {
       const batch = allItems.slice(i, i + batchSize);
       const deleteRequests = batch.map(item => ({
         DeleteRequest: {
@@ -839,8 +925,10 @@ export const awsBulkOperations = {
       const command = new BatchWriteCommand(batchWriteParams);
       await docClient.send(command);
       deletedCount += batch.length;
-      onProgress?.({ deleted: deletedCount, total: total });
+      onProgress?.({ deleted: deletedCount, total });
     }
+    
+    console.log(`[awsBulkOperations.deleteAllProviders] Deletion complete. Deleted: ${deletedCount}, Total scanned: ${total}`);
   },
 
   async createProviders(
@@ -860,16 +948,22 @@ export const awsBulkOperations = {
 
     for (let i = 0; i < total; i += batchSize) {
       const batch = providers.slice(i, i + batchSize);
+      console.log(`[awsBulkOperations.createProviders] Processing batch ${Math.floor(i/batchSize) + 1}, providers ${i+1}-${Math.min(i+batchSize, total)}`);
+      
       const results = await Promise.allSettled(
-        batch.map(p => awsProviders.create(p))
+        batch.map(async (provider, idx) => {
+          try {
+            console.log(`[awsBulkOperations.createProviders] Creating provider ${i + idx + 1}:`, provider);
+            const created = await awsProviders.create(provider);
+            if (created) successfulProviders.push(created);
+          } catch (err) {
+            console.error(`[awsBulkOperations.createProviders] Failed to create provider ${i + idx + 1}:`, err);
+            console.error('[awsBulkOperations.createProviders] Failed provider data:', provider);
+            // Print the full error object for debugging
+            console.error('Full error object:', JSON.stringify(err, null, 2));
+          }
+        })
       );
-
-      results.forEach(result => {
-        if (result.status === 'fulfilled' && result.value) {
-          successfulProviders.push(result.value);
-        }
-      });
-
       uploadedCount += batch.length;
       onProgress?.({ uploaded: uploadedCount, total });
     }
@@ -911,7 +1005,7 @@ export async function checkAWSHealth(): Promise<{
 
   try {
     // Test DynamoDB
-    await awsProviders.list(1);
+    await awsProviders.list();
     health.dynamodb = true;
   } catch (error) {
     console.error('DynamoDB health check failed:', error);

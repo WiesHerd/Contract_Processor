@@ -1,5 +1,6 @@
 {
   "AppSyncApiName": "contractgenerator",
   "DynamoDBBillingMode": "PAY_PER_REQUEST",
-  "DynamoDBEnableServerSideEncryption": false
+  "DynamoDBEnableServerSideEncryption": false,
+  "AuthModeLastUpdated": "2025-06-30T06:25:14.754Z"
 }

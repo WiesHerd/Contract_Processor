@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signUp } from 'aws-amplify/auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 const SignUp: React.FC = () => {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { signUp } = useAuth();
 
   const validatePassword = (password: string): string | null => {
     if (password.length < 8) {
@@ -33,13 +36,16 @@ const SignUp: React.FC = () => {
     e.preventDefault();
     setError('');
 
-    // Validate passwords match
+    if (!firstName || !lastName) {
+      setError('First and last name are required.');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
-    // Validate password strength
     const passwordError = validatePassword(password);
     if (passwordError) {
       setError(passwordError);
@@ -48,22 +54,9 @@ const SignUp: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const { isSignUpComplete, userId, nextStep } = await signUp({
-        username: email,
-        password,
-        options: {
-          userAttributes: {
-            email
-          },
-          autoSignIn: true
-        }
-      });
-
-      if (nextStep.signUpStep === 'CONFIRM_SIGN_UP') {
-        navigate('/verify-email', { state: { email } });
-      }
+      await signUp(email, password, email, firstName, lastName);
+      navigate('/verify-email', { state: { email } });
     } catch (err: any) {
-      // Enterprise-grade error handling
       if (err.name === 'UsernameExistsException') {
         setError('An account with this email already exists.');
       } else if (err.name === 'InvalidPasswordException') {
@@ -88,6 +81,38 @@ const SignUp: React.FC = () => {
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-4 rounded-md shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
+                  First Name
+                </label>
+                <input
+                  id="firstName"
+                  name="firstName"
+                  type="text"
+                  autoComplete="given-name"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
+                  Last Name
+                </label>
+                <input
+                  id="lastName"
+                  name="lastName"
+                  type="text"
+                  autoComplete="family-name"
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address

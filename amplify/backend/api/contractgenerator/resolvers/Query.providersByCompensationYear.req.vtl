@@ -1,0 +1,11 @@
+{
+    "version": "2018-05-29",
+    "operation": "Query",
+    "indexName": "byCompensationYear",
+    "query": {
+        "expression": "compensationYear = :year",
+        "expressionValues": {
+            ":year": $util.dynamodb.toDynamoDBJson($ctx.args.compensationYear)
+        }
+    }
+} 

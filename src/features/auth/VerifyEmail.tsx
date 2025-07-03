@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { confirmSignUp, resendSignUpCode } from 'aws-amplify/auth';
+import { resendSignUpCode } from 'aws-amplify/auth';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 const VerifyEmail: React.FC = () => {
   const [code, setCode] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [resendDisabled, setResendDisabled] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
+  const { confirmSignUp, signIn } = useAuth();
   const email = location.state?.email;
 
   useEffect(() => {
@@ -30,19 +33,27 @@ const VerifyEmail: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    setError(null);
     setIsLoading(true);
 
+    const trimmedCode = code.trim();
+
+    if (!email) {
+      setError('An email address was not provided. Please sign up again.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (!trimmedCode) {
+      setError('Please enter your verification code.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      await confirmSignUp({
-        username: email,
-        confirmationCode: code
-      });
-      setSuccess('Email verified successfully! You can now sign in.');
-      setTimeout(() => {
-        navigate('/signin');
-      }, 2000);
+      await confirmSignUp(email, trimmedCode);
+      toast.success('Account verified successfully! Please sign in.');
+      navigate('/signin');
     } catch (err: any) {
       if (err.name === 'CodeMismatchException') {
         setError('Invalid verification code. Please try again.');

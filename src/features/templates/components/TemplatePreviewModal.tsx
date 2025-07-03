@@ -12,6 +12,7 @@ import { Provider } from '@/types/provider';
 import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
 import { downloadFile } from '@/utils/s3Storage';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getContractFileName } from '@/utils/filename';
 
 interface TemplatePreviewModalProps {
   open: boolean;
@@ -61,8 +62,7 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
   }, [open, template]);
 
   const handleDownload = async () => {
-    if (!template) return;
-    // Use the merged, formatted HTML from the preview
+    if (!template || !selectedProvider) return;
     const htmlContent = `<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>${mergedHtml}</body></html>`;
     if (!htmlDocx || typeof htmlDocx.asBlob !== 'function') {
       alert("DOCX export is not available. Please ensure html-docx-js is installed and imported.");
@@ -70,7 +70,9 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
     }
     try {
       const docxBlob = htmlDocx.asBlob(htmlContent);
-      const fileName = `ScheduleA_${template.name.replace(/\s+/g, '')}.docx`;
+      const contractYear = template.contractYear || new Date().getFullYear().toString();
+      const runDate = new Date().toISOString().split('T')[0];
+      const fileName = getContractFileName(contractYear, selectedProvider.name, runDate);
       const url = URL.createObjectURL(docxBlob);
       const a = document.createElement('a');
       a.href = url;

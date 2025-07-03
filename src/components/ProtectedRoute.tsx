@@ -1,55 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { fetchAuthSession } from 'aws-amplify/auth';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { useAuth } from '../contexts/AuthContext';
+import { LoadingSpinner } from './ui/loading-spinner';
 
-interface ProtectedRouteProps {
-  children: React.ReactNode;
-}
-
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+  const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
-
-  useEffect(() => {
-    let isMounted = true;
-    fetchAuthSession()
-      .then((session) => {
-        if (isMounted && session && session.tokens?.idToken) {
-          setIsAuthenticated(true);
-        } else if (isMounted) {
-          setIsAuthenticated(false);
-        }
-      })
-      .catch(() => {
-        if (isMounted) setIsAuthenticated(false);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <LoadingSpinner 
-          size="lg" 
-          message="Checking authentication..." 
-          color="primary"
-        />
+      <div className="flex h-screen w-full items-center justify-center">
+        <LoadingSpinner size="lg" message="Authenticating..." />
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    // Redirect them to the /signin page, but save the current location they were
+    // trying to go to. This allows us to send them back to that page after a
+    // successful sign-in.
+    return <Navigate to="/signin" state={{ from: location }} replace />;
   }
 
-  return <>{children}</>;
+  return children;
 };
 
 export default ProtectedRoute; 

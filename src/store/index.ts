@@ -5,6 +5,8 @@ import generatorReducer from '@/features/generator/generatorSlice';
 import clauseReducer from './slices/clauseSlice';
 import auditReducer from './slices/auditSlice';
 import providerReducer from './slices/providerSlice';
+import userReducer from './slices/userSlice';
+import { useDispatch } from 'react-redux';
 
 const rootReducer = combineReducers({
   templates: templatesReducer,
@@ -13,6 +15,7 @@ const rootReducer = combineReducers({
   clauses: clauseReducer,
   audit: auditReducer,
   provider: providerReducer,
+  users: userReducer,
 });
 
 export const store = configureStore({
@@ -31,4 +34,5 @@ export const store = configureStore({
 });
 
 export type RootState = ReturnType<typeof store.getState>;
-export type AppDispatch = typeof store.dispatch; 
+export type AppDispatch = typeof store.dispatch;
+export const useAppDispatch: () => AppDispatch = useDispatch; 

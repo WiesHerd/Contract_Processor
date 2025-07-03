@@ -1,7 +1,7 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Provider } from 'react-redux';
-import { store } from './store';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { Provider, useSelector, useDispatch } from 'react-redux';
+import { store, RootState } from './store';
 import TemplateManager from './features/templates/TemplateManager';
 import MappingListPage from './features/templates/MappingListPage';
 import FieldMapperPage from './features/templates/FieldMapperPage';
@@ -20,33 +20,79 @@ import { signOut } from 'aws-amplify/auth';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import AdminDashboard from './features/admin/AdminDashboard';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { SessionTimeoutModal } from './components/ui/SessionTimeoutModal';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import Avatar from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { LogOut, User, Settings } from 'lucide-react';
+import ProfilePage from './features/auth/ProfilePage';
+import PublicRoute from './components/PublicRoute';
+import { AuthLayout } from './components/AuthLayout';
+import { withErrorBoundary } from './components/ErrorBoundary';
+import { fetchMappingsIfNeeded } from '@/features/templates/mappingsSlice';
+import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
+import { fetchTemplatesIfNeeded } from '@/features/templates/templatesSlice';
+import { fetchClausesIfNeeded } from '@/store/slices/clauseSlice';
+import { useAppDispatch } from './store';
+
+function AppInitializer() {
+  const dispatch = useAppDispatch();
+  useEffect(() => {
+    dispatch(fetchMappingsIfNeeded());
+    dispatch(fetchProvidersIfNeeded());
+    dispatch(fetchTemplatesIfNeeded());
+    dispatch(fetchClausesIfNeeded());
+  }, [dispatch]);
+  return null;
+}
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isWelcome = location.pathname === '/';
   
   const navigate = useNavigate();
-  const { isAuthenticated: authState } = useAuth();
+  const { isAuthenticated, signOut, isAdmin } = useAuth();
 
   const handleSignOut = async () => {
     try {
       await signOut();
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.href = '/signin'; // Hard reload for bulletproof session clear
     } catch (error) {
-      console.error('Error signing out: ', error);
-    } finally {
-      navigate('/signin');
+      window.location.href = '/signin';
     }
   };
 
-  const { isWarningModalOpen, countdown, handleStayLoggedIn } = useSessionTimeout(authState ? handleSignOut : () => {});
+  const { isWarningModalOpen, countdown, handleStayLoggedIn } = useSessionTimeout(
+    isAuthenticated ? handleSignOut : () => {},
+    { isAdmin: isAdmin }
+  );
+
+  // This check ensures TopNav does not appear on the welcome screen,
+  // but will appear on all other protected routes.
+  const showNav = location.pathname !== '/';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {!isWelcome && <TopNav onSignOut={handleSignOut} />}
-      <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${!isWelcome ? 'pt-20' : ''}`}>
+      {showNav && <TopNav onSignOut={handleSignOut} />}
+      {/* Persistent security/inactivity banner */}
+      {isAuthenticated && !isWarningModalOpen && (
+        <div className="w-full bg-yellow-50 border-b border-yellow-200 text-yellow-800 text-center py-2 text-sm font-medium z-20">
+          For your security, you will be logged out after 20 minutes of inactivity.
+        </div>
+      )}
+      <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${showNav ? 'pt-20' : ''}`}>
         {children}
       </main>
       <footer className="w-full py-4 px-6 border-t border-gray-200 bg-white">
@@ -54,21 +100,79 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           © {new Date().getFullYear()} ContractEngine. All rights reserved.
         </div>
       </footer>
-      {authState && (
+      {isAuthenticated && (
         <SessionTimeoutModal
           isOpen={isWarningModalOpen}
           countdown={countdown}
           onStay={handleStayLoggedIn}
           onSignOut={handleSignOut}
+          customMessage="For your security, you will be automatically logged out after a period of inactivity. Please click 'Stay Signed In' to continue your session."
         />
       )}
     </div>
   );
 }
 
+function UserNav({ onSignOut }: { onSignOut: () => void }) {
+  const { user, isAdmin, attributes } = useAuth();
+  const navigate = useNavigate();
+
+  if (!user) return null;
+
+  const getInitials = (firstName?: string, username?: string) => {
+    if (firstName) return firstName.charAt(0).toUpperCase();
+    if (username) return username.charAt(0).toUpperCase();
+    return '?';
+  };
+
+  const userInitial = getInitials(attributes?.given_name, user.username);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon">
+          <Avatar initial={userInitial} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">
+              {attributes?.given_name && attributes?.family_name
+                ? `${attributes.given_name} ${attributes.family_name}`
+                : user.username}
+            </p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {attributes?.email || 'No email provided'}
+            </p>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          {isAdmin && (
+            <DropdownMenuItem onClick={() => navigate('/admin')}>
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Admin</span>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => navigate('/profile')}>
+            <User className="mr-2 h-4 w-4" />
+            <span>Profile</span>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onSignOut}>
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Log out</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function TopNav({ onSignOut }: { onSignOut: () => void }) {
   const location = useLocation();
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin, isLoading } = useAuth();
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -107,22 +211,13 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
     }
   ];
 
-  // Add admin item if user is admin
-  if (isAdmin) {
-    navItems.push({
-      title: 'Admin',
-      path: '/admin',
-      group: 'admin'
-    });
-  }
-
   const groupedNav = navItems.reduce((acc, item) => {
     if (!acc[item.group]) acc[item.group] = [];
     acc[item.group].push(item);
     return acc;
   }, {} as Record<string, typeof navItems>);
 
-  const groupOrder = ['setup', 'content', 'action', 'review', 'admin'];
+  const groupOrder = ['setup', 'content', 'action', 'review'];
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-200">
@@ -157,27 +252,6 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                       </div>
                     );
                   }
-                  if (group === 'admin') {
-                    return (
-                      <div key={group} className="flex items-center px-3 py-1">
-                        <div className="h-6 w-px bg-red-200 mr-3" />
-                        {groupedNav[group].map((item) => (
-                          <Link
-                            key={item.path}
-                            to={item.path}
-                            className={`inline-flex items-center px-3 pt-1 border-b-2 text-sm font-medium ${
-                              isActive(item.path)
-                                ? 'border-red-500 text-red-600'
-                                : 'border-transparent text-red-500 hover:text-red-700 hover:border-red-300'
-                            }`}
-                          >
-                            {item.title}
-                          </Link>
-                        ))}
-                        <div className="h-6 w-px bg-red-200 ml-3" />
-                      </div>
-                    );
-                  }
                   return (
                     <div key={group} className="flex items-center space-x-2 px-3 py-1">
                       {groupedNav[group].map((item) => (
@@ -200,7 +274,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
             )}
           </div>
           <div className="flex items-center space-x-4">
-            {!isAuthenticated ? (
+            {isLoading ? null : !isAuthenticated ? (
               <Link
                 to="/signin"
                 className="text-sm font-medium text-blue-600 hover:text-blue-800 px-3 py-2 rounded-md border border-blue-100 hover:border-blue-300 transition"
@@ -208,19 +282,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                 Sign In
               </Link>
             ) : (
-              <div className="flex items-center space-x-2">
-                {isAdmin && (
-                  <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium">
-                    ADMIN
-                  </span>
-                )}
-                <button
-                  onClick={onSignOut}
-                  className="text-sm font-medium text-gray-600 hover:text-red-600 px-3 py-2 rounded-md border border-gray-100 hover:border-red-200 transition"
-                >
-                  Sign Out
-                </button>
-              </div>
+              <UserNav onSignOut={onSignOut} />
             )}
           </div>
         </div>
@@ -232,17 +294,20 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
 function App() {
   return (
     <Provider store={store}>
+      <AppInitializer />
       <AuthProvider>
         <Router>
-          <AppLayout>
-            <Toaster position="top-right" richColors />
-            <Routes>
-              {/* Auth Routes */}
-              <Route path="/signin" element={<SignIn />} />
-              <Route path="/signup" element={<SignUp />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
+          <Toaster position="top-right" richColors />
+          <Routes>
+            {/* Public routes with the new minimal layout */}
+            <Route element={<AuthLayout />}>
+              <Route path="/signin" element={<PublicRoute><SignIn /></PublicRoute>} />
+              <Route path="/signup" element={<PublicRoute><SignUp /></PublicRoute>} />
+              <Route path="/verify-email" element={<PublicRoute><VerifyEmail /></PublicRoute>} />
+            </Route>
 
-              {/* Protected Routes */}
+            {/* Protected routes with the full application layout */}
+            <Route element={<AppLayout><Outlet /></AppLayout>}>
               <Route path="/" element={<ProtectedRoute><WelcomeScreen /></ProtectedRoute>} />
               <Route path="/templates" element={<ProtectedRoute><TemplateManager /></ProtectedRoute>} />
               <Route path="/map-fields" element={<ProtectedRoute><MappingListPage /></ProtectedRoute>} />
@@ -252,15 +317,15 @@ function App() {
               <Route path="/clauses" element={<ProtectedRoute><ClauseManager /></ProtectedRoute>} />
               <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
               <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
-              
-              {/* Admin Routes - Hidden from navigation */}
+              <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-            </Routes>
-          </AppLayout>
+            </Route>
+          </Routes>
         </Router>
       </AuthProvider>
     </Provider>
   );
 }
 
-export default App; 
+// Export with error boundary wrapper
+export default withErrorBoundary(App); 

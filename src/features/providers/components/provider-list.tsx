@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
-import { setSelectedProviders } from '@/store/slices/providerSlice';
+import { setSelectedProviders, selectProviders, selectProvidersLoading, selectProvidersError } from '@/store/slices/providerSlice';
 import {
   Table,
   TableBody,
@@ -17,9 +17,73 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
+// Define all possible columns with their display names
+const COLUMN_CONFIG = [
+  { key: 'name', label: 'Provider Name', sticky: true },
+  { key: 'employeeId', label: 'Employee ID' },
+  { key: 'startDate', label: 'Start Date' },
+  { key: 'fte', label: 'FTE' },
+  { key: 'administrativeFte', label: 'Administrative FTE' },
+  { key: 'baseSalary', label: 'Base Salary' },
+  { key: 'hourlyWage', label: 'Hourly Wage' },
+  { key: 'providerType', label: 'Provider Type' },
+  { key: 'specialty', label: 'Specialty' },
+  { key: 'subspecialty', label: 'Subspecialty' },
+  { key: 'credentials', label: 'Credentials' },
+  { key: 'yearsExperience', label: 'Years Experience' },
+  { key: 'compensationType', label: 'Compensation Type' },
+  { key: 'compensationYear', label: 'Compensation Year' },
+  { key: 'compensationModel', label: 'Compensation Model' },
+  { key: 'conversionFactor', label: 'Conversion Factor' },
+  { key: 'wRVUTarget', label: 'wRVU Target' },
+  { key: 'cmeAmount', label: 'CME Amount' },
+  { key: 'cmeDays', label: 'CME Days' },
+  { key: 'ptoDays', label: 'PTO Days' },
+  { key: 'holidayDays', label: 'Holiday Days' },
+  { key: 'signingBonus', label: 'Signing Bonus' },
+  { key: 'qualityBonus', label: 'Quality Bonus' },
+  { key: 'educationBonus', label: 'Education Bonus' },
+  { key: 'originalAgreementDate', label: 'Original Agreement Date' },
+  { key: 'contractTerm', label: 'Contract Term' },
+  { key: 'organizationName', label: 'Organization Name' },
+  { key: 'administrativeRole', label: 'Administrative Role' },
+  { key: 'templateTag', label: 'Template Tag' },
+];
+
 export const ProviderList: React.FC = () => {
   const dispatch = useDispatch();
-  const { providers, selectedProviders, error, loading } = useSelector((state: RootState) => state.provider);
+  const providers = useSelector(selectProviders);
+  const selectedProviders = useSelector((state: RootState) => state.provider.selectedProviders);
+  const error = useSelector(selectProvidersError);
+  const loading = useSelector(selectProvidersLoading);
+
+  // Get all unique keys from providers to ensure we show all available columns
+  const allProviderKeys = useMemo(() => {
+    const keys = new Set<string>();
+    providers.forEach(provider => {
+      Object.keys(provider).forEach(key => keys.add(key));
+      
+      // Also include dynamic fields
+      if (provider.dynamicFields && typeof provider.dynamicFields === 'object') {
+        Object.keys(provider.dynamicFields).forEach(key => keys.add(key));
+      }
+    });
+    return Array.from(keys).sort();
+  }, [providers]);
+
+  // Create final column config including any additional fields not in our predefined list
+  const finalColumnConfig = useMemo(() => {
+    const configMap = new Map(COLUMN_CONFIG.map(col => [col.key, col]));
+    
+    // Add any additional columns found in the data
+    allProviderKeys.forEach(key => {
+      if (!configMap.has(key)) {
+        configMap.set(key, { key, label: key.charAt(0).toUpperCase() + key.slice(1) });
+      }
+    });
+    
+    return Array.from(configMap.values());
+  }, [allProviderKeys]);
 
   const handleSelectAll = (checked: boolean) => {
     dispatch(setSelectedProviders(checked ? providers.map(p => p.id) : []));
@@ -31,6 +95,64 @@ export const ProviderList: React.FC = () => {
         ? [...selectedProviders, providerId]
         : selectedProviders.filter(id => id !== providerId)
     ));
+  };
+
+  const formatCellValue = (value: any, key: string) => {
+    if (value === null || value === undefined || value === '') {
+      return 'N/A';
+    }
+
+    // Format dates
+    if (key.includes('Date') || key.includes('date')) {
+      if (typeof value === 'string') {
+        if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          // Convert YYYY-MM-DD to MM/DD/YYYY
+          const [year, month, day] = value.split('-');
+          return `${month}/${day}/${year}`;
+        }
+        return value;
+      }
+    }
+
+    // Format currency fields
+    if (key.includes('Salary') || key.includes('Bonus') || key.includes('Amount') || key.includes('Wage')) {
+      const num = parseFloat(value);
+      if (!isNaN(num)) {
+        return formatCurrency(num);
+      }
+    }
+
+    // Format percentages and ratios
+    if (key.includes('Factor') || key === 'fte' || key === 'administrativeFte') {
+      const num = parseFloat(value);
+      if (!isNaN(num)) {
+        return num.toFixed(2);
+      }
+    }
+
+    // Format integers
+    if (key.includes('Days') || key.includes('Experience') || key.includes('Term') || key.includes('Year')) {
+      const num = parseInt(value);
+      if (!isNaN(num)) {
+        return num.toString();
+      }
+    }
+
+    return value.toString();
+  };
+
+  const getProviderValue = (provider: any, key: string) => {
+    // First try to get from main provider fields
+    let value = provider[key];
+    
+    // If not found, check dynamic fields
+    if (value === null || value === undefined) {
+      if (provider.dynamicFields && typeof provider.dynamicFields === 'object') {
+        value = provider.dynamicFields[key];
+      }
+    }
+    
+    return value;
   };
 
   if (error) {
@@ -66,7 +188,7 @@ export const ProviderList: React.FC = () => {
   }
 
   return (
-    <div className="relative w-full overflow-x-auto">
+    <div className="relative w-full">
       {/* Refreshing overlay */}
       {loading && (
         <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
@@ -77,56 +199,59 @@ export const ProviderList: React.FC = () => {
           />
         </div>
       )}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[50px]">
-              <Checkbox
-                checked={selectedProviders.length > 0 && selectedProviders.length === providers.length}
-                onCheckedChange={handleSelectAll}
-                aria-label="Select all providers"
-              />
-            </TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Start Date</TableHead>
-            <TableHead>FTE</TableHead>
-            <TableHead>Base Salary</TableHead>
-            <TableHead>Model</TableHead>
-            <TableHead>Template</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {providers.map((provider) => (
-            <TableRow key={provider.id}>
-              <TableCell>
+      
+      {/* Horizontal scroll container */}
+      <div className="overflow-x-auto border rounded-lg">
+        <Table className="min-w-full">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[50px] sticky left-0 bg-white z-20 font-semibold">
                 <Checkbox
-                  checked={selectedProviders.includes(provider.id)}
-                  onCheckedChange={(checked) => handleSelectProvider(provider.id, checked === true)}
-                  aria-label={`Select ${provider.name}`}
+                  checked={selectedProviders.length > 0 && selectedProviders.length === providers.length}
+                  onCheckedChange={handleSelectAll}
+                  aria-label="Select all providers"
                 />
-              </TableCell>
-              <TableCell className="font-medium">{provider.name}</TableCell>
-              <TableCell>{provider.startDate ? new Date(provider.startDate).toLocaleDateString() : 'N/A'}</TableCell>
-              <TableCell>{provider.fte}</TableCell>
-              <TableCell>{formatCurrency(provider.baseSalary ?? 0)}</TableCell>
-              <TableCell>
-                <Badge variant="outline">
-                  {provider.compensationModel || 'BASE'}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {provider.templateTag ? (
-                  <Badge variant="secondary">
-                    {provider.templateTag}
-                  </Badge>
-                ) : (
-                  <span className="text-gray-400">Not assigned</span>
-                )}
-              </TableCell>
+              </TableHead>
+              {finalColumnConfig.map((column) => (
+                <TableHead
+                  key={column.key}
+                  className={
+                    column.sticky ? 'sticky left-[50px] bg-white z-10 font-semibold' : 'font-semibold'
+                  }
+                >
+                  {column.label}
+                </TableHead>
+              ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {providers.map((provider, rowIdx) => (
+              <TableRow key={provider.id} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                <TableCell className="sticky left-0 bg-white z-20">
+                  <Checkbox
+                    checked={selectedProviders.includes(provider.id)}
+                    onCheckedChange={(checked) => handleSelectProvider(provider.id, checked === true)}
+                    aria-label={`Select ${provider.name}`}
+                  />
+                </TableCell>
+                {finalColumnConfig.map((column, colIdx) => (
+                  <TableCell
+                    key={column.key}
+                    className={
+                      colIdx === 0
+                        ? (column.sticky ? 'sticky left-[50px] bg-white z-10 font-semibold' : 'font-semibold')
+                        : (column.sticky ? 'sticky left-[50px] bg-white z-10' : '')
+                    }
+                    style={colIdx !== 0 ? { fontWeight: 400, fontFamily: 'inherit' } : {}}
+                  >
+                    {formatCellValue(getProviderValue(provider, column.key), column.key)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }; 

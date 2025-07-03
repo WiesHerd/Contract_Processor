@@ -1,6 +1,7 @@
 /// <reference types="html-docx-js" />
 import React, { useMemo, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import type { AppDispatch } from '@/store';
 import { Template } from '@/types/template';
 import { Button } from '@/components/ui/button';
 import { saveAs } from 'file-saver';
@@ -8,9 +9,10 @@ import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
 import Select from 'react-select';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { FieldMapping } from '@/features/templates/mappingsSlice';
-import { addAuditLog } from '@/store/slices/auditSlice';
+import { logSecurityEvent } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
 import { Provider } from '@/types/provider';
+import { getContractFileName } from '@/utils/filename';
 
 // IMPORTANT: Add this to your public/index.html
 // <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
@@ -63,8 +65,18 @@ interface ProviderOption {
   label: string;
 }
 
+// All contract outputs must use Aptos font for enterprise consistency
+const aptosStyle = `<style>
+body, p, span, td, th, div, h1, h2, h3, h4, h5, h6, b, strong {
+  font-family: Aptos, Arial, sans-serif !important;
+  font-size: 11pt !important;
+}
+h1 { font-size: 16pt !important; font-weight: bold !important; }
+h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
+</style>`;
+
 const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId, providerData }) => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<Provider>(sampleData);
 
@@ -95,19 +107,16 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
   const handleDownload = async () => {
     if (!template) return;
     try {
-      const htmlContent = `<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>${mergedHtml}</body></html>`;
+      const htmlContent = `<!DOCTYPE html><html><head><meta charset='utf-8'>${aptosStyle}</head><body>${mergedHtml}</body></html>`;
       const docxBlob = htmlDocx.asBlob(htmlContent);
-      const fileName = `${selectedProvider.name.replace(/\s+/g, '_')}_ScheduleA.docx`;
+      const contractYear = template.contractYear || new Date().getFullYear().toString();
+      const runDate = new Date().toISOString().split('T')[0];
+      const fileName = getContractFileName(contractYear, selectedProvider.name, runDate);
       saveAs(docxBlob, fileName);
-
-      dispatch(addAuditLog({
-        id: uuidv4(),
-        user: 'system',
-        template: template.name,
-        providers: [selectedProvider.id],
-        outputType: 'DOCX',
-        status: 'success',
-        timestamp: new Date().toISOString(),
+      dispatch(logSecurityEvent({
+        action: 'TEMPLATE_PREVIEW',
+        details: 'Template previewed',
+        severity: 'LOW',
       }));
     } catch (error) {
       console.error("Error generating DOCX:", error);

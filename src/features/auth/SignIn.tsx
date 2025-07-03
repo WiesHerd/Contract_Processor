@@ -6,6 +6,7 @@ import {
   resetPassword as amplifyResetPassword, 
   confirmResetPassword as amplifyConfirmResetPassword
 } from 'aws-amplify/auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 type AuthError = {
   name: string;
@@ -26,17 +27,13 @@ const SignIn: React.FC = () => {
   const [resetSuccess, setResetSuccess] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
   const navigate = useNavigate();
+  const { signIn: authSignIn, isAuthenticated } = useAuth();
 
   useEffect(() => {
-    // On mount, check if already signed in
-    fetchAuthSession()
-      .then((session) => {
-        if (session && session.tokens?.idToken) {
-          navigate('/');
-        }
-      })
-      .catch(() => {});
-  }, [navigate]);
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +43,7 @@ const SignIn: React.FC = () => {
       const { isSignedIn, nextStep } = await signIn({ username: email, password });
       if (isSignedIn) {
         localStorage.setItem('isAuthenticated', 'true');
-        navigate('/');
+        window.location.href = '/';
       } else if (nextStep?.signInStep === 'CONFIRM_SIGN_UP') {
         navigate('/verify-email', { state: { email } });
       }

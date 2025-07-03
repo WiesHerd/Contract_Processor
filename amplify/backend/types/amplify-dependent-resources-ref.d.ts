@@ -10,6 +10,7 @@ export type AmplifyDependentResourcesAttributes = {
     "contractgenerator7e5dfb2d": {
       "AppClientID": "string",
       "AppClientIDWeb": "string",
+      "CreatedSNSRole": "string",
       "HostedUIDomain": "string",
       "IdentityPoolId": "string",
       "IdentityPoolName": "string",

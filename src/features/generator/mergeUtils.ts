@@ -102,18 +102,18 @@ export const mergeTemplateWithData = (
   } else {
     // Fallback to old logic if no mapping is provided
     const placeholderMap: Record<string, string> = {
-      '{{ProviderName}}': `${provider.name}, ${provider.credentials ?? ''}`,
-      '{{StartDate}}': formatDate(provider.startDate ?? ''),
-      '{{BaseSalary}}': formatCurrency(provider.baseSalary ?? 0),
-      '{{FTE}}': String(provider.fte ?? ''),
-      '{{FTEBreakdown}}': generateFTEBreakdown(provider.fte ?? 0),
-      '{{Specialty}}': provider.specialty ?? '',
+      '{{ProviderName}}': provider.name ? `<b><strong>${provider.name}${provider.credentials ? ', ' + provider.credentials : ''}</strong></b>` : 'N/A',
+      '{{StartDate}}': provider.startDate ? formatDate(provider.startDate) : 'N/A',
+      '{{BaseSalary}}': provider.baseSalary ? `<b><strong>${formatCurrency(provider.baseSalary)}</strong></b>` : 'N/A',
+      '{{FTE}}': provider.fte !== undefined && provider.fte !== null ? `<b><strong>${provider.fte}</strong></b>` : 'N/A',
+      '{{FTEBreakdown}}': provider.fte !== undefined && provider.fte !== null ? generateFTEBreakdown(provider.fte) : 'N/A',
+      '{{Specialty}}': provider.specialty ?? 'N/A',
     };
     if (provider.wRVUTarget) {
       placeholderMap['{{wRVUTarget}}'] = formatNumber(provider.wRVUTarget);
     }
     if (provider.conversionFactor) {
-      placeholderMap['{{ConversionFactor}}'] = formatCurrency2(provider.conversionFactor ?? 0);
+      placeholderMap['{{ConversionFactor}}'] = formatCurrency2(provider.conversionFactor);
     }
     if (provider.retentionBonus) {
       if (typeof provider.retentionBonus === 'number') {
@@ -123,32 +123,45 @@ export const mergeTemplateWithData = (
       }
     }
     if (provider.signingBonus) {
-      placeholderMap['{{SigningBonus}}'] = formatCurrency(provider.signingBonus ?? 0);
+      placeholderMap['{{SigningBonus}}'] = formatCurrency(provider.signingBonus);
     }
     if (provider.relocationBonus) {
-      placeholderMap['{{RelocationBonus}}'] = formatCurrency(provider.relocationBonus ?? 0);
+      placeholderMap['{{RelocationBonus}}'] = formatCurrency(provider.relocationBonus);
     }
     if (provider.qualityBonus) {
-      placeholderMap['{{QualityBonus}}'] = formatCurrency(provider.qualityBonus ?? 0);
+      placeholderMap['{{QualityBonus}}'] = formatCurrency(provider.qualityBonus);
     }
     if (provider.cmeAmount) {
-      placeholderMap['{{CMEAmount}}'] = formatCurrency(provider.cmeAmount ?? 0);
+      placeholderMap['{{CMEAmount}}'] = formatCurrency(provider.cmeAmount);
     }
     if (provider.originalAgreementDate) {
-      placeholderMap['{{OriginalAgreementDate}}'] = formatDate(String(provider.originalAgreementDate ?? ''));
+      placeholderMap['{{OriginalAgreementDate}}'] = formatDate(String(provider.originalAgreementDate));
     }
     Object.entries(placeholderMap).forEach(([placeholder, value]) => {
       content = content.replace(new RegExp(placeholder, 'g'), value);
     });
   }
 
-  // Check for any remaining placeholders
-  const remainingPlaceholders = content.match(/{{[^}]+}}/g);
-  if (remainingPlaceholders) {
+  // After all replacements, replace any remaining {{...}} with 'N/A' and log a warning
+  const unresolved = content.match(/{{[^}]+}}/g);
+  if (unresolved) {
+    unresolved.forEach(ph => {
+      content = content.replace(new RegExp(ph, 'g'), 'N/A');
+    });
     warnings.push(
-      `Warning: The following placeholders were not replaced: ${remainingPlaceholders.join(', ')}`
+      `Warning: The following placeholders were not replaced and set to 'N/A': ${unresolved.join(', ')}`
     );
   }
+
+  // Patch: Convert any dash-based lists for bonuses/incentives to <ul><li>...</li></ul>
+  // Example: Find lines starting with '- ' and wrap them in <ul><li>...</li></ul>
+  content = content.replace(/((?:- .+\n?)+)/g, (match) => {
+    const items = match.trim().split(/\n/).map(line => line.replace(/^- /, '').trim());
+    if (items.length > 1) {
+      return '<ul>' + items.map(item => `<li>${item}</li>`).join('') + '</ul>';
+    }
+    return match;
+  });
 
   return { content, warnings };
 }; 

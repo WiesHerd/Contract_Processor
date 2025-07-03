@@ -17,10 +17,12 @@ import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { awsMappings } from '@/utils/awsServices';
-import { addAuditLog } from '@/store/slices/auditSlice';
+import { logSecurityEvent } from '@/store/slices/auditSlice';
+import type { AppDispatch } from '@/store';
 import { v4 as uuidv4 } from 'uuid';
 import { Mapping as AWSMapping } from '@/API';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { fetchProviders } from '@/store/slices/providerSlice';
 
 interface LocalMapping {
   placeholder: string;
@@ -65,15 +67,25 @@ function FieldSelect({
 export default function FieldMapperPage() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const template = useSelector((state: RootState) => state.templates.templates.find(t => t.id === templateId));
   
   // Get providers and derive columns directly from live data, not localforage
   const providers = useSelector((state: RootState) => state.provider.providers);
+  const providerLoading = useSelector((state: RootState) => state.provider.loading);
   const [columns, setColumns] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasTriedFetch, setHasTriedFetch] = useState(false);
+
+  // Fetch providers if missing on mount
+  useEffect(() => {
+    if ((!providers || providers.length === 0) && !providerLoading && !hasTriedFetch) {
+      dispatch(fetchProviders());
+      setHasTriedFetch(true);
+    }
+  }, [providers, providerLoading, hasTriedFetch, dispatch]);
 
   useEffect(() => {
     if (providers && providers.length > 0) {
@@ -256,14 +268,11 @@ export default function FieldMapperPage() {
         
         if (createdMappings.length > 0) {
           // Log audit entry
-          dispatch(addAuditLog({
-            id: uuidv4(),
-            timestamp: new Date().toISOString(),
-            user: 'system',
-            providers: [provider.id],
-            template: template?.name || 'Unknown',
-            outputType: 'template_mapping_saved',
-            status: 'success',
+          dispatch(logSecurityEvent({
+            action: 'FIELD_MAPPING',
+            details: 'Field mapping updated',
+            severity: 'LOW',
+            // Add other fields as needed
           }));
           
           navigate('/templates');
@@ -298,6 +307,18 @@ export default function FieldMapperPage() {
         <h2 className="text-2xl font-bold text-red-600 mb-4">Template Not Found</h2>
         <p className="text-gray-600 mb-4">The template you are trying to map does not exist. Please return to the Templates page and try again.</p>
         <Button onClick={() => navigate('/templates')}>Back to Templates</Button>
+      </div>
+    );
+  }
+
+  if (providerLoading || (!hasTriedFetch && (!providers || providers.length === 0))) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <LoadingSpinner 
+          size="md" 
+          message="Loading provider data..." 
+          color="primary"
+        />
       </div>
     );
   }

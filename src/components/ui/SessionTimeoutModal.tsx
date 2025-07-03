@@ -8,9 +8,10 @@ interface SessionTimeoutModalProps {
   countdown: number;
   onStay: () => void;
   onSignOut: () => void;
+  customMessage?: string;
 }
 
-export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({ isOpen, countdown, onStay, onSignOut }) => {
+export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({ isOpen, countdown, onStay, onSignOut, customMessage }) => {
   if (!isOpen) {
     return null;
   }
@@ -26,8 +27,17 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({ isOpen
         </DialogHeader>
         <div className="py-4">
           <p className="text-gray-600">
-            Your session is about to expire due to inactivity. You will be signed out in{' '}
-            <span className="font-bold text-gray-800">{countdown}</span> seconds.
+            {customMessage ? (
+              <>
+                {customMessage} <br />
+                <span className="font-bold text-gray-800">{countdown}</span> seconds remaining.
+              </>
+            ) : (
+              <>
+                Your session is about to expire due to inactivity. You will be signed out in{' '}
+                <span className="font-bold text-gray-800">{countdown}</span> seconds.
+              </>
+            )}
           </p>
           <p className="mt-4 text-sm text-gray-500">
             Do you want to stay signed in?

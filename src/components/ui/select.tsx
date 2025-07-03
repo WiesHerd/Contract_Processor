@@ -29,8 +29,8 @@ SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
 
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & { modal?: boolean }
+>(({ className, children, position = "popper", modal, ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
@@ -41,6 +41,7 @@ const SelectContent = React.forwardRef<
         className
       )}
       position={position}
+      {...(modal !== undefined && { modal })}
       {...props}
     >
       <SelectPrimitive.Viewport

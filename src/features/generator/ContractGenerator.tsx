@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { AlertTriangle, FileDown, Loader2 } from 'lucide-react';
+import { AlertTriangle, FileDown, Loader2, Info } from 'lucide-react';
 import {
   setSelectedTemplate,
   setSelectedProvider,
@@ -33,6 +33,7 @@ import { fetchTemplatesIfNeeded } from '@/features/templates/templatesSlice';
 import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import type { AppDispatch } from '@/store';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Utility to normalize smart quotes and special characters
 function normalizeSmartQuotes(text: string): string {
@@ -114,23 +115,14 @@ export default function ContractGenerator() {
     );
   };
 
-  const handleGenerate = async () => {
-    if (!selectedTemplate || selectedProviderIds.length !== 1) return;
-    const provider = providers.find(p => p.id === selectedProviderIds[0]);
-    if (!provider) return;
+  // Helper to generate and download DOCX for a provider
+  const generateAndDownloadDocx = (provider: Provider) => {
+    if (!selectedTemplate) return;
+    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
     const mapping = mappings[selectedTemplate.id]?.mappings;
-    if (!mapping) {
-      dispatch(setError('No mapping found for this template'));
-      return;
-    }
-    try {
-      dispatch(setGenerating(true));
-      dispatch(setError(null));
-      // Use HTML-to-DOCX logic (same as bulk)
-      const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
-      const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
-      const htmlClean = normalizeSmartQuotes(mergedHtml);
-      const aptosStyle = `<style>
+    const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+    const htmlClean = normalizeSmartQuotes(mergedHtml);
+    const aptosStyle = `<style>
 body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
   font-family: Aptos, Arial, sans-serif !important;
   font-size: 11pt !important;
@@ -139,48 +131,32 @@ h1 { font-size: 16pt !important; font-weight: bold !important; }
 h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
 b, strong { font-weight: bold !important; }
 </style>`;
-      const htmlWithFont = aptosStyle + htmlClean;
-      // @ts-ignore
-      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-        dispatch(setError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.'));
-        return;
-      }
-      // @ts-ignore
-      const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-      const startDate = provider.startDate || new Date().toISOString().split('T')[0];
-      const fileName = getContractFileName(selectedTemplate.contractYear || new Date().getFullYear().toString(), provider.name, new Date().toISOString().split('T')[0]);
-      const url = URL.createObjectURL(docxBlob);
-      dispatch(addGeneratedFile({
-        providerId: provider.id,
-        fileName,
-        url,
-      }));
-      // Download the file
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // Audit log for single generation
-      dispatch(logSecurityEvent({
-        action: 'CONTRACT_GENERATION',
-        details: 'Contract generated',
-        severity: 'LOW' as const,
-        // Add other fields as needed
-      }));
-    } catch (error) {
-      dispatch(setError(error instanceof Error ? error.message : 'Failed to generate document'));
-      // Audit log for failure
-      dispatch(logSecurityEvent({
-        action: 'CONTRACT_GENERATION_FAILURE',
-        details: error instanceof Error ? error.message : 'Failed to generate document',
-        severity: 'HIGH' as const,
-        // Add other fields as needed
-      }));
-    } finally {
-      dispatch(setGenerating(false));
+    const htmlWithFont = aptosStyle + htmlClean;
+    // @ts-ignore
+    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+      setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
+      return;
     }
+    // @ts-ignore
+    const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+    const contractYear = selectedTemplate.contractYear || new Date().getFullYear().toString();
+    const runDate = new Date().toISOString().split('T')[0];
+    const fileName = getContractFileName(contractYear, provider.name, runDate);
+    const url = URL.createObjectURL(docxBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleGenerate = async () => {
+    if (!selectedTemplate || selectedProviderIds.length !== 1) return;
+    const provider = providers.find(p => p.id === selectedProviderIds[0]);
+    if (!provider) return;
+    generateAndDownloadDocx(provider);
   };
 
   const handleBulkGenerate = async () => {
@@ -189,77 +165,12 @@ b, strong { font-weight: bold !important; }
       setUserError("No template selected. Please select a template before generating.");
       return;
     }
-    const mapping = mappings[selectedTemplate.id]?.mappings;
     const selectedProviders = providers.filter(p => selectedProviderIds.includes(p.id));
     if (selectedProviders.length < 2) {
       setUserError('Please select at least two providers to use Generate All.');
       return;
     }
-    try {
-      // @ts-ignore
-      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-        setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
-        return;
-      }
-      const auditEntries = [];
-      for (const provider of selectedProviders) {
-        const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
-        const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
-        const htmlClean = normalizeSmartQuotes(mergedHtml);
-        const aptosStyle = `<style>
-body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
-  font-family: Aptos, Arial, sans-serif !important;
-  font-size: 11pt !important;
-}
-h1 { font-size: 16pt !important; font-weight: bold !important; }
-h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
-b, strong { font-weight: bold !important; }
-</style>`;
-        const htmlWithFont = aptosStyle + htmlClean;
-        // @ts-ignore
-        const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-        const fileName = `ScheduleA_${String(provider.name).replace(/\s+/g, '')}.docx`;
-        const url = URL.createObjectURL(docxBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        // Audit log for each generated file
-        const auditEntry = {
-          action: 'BULK_CONTRACT_GENERATION',
-          details: `Generated contract for ${provider.name} using template ${selectedTemplate.name}`,
-          severity: 'LOW' as const,
-          category: 'DATA' as const,
-          resourceType: 'CONTRACT',
-          resourceId: provider.id,
-          metadata: {
-            providerName: provider.name,
-            templateName: selectedTemplate.name,
-            outputType: 'DOCX',
-            status: 'success',
-            downloadUrl: url,
-          },
-        } as const;
-        auditEntries.push(auditEntry);
-      }
-      // Log each audit entry
-      for (const entry of auditEntries) {
-        dispatch(logSecurityEvent(entry));
-      }
-    } catch (error) {
-      setUserError('Failed to generate one or more DOCX files. Please check your template and provider data.');
-      console.error("Bulk DOCX Generation Error:", error);
-      // Audit log for bulk failure
-      dispatch(logSecurityEvent({
-        action: 'CONTRACT_GENERATION_FAILURE',
-        details: 'Failed to generate one or more DOCX files. Please check your template and provider data.',
-        severity: 'HIGH' as const,
-        // Add other fields as needed
-      }));
-    }
+    selectedProviders.forEach(generateAndDownloadDocx);
   };
 
   const handleGenerateDOCX = async () => {
@@ -359,120 +270,107 @@ b, strong { font-weight: bold !important; }
   }, [selectedTemplate, selectedProviderIds, providers, mappings]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-      <PageHeader
-        title="Contract Generator"
-        description="Generate provider contracts individually or in bulk. Select a template and provider(s) to begin."
-      />
-      {/* Action Buttons at the Top */}
-      <div className="flex gap-4 mb-4">
-        <Button
-          onClick={handleGenerate}
-          disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
-          variant="outline"
-          className="gap-2"
-        >
-          <FileDown className="h-4 w-4" />
-          Generate Single
-        </Button>
-        <Button
-          onClick={handleBulkGenerate}
-          disabled={!selectedTemplate || selectedProviderIds.length < 2 || isGenerating}
-          variant="outline"
-          className="gap-2"
-        >
-          <FileDown className="h-4 w-4" />
-          Generate All
-        </Button>
-        <Button
-          onClick={() => setEditorModalOpen(true)}
-          disabled={!selectedTemplate || selectedProviderIds.length !== 1}
-          variant="outline"
-          className="gap-2"
-        >
-          Edit Contract
-        </Button>
-      </div>
-      {/* Template Selector Full Width */}
-      <Card className="p-4 w-full">
-        <h2 className="text-lg font-semibold mb-4">Template</h2>
-        <div className="flex flex-row justify-between items-center">
-          <Select
-            value={selectedTemplateId}
-            onValueChange={setSelectedTemplateId}
-            disabled={templatesStatus === 'loading'}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder={templatesStatus === 'loading' ? 'Loading templates...' : 'Select template'} />
-            </SelectTrigger>
-            <SelectContent>
-              {templatesStatus === 'loading' ? (
-                <SelectItem value="" disabled>
-                  <div className="flex items-center gap-2">
-                    <LoadingSpinner size="sm" />
-                    Loading templates...
-                  </div>
-                </SelectItem>
-              ) : (
-                templates.map((template: any) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    {template.name} (v{template.version})
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-        </div>
-        <hr className="my-6" />
-      </Card>
-      {/* Filter/Search Bar and Pagination Controls Grouped */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-2">
-        <div className="flex flex-col">
-          <span className="mb-1 font-medium text-gray-700">Filter Providers</span>
-          <Input
-            placeholder="Search providers by name or specialty..."
-            value={search}
-            onChange={e => {
-              setSearch(e.target.value);
-              setPageIndex(0);
-            }}
-            className="w-64"
-          />
-        </div>
-        {/* Pagination Controls */}
-        <div className="flex gap-2 items-center mt-2 sm:mt-0">
-          <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
-          <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
-          <span className="text-sm">Page {pageIndex + 1} of {totalPages}</span>
-          <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
-          <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)}>&raquo;</Button>
-          <select
-            className="ml-2 border rounded px-2 py-1 text-sm"
-            value={pageSize}
-            onChange={e => {
-              setPageSize(Number(e.target.value));
-              setPageIndex(0);
-            }}
-          >
-            {[10, 20, 50, 100].map(size => (
-              <option key={size} value={size}>{size} / page</option>
-            ))}
-          </select>
-        </div>
-      </div>
-      {/* Provider Table with Multi-Select, Pagination, Sticky Name Column */}
-      <Card className="p-4">
-        <h2 className="text-lg font-semibold mb-4">Providers</h2>
-        {providersLoading ? (
-          <div className="flex justify-center items-center py-8">
-            <LoadingSpinner 
-              size="lg" 
-              message="Loading providers..." 
-              color="primary"
-            />
+    <div className="min-h-screen bg-gray-50/50 pt-0 pb-4 px-2 sm:px-4">
+      <div className="max-w-7xl mx-auto">
+        {/* Header Card - Consistent with Templates/Providers, now with Template Selector */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-lg font-bold text-gray-800">Contract Generation</h1>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-pointer">
+                      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Info" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" align="start">
+                    Generate contracts for selected providers using your templates. Choose a template and providers, then generate DOCX files.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            {/* Template Selector - right-aligned in header */}
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-medium text-gray-700">Template:</span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="truncate max-w-xs">
+                      <Select
+                        value={selectedTemplateId}
+                        onValueChange={setSelectedTemplateId}
+                        disabled={templatesStatus === 'loading'}
+                      >
+                        <SelectTrigger className="w-64 truncate">
+                          <SelectValue placeholder={templatesStatus === 'loading' ? 'Loading templates...' : 'Select template'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templatesStatus === 'loading' ? (
+                            <div className="flex items-center gap-2 p-2 text-sm text-muted-foreground">
+                              <LoadingSpinner size="sm" />
+                              Loading templates...
+                            </div>
+                          ) : (
+                            templates.map((template: any) => (
+                              <SelectItem key={template.id} value={template.id}>
+                                {template.name} (v{template.version})
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>{
+                    selectedTemplateId && templates?.find(t => t.id === selectedTemplateId)
+                      ? templates.find(t => t.id === selectedTemplateId)?.name + ' (v' + templates.find(t => t.id === selectedTemplateId)?.version + ')'
+                      : 'Select a template'
+                  }</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
-        ) : (
-          <>
+          <hr className="my-3 border-gray-100" />
+        </div>
+        {/* Main Card: Filter, table, no top action buttons */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          {/* Filter (left), pagination (right) */}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-2">
+            <div className="flex flex-col">
+              <span className="mb-1 font-medium text-gray-700">Filter Providers</span>
+              <Input
+                placeholder="Search providers by name or specialty..."
+                value={search}
+                onChange={e => {
+                  setSearch(e.target.value);
+                  setPageIndex(0);
+                }}
+                className="w-64"
+              />
+            </div>
+            {/* Pagination Controls */}
+            <div className="flex gap-2 items-center mt-2 sm:mt-0">
+              <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
+              <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
+              <span className="text-sm">Page {pageIndex + 1} of {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
+              <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)}>&raquo;</Button>
+              <select
+                className="ml-2 border rounded px-2 py-1 text-sm"
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setPageIndex(0);
+                }}
+              >
+                {[10, 20, 50, 100].map(size => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {/* Provider Table */}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -527,48 +425,46 @@ b, strong { font-weight: bold !important; }
           <div className="text-sm text-gray-600 mt-2">
             Showing {pageIndex * pageSize + 1}–{Math.min((pageIndex + 1) * pageSize, filteredProviders.length)} of {filteredProviders.length} providers
           </div>
-          </>
-        )}
-      </Card>
-      {/* Modal for TinyMCE editor */}
-      <Dialog open={editorModalOpen} onOpenChange={setEditorModalOpen}>
-        <DialogContent className="max-w-6xl w-full flex flex-col md:flex-row gap-6">
-          <div className="flex-1 min-w-0">
-            <DialogHeader>
-              <DialogTitle>Edit Contract</DialogTitle>
-            </DialogHeader>
-            <Editor
-              apiKey="your-tinymce-api-key"
-              value={editorContent}
-              onEditorChange={setEditorContent}
-              onInit={(_evt, editor) => (editorRef.current = editor)}
-              init={{
-                height: 400,
-                menubar: false,
-                plugins: [
-                  'lists link paste',
-                ],
-                toolbar:
-                  'undo redo | bold italic underline | bullist numlist | link | removeformat',
-                branding: false,
-              }}
-            />
-            <DialogFooter className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setEditorModalOpen(false)}>Cancel</Button>
-              <Button
-                variant="default"
-                onClick={async () => {
-                  // Download as Word logic using html-docx-js
-                  const html = editorContent;
-                  const provider = providers.find(p => p.id === selectedProviderIds[0]);
-                  if (!provider) return;
-                  // @ts-ignore
-                  if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-                    alert('DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
-                    return;
-                  }
-                  // Prepend Aptos font style
-                  const aptosStyle = `<style>
+        </div>
+        {/* Modal for TinyMCE editor */}
+        <Dialog open={editorModalOpen} onOpenChange={setEditorModalOpen}>
+          <DialogContent className="max-w-6xl w-full flex flex-col md:flex-row gap-6">
+            <div className="flex-1 min-w-0">
+              <DialogHeader>
+                <DialogTitle>Edit Contract</DialogTitle>
+              </DialogHeader>
+              <Editor
+                apiKey="your-tinymce-api-key"
+                value={editorContent}
+                onEditorChange={setEditorContent}
+                onInit={(_evt, editor) => (editorRef.current = editor)}
+                init={{
+                  height: 400,
+                  menubar: false,
+                  plugins: [
+                    'lists link paste',
+                  ],
+                  toolbar:
+                    'undo redo | bold italic underline | bullist numlist | link | removeformat',
+                  branding: false,
+                }}
+              />
+              <DialogFooter className="flex justify-end gap-2 mt-4">
+                <Button variant="outline" onClick={() => setEditorModalOpen(false)}>Cancel</Button>
+                <Button
+                  variant="default"
+                  onClick={async () => {
+                    // Download as Word logic using html-docx-js
+                    const html = editorContent;
+                    const provider = providers.find(p => p.id === selectedProviderIds[0]);
+                    if (!provider) return;
+                    // @ts-ignore
+                    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+                      alert('DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
+                      return;
+                    }
+                    // Prepend Aptos font style
+                    const aptosStyle = `<style>
 body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
   font-family: Aptos, Arial, sans-serif !important;
   font-size: 11pt !important;
@@ -577,69 +473,128 @@ h1 { font-size: 16pt !important; font-weight: bold !important; }
 h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
 b, strong { font-weight: bold !important; }
 </style>`;
-                  const htmlWithFont = aptosStyle + html;
-                  // Get provider and template info for filename
-                  const contractYear = selectedTemplate ? selectedTemplate.contractYear || new Date().getFullYear().toString() : new Date().getFullYear().toString();
-                  const fileName = getContractFileName(contractYear, provider?.name || 'Provider', new Date().toISOString().split('T')[0]);
-                  // @ts-ignore
-                  const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-                  const url = URL.createObjectURL(docxBlob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                Download as Word
-              </Button>
-            </DialogFooter>
-          </div>
-          {/* Clause Library Sidebar */}
-          <aside className="w-full md:w-80 bg-gray-50 border-l p-4 rounded-lg flex flex-col">
-            <h3 className="font-bold mb-2">Clause Library</h3>
-            <input
-              type="text"
-              placeholder="Search clauses..."
-              value={clauseSearch}
-              onChange={e => setClauseSearch(e.target.value)}
-              className="mb-3 px-2 py-1 border rounded"
-            />
-            {/* Scrollable clause list with fixed max height */}
-            <div className="flex-1 overflow-y-auto space-y-2 max-h-[400px]">
-              {filteredClauses.map((clause: { id: string; title: string; content: string }) => (
-                <div key={clause.id} className="bg-white rounded shadow p-2 flex flex-col gap-1">
-                  <div className="font-semibold text-sm">{clause.title}</div>
-                  <div className="text-xs text-gray-600 line-clamp-2">{clause.content}</div>
-                  <Button
-                    size="sm"
-                    className="mt-1 self-end"
-                    onClick={() => {
-                      if (editorRef.current) {
-                        editorRef.current.insertContent(clause.content);
-                      }
-                    }}
-                  >
-                    Insert
-                  </Button>
-                </div>
-              ))}
-              {filteredClauses.length === 0 && (
-                <div className="text-xs text-gray-400">No clauses found.</div>
-              )}
+                    const htmlWithFont = aptosStyle + html;
+                    // Get provider and template info for filename
+                    const contractYear = selectedTemplate ? selectedTemplate.contractYear || new Date().getFullYear().toString() : new Date().getFullYear().toString();
+                    const fileName = getContractFileName(contractYear, provider?.name || 'Provider', new Date().toISOString().split('T')[0]);
+                    // @ts-ignore
+                    const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+                    const url = URL.createObjectURL(docxBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  Download as Word
+                </Button>
+              </DialogFooter>
             </div>
-          </aside>
-        </DialogContent>
-      </Dialog>
-      {/* Error Message */}
-      {(userError || error) && (
-        <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mt-4">
-          <AlertTriangle className="h-5 w-5" />
-          <span>{userError || error}</span>
-        </div>
-      )}
+            {/* Clause Library Sidebar */}
+            <aside className="w-full md:w-80 bg-gray-50 border-l p-4 rounded-lg flex flex-col">
+              <h3 className="font-bold mb-2">Clause Library</h3>
+              <input
+                type="text"
+                placeholder="Search clauses..."
+                value={clauseSearch}
+                onChange={e => setClauseSearch(e.target.value)}
+                className="mb-3 px-2 py-1 border rounded"
+              />
+              {/* Scrollable clause list with fixed max height */}
+              <div className="flex-1 overflow-y-auto space-y-2 max-h-[400px]">
+                {filteredClauses.map((clause: { id: string; title: string; content: string }) => (
+                  <div key={clause.id} className="bg-white rounded shadow p-2 flex flex-col gap-1">
+                    <div className="font-semibold text-sm">{clause.title}</div>
+                    <div className="text-xs text-gray-600 line-clamp-2">{clause.content}</div>
+                    <Button
+                      size="sm"
+                      className="mt-1 self-end"
+                      onClick={() => {
+                        if (editorRef.current) {
+                          editorRef.current.insertContent(clause.content);
+                        }
+                      }}
+                    >
+                      Insert
+                    </Button>
+                  </div>
+                ))}
+                {filteredClauses.length === 0 && (
+                  <div className="text-xs text-gray-400">No clauses found.</div>
+                )}
+              </div>
+            </aside>
+          </DialogContent>
+        </Dialog>
+        {/* Error Message */}
+        {(userError || error) && (
+          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mt-4">
+            <AlertTriangle className="h-5 w-5" />
+            <span>{userError || error}</span>
+          </div>
+        )}
+
+        {/* Sticky Action Bar */}
+        {selectedProviderIds.length > 0 && (
+          <div className="fixed bottom-0 left-0 w-full z-50 bg-white border-t shadow-lg flex flex-col md:flex-row md:justify-center items-center py-4 transition-all duration-300 animate-fade-in">
+            <div className="mb-2 md:mb-0 md:mr-6 text-gray-700 font-medium">
+              {selectedProviderIds.length === 1
+                ? `Selected: ${providers.find(p => p.id === selectedProviderIds[0])?.name || '1 provider'}`
+                : `${selectedProviderIds.length} providers selected`}
+            </div>
+            <div className="flex gap-4">
+              {/* Clear Selection Button */}
+              <div className="flex items-center">
+                <Button
+                  onClick={() => setSelectedProviderIds([])}
+                  variant="outline"
+                  className="h-10 px-6 text-base font-semibold"
+                  aria-label="Clear Selection"
+                  type="button"
+                >
+                  Clear Selection
+                </Button>
+              </div>
+              <Button
+                onClick={handleGenerate}
+                disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
+                variant={selectedProviderIds.length === 1 ? 'default' : 'outline'}
+                className="h-10 px-6 text-base font-semibold flex items-center gap-2"
+                aria-label="Generate Single"
+              >
+                {isGenerating && selectedProviderIds.length === 1 ? (
+                  <Loader2 className="animate-spin h-5 w-5" />
+                ) : null}
+                Generate Single
+              </Button>
+              <Button
+                onClick={handleBulkGenerate}
+                disabled={!selectedTemplate || selectedProviderIds.length < 2 || isGenerating}
+                variant={selectedProviderIds.length > 1 ? 'default' : 'outline'}
+                className="h-10 px-6 text-base font-semibold flex items-center gap-2"
+                aria-label="Generate All"
+              >
+                {isGenerating && selectedProviderIds.length > 1 ? (
+                  <Loader2 className="animate-spin h-5 w-5" />
+                ) : null}
+                Generate All
+              </Button>
+              <Button
+                onClick={() => setEditorModalOpen(true)}
+                disabled={!selectedTemplate || selectedProviderIds.length !== 1}
+                variant="outline"
+                className="h-10 px-6 text-base font-semibold"
+                aria-label="Edit Contract"
+              >
+                Edit Contract
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 } 
