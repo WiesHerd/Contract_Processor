@@ -100,8 +100,8 @@ export const useSessionTimeout = (
       const now = Date.now();
       const timeSinceLastActivity = now - lastActivity;
       
-      // If more than 5 minutes have passed without activity, force timeout
-      if (timeSinceLastActivity > 5 * 60 * 1000) {
+      // If more than 15 minutes have passed without activity, force timeout
+      if (timeSinceLastActivity > 15 * 60 * 1000) {
         onTimeoutRef.current();
       }
     }, 30 * 1000); // Check every 30 seconds
