@@ -28,5 +28,35 @@
         "contractgenerator": {}
       }
     }
+  },
+  "production": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-contractgenerator-production-78963-authRole",
+      "UnauthRoleArn": "arn:aws:iam::430118851518:role/amplify-contractgenerator-production-78963-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::430118851518:role/amplify-contractgenerator-production-78963-authRole",
+      "Region": "us-east-2",
+      "DeploymentBucketName": "amplify-contractgenerator-production-78963-deployment",
+      "UnauthRoleName": "amplify-contractgenerator-production-78963-unauthRole",
+      "StackName": "amplify-contractgenerator-production-78963",
+      "StackId": "arn:aws:cloudformation:us-east-2:430118851518:stack/amplify-contractgenerator-production-78963/538d6e10-5a95-11f0-8bc1-02364af83f1d",
+      "AmplifyAppId": "d1u3c8k7z1pj0k"
+    },
+    "categories": {
+      "auth": {
+        "contractgenerator7e5dfb2d": {}
+      },
+      "hosting": {
+        "amplifyhosting": {
+          "appId": "d1u3c8k7z1pj0k",
+          "type": "manual"
+        }
+      },
+      "api": {
+        "contractgenerator": {}
+      },
+      "storage": {
+        "s3bfe8ebde": {}
+      }
+    }
   }
 }

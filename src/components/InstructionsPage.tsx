@@ -17,14 +17,14 @@ const InstructionsPage: React.FC = () => (
         <span className="font-semibold">Generate:</span> In the <span className="font-semibold">Generate</span> section, select one or more providers to generate contracts. The system will merge provider data with the selected template(s) and generate DOCX or PDF files for download. You can generate contracts individually or in bulk (ZIP download).
       </li>
       <li>
-        <span className="font-semibold">Audit:</span> Review FMV override logs and contract generation metadata in the <span className="font-semibold">Audit</span> section. This helps ensure compliance and provides a record of all contract actions and overrides.
+        <span className="font-semibold">Activity Log:</span> Review FMV override logs and contract generation metadata in the <span className="font-semibold">Activity Log</span> section. This helps ensure compliance and provides a record of all contract actions and overrides.
       </li>
       <li>
         <span className="font-semibold">Tips:</span> 
         <ul className="list-disc list-inside ml-6 mt-1 space-y-1">
           <li>All required placeholders must be resolved before exporting a contract.</li>
           <li>Use the clause system in templates for conditional or dynamic contract sections.</li>
-          <li>Check the audit log regularly for FMV warnings and justifications.</li>
+          <li>Check the activity log regularly for FMV warnings and justifications.</li>
           <li>Use the search and filter features in each section to quickly find templates, providers, or contracts.</li>
         </ul>
       </li>

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { Provider, useSelector, useDispatch } from 'react-redux';
 import { store, RootState } from './store';
@@ -10,7 +10,7 @@ import ContractGenerator from './features/generator/ContractGenerator';
 import ClauseManager from './features/clauses/ClauseManager';
 import AuditPage from './features/audit/AuditPage';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { Logo } from './components/Logo';
+import Logo from './components/Logo';
 import InstructionsPage from './components/InstructionsPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import SignIn from './features/auth/SignIn';
@@ -83,12 +83,31 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   // but will appear on all other protected routes.
   const showNav = location.pathname !== '/';
 
+  // Banner state for enterprise-grade UX
+  const [showSessionBanner, setShowSessionBanner] = useState(false);
+
+  useEffect(() => {
+    // Only show the banner if not already shown this session
+    if (isAuthenticated && !isWarningModalOpen && !sessionStorage.getItem('sessionBannerShown')) {
+      setShowSessionBanner(true);
+      sessionStorage.setItem('sessionBannerShown', 'true');
+      // Auto-dismiss after 8 seconds
+      const timer: number = window.setTimeout(() => setShowSessionBanner(false), 8000);
+      return () => clearTimeout(timer);
+    }
+    // Hide banner if modal is open
+    if (isWarningModalOpen) setShowSessionBanner(false);
+  }, [isAuthenticated, isWarningModalOpen]);
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {showNav && <TopNav onSignOut={handleSignOut} />}
-      {/* Persistent security/inactivity banner */}
-      {isAuthenticated && !isWarningModalOpen && (
-        <div className="w-full bg-yellow-50 border-b border-yellow-200 text-yellow-800 text-center py-2 text-sm font-medium z-20">
+      {/* Enterprise-grade: Session timeout banner auto-dismisses and only shows once per session */}
+      {isAuthenticated && showSessionBanner && (
+        <div
+          className="w-full bg-yellow-50 border-b border-yellow-200 text-yellow-800 text-center py-2 text-sm font-medium z-20 transition-opacity duration-700 opacity-100"
+          style={{ position: 'fixed', top: showNav ? 0 : undefined, left: 0 }}
+        >
           For your security, you will be logged out after 20 minutes of inactivity.
         </div>
       )}
@@ -205,7 +224,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
       group: 'action'
     },
     {
-      title: 'Audit',
+      title: 'Activity Log',
       path: '/audit',
       group: 'review'
     }
@@ -225,7 +244,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
         <div className="flex justify-between h-16">
           <div className="flex">
             <Link to="/" className="flex items-center">
-              <Logo size="small" />
+              <Logo size={32} />
             </Link>
             {isAuthenticated && (
               <div className="hidden sm:ml-6 sm:flex items-center space-x-4">

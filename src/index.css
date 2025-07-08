@@ -72,7 +72,13 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-color: #f8fafc;
   }
+}
+
+html {
+  scrollbar-gutter: stable;
+  background-color: #f8fafc;
 }
 
 /* Custom light scrollbar for modal and form scroll areas */
@@ -103,4 +109,76 @@ body[style*="overflow: hidden"], html[style*="overflow: hidden"] {
 
 html, body {
   overflow-y: auto !important;
+}
+
+/* Floating fade scrollbar style */
+.custom-fade-scrollbar::-webkit-scrollbar {
+  height: 6px;
+  background: transparent;
+}
+.custom-fade-scrollbar::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 4px;
+  transition: background 0.3s;
+}
+.custom-fade-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.custom-fade-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
+}
+
+/* AG Grid border color and rounded corners */
+.ag-theme-alpine,
+.ag-theme-alpine .ag-root-wrapper,
+.ag-theme-alpine .ag-root {
+  border-color: #e5e7eb !important; /* Tailwind border-gray-200 */
+  border-radius: 0.75rem !important; /* Tailwind rounded-xl */
+  overflow: hidden;
+}
+.ag-theme-alpine .ag-header,
+.ag-theme-alpine .ag-row,
+.ag-theme-alpine .ag-cell {
+  border-color: #e5e7eb !important;
+}
+
+/* Filter container focus ring fix */
+.filter-container {
+  padding: 1rem;
+  overflow: visible;
+  border-radius: 0.75rem;
+}
+
+/* Remove all focus outline and box-shadow for filter container inputs and selects */
+.filter-container input:focus, .filter-container select:focus, .filter-container .select-trigger:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Make AG Grid gridlines ultra-thin and match input border color */
+.ag-theme-alpine .ag-header,
+.ag-theme-alpine .ag-row,
+.ag-theme-alpine .ag-cell {
+  border-width: 0.5px !important;
+  border-style: solid !important;
+  border-color: #e5e7eb !important;
+  box-shadow: none !important;
+}
+
+/* Make AG Grid horizontal (row) lines ultra-thin and subtle */
+.ag-theme-alpine .ag-row {
+  border-top: none !important;
+  border-bottom: 0.5px solid #e5e7eb !important;
+}
+.ag-theme-alpine .ag-cell {
+  border-top: none !important;
+  border-bottom: none !important;
+  border-right: 0.5px solid #e5e7eb !important;
+  border-left: none !important;
+  box-shadow: none !important;
+}
+/* Remove border from last row for a clean finish */
+.ag-theme-alpine .ag-center-cols-container .ag-row:last-child {
+  border-bottom: none !important;
 } 

@@ -17,13 +17,8 @@
     "emailVerificationSubject": "Your verification code",
     "emailVerificationMessage": "Your verification code is {####}",
     "defaultPasswordPolicy": true,
-    "passwordPolicyMinLength": 12,
-    "passwordPolicyCharacters": [
-      "REQUIRES_LOWERCASE",
-      "REQUIRES_UPPERCASE",
-      "REQUIRES_NUMBERS",
-      "REQUIRES_SYMBOLS"
-    ],
+    "passwordPolicyMinLength": 8,
+    "passwordPolicyCharacters": [],
     "requiredAttributes": [
       "email"
     ],
@@ -41,7 +36,7 @@
     "sharedId": "7e5dfb2d",
     "resourceName": "contractgenerator7e5dfb2d",
     "authSelections": "identityPoolAndUserPool",
-    "useDefault": "defaultSocial",
+    "useDefault": "default",
     "userPoolGroupList": [],
     "serviceName": "Cognito",
     "usernameCaseSensitive": false,
@@ -60,11 +55,7 @@
     },
     "breakCircularDependency": true,
     "dependsOn": [],
-    "hostedUI": true,
-    "hostedUIDomainName": "contractgenerator523ca0c5-523ca0c5",
-    "authProvidersUserPool": [],
-    "hostedUIProviderMeta": "[]",
-    "oAuthMetadata": "{\"AllowedOAuthFlows\":[\"code\"],\"AllowedOAuthScopes\":[\"phone\",\"email\",\"openid\",\"profile\",\"aws.cognito.signin.user.admin\"],\"CallbackURLs\":[\"http://localhost:5173/\"],\"LogoutURLs\":[\"http://localhost:5173/\"]}",
+    "hostedUI": false,
     "authProviders": []
   }
 }

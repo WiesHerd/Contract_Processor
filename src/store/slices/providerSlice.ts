@@ -72,7 +72,7 @@ export const clearAllProviders = createAsyncThunk(
 
 export const updateProvider = createAsyncThunk(
   'providers/updateProvider',
-  async (provider, { rejectWithValue }) => {
+  async (provider: Provider, { rejectWithValue }) => {
     try {
       const updated = await awsProviders.update(provider);
       toast.success('Provider updated successfully.');

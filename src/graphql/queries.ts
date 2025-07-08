@@ -8,6 +8,13 @@ type GeneratedQuery<InputType, OutputType> = string & {
   __generatedQueryOutput: OutputType;
 };
 
+export const listProviderYears = /* GraphQL */ `query ListProviderYears {
+  listProviderYears
+}
+` as GeneratedQuery<
+  APITypes.ListProviderYearsQueryVariables,
+  APITypes.ListProviderYearsQuery
+>;
 export const getTemplate = /* GraphQL */ `query GetTemplate($id: ID!) {
   getTemplate(id: $id) {
     id
@@ -19,6 +26,7 @@ export const getTemplate = /* GraphQL */ `query GetTemplate($id: ID!) {
     contractYear
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -42,6 +50,7 @@ export const listTemplates = /* GraphQL */ `query ListTemplates(
       contractYear
       createdAt
       updatedAt
+      owner
       __typename
     }
     nextToken
@@ -92,6 +101,7 @@ export const getProvider = /* GraphQL */ `query GetProvider($id: ID!) {
     dynamicFields
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -139,6 +149,7 @@ export const listProviders = /* GraphQL */ `query ListProviders(
       dynamicFields
       createdAt
       updatedAt
+      owner
       __typename
     }
     nextToken
@@ -158,6 +169,7 @@ export const getTemplateMapping = /* GraphQL */ `query GetTemplateMapping($id: I
     notes
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -179,6 +191,7 @@ export const listTemplateMappings = /* GraphQL */ `query ListTemplateMappings(
       notes
       createdAt
       updatedAt
+      owner
       __typename
     }
     nextToken
@@ -196,6 +209,7 @@ export const getMapping = /* GraphQL */ `query GetMapping($id: ID!) {
     providerID
     field
     value
+    owner
     createdAt
     updatedAt
     __typename
@@ -217,6 +231,7 @@ export const listMappings = /* GraphQL */ `query ListMappings(
       providerID
       field
       value
+      owner
       createdAt
       updatedAt
       __typename
@@ -235,6 +250,7 @@ export const getClause = /* GraphQL */ `query GetClause($id: ID!) {
     text
     tags
     condition
+    owner
     createdAt
     updatedAt
     __typename
@@ -252,6 +268,7 @@ export const listClauses = /* GraphQL */ `query ListClauses(
       text
       tags
       condition
+      owner
       createdAt
       updatedAt
       __typename
@@ -271,6 +288,7 @@ export const getAuditLog = /* GraphQL */ `query GetAuditLog($id: ID!) {
     user
     timestamp
     details
+    owner
     createdAt
     updatedAt
     __typename
@@ -292,6 +310,7 @@ export const listAuditLogs = /* GraphQL */ `query ListAuditLogs(
       user
       timestamp
       details
+      owner
       createdAt
       updatedAt
       __typename
@@ -303,6 +322,121 @@ export const listAuditLogs = /* GraphQL */ `query ListAuditLogs(
 ` as GeneratedQuery<
   APITypes.ListAuditLogsQueryVariables,
   APITypes.ListAuditLogsQuery
+>;
+export const getContractGenerationLog = /* GraphQL */ `query GetContractGenerationLog($id: ID!) {
+  getContractGenerationLog(id: $id) {
+    id
+    providerId
+    contractYear
+    templateId
+    generatedAt
+    generatedBy
+    outputType
+    status
+    fileUrl
+    notes
+    owner
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetContractGenerationLogQueryVariables,
+  APITypes.GetContractGenerationLogQuery
+>;
+export const listContractGenerationLogs = /* GraphQL */ `query ListContractGenerationLogs(
+  $filter: ModelContractGenerationLogFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listContractGenerationLogs(
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      providerId
+      contractYear
+      templateId
+      generatedAt
+      generatedBy
+      outputType
+      status
+      fileUrl
+      notes
+      owner
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListContractGenerationLogsQueryVariables,
+  APITypes.ListContractGenerationLogsQuery
+>;
+export const providersByCompensationYear = /* GraphQL */ `query ProvidersByCompensationYear(
+  $compensationYear: String!
+  $sortDirection: ModelSortDirection
+  $filter: ModelProviderFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  providersByCompensationYear(
+    compensationYear: $compensationYear
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      fte
+      administrativeFte
+      administrativeRole
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      educationBonus
+      qualityBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ProvidersByCompensationYearQueryVariables,
+  APITypes.ProvidersByCompensationYearQuery
 >;
 export const templateMappingsByTemplateID = /* GraphQL */ `query TemplateMappingsByTemplateID(
   $templateID: ID!
@@ -326,6 +460,7 @@ export const templateMappingsByTemplateID = /* GraphQL */ `query TemplateMapping
       notes
       createdAt
       updatedAt
+      owner
       __typename
     }
     nextToken
@@ -356,6 +491,7 @@ export const mappingsByTemplateID = /* GraphQL */ `query MappingsByTemplateID(
       providerID
       field
       value
+      owner
       createdAt
       updatedAt
       __typename
@@ -390,6 +526,7 @@ export const mappingsByTemplateAndProvider = /* GraphQL */ `query MappingsByTemp
       providerID
       field
       value
+      owner
       createdAt
       updatedAt
       __typename
@@ -422,6 +559,7 @@ export const mappingsByProviderID = /* GraphQL */ `query MappingsByProviderID(
       providerID
       field
       value
+      owner
       createdAt
       updatedAt
       __typename
@@ -433,4 +571,80 @@ export const mappingsByProviderID = /* GraphQL */ `query MappingsByProviderID(
 ` as GeneratedQuery<
   APITypes.MappingsByProviderIDQueryVariables,
   APITypes.MappingsByProviderIDQuery
+>;
+export const generationLogsByProvider = /* GraphQL */ `query GenerationLogsByProvider(
+  $providerId: ID!
+  $sortDirection: ModelSortDirection
+  $filter: ModelContractGenerationLogFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  generationLogsByProvider(
+    providerId: $providerId
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      providerId
+      contractYear
+      templateId
+      generatedAt
+      generatedBy
+      outputType
+      status
+      fileUrl
+      notes
+      owner
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GenerationLogsByProviderQueryVariables,
+  APITypes.GenerationLogsByProviderQuery
+>;
+export const generationLogsByContractYear = /* GraphQL */ `query GenerationLogsByContractYear(
+  $contractYear: String!
+  $sortDirection: ModelSortDirection
+  $filter: ModelContractGenerationLogFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  generationLogsByContractYear(
+    contractYear: $contractYear
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      providerId
+      contractYear
+      templateId
+      generatedAt
+      generatedBy
+      outputType
+      status
+      fileUrl
+      notes
+      owner
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GenerationLogsByContractYearQueryVariables,
+  APITypes.GenerationLogsByContractYearQuery
 >;

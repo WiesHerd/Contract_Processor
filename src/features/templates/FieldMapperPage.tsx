@@ -23,6 +23,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { Mapping as AWSMapping } from '@/API';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { fetchProviders } from '@/store/slices/providerSlice';
+import { toast } from 'sonner';
+import { PageHeader } from '@/components/PageHeader';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { generateClient } from 'aws-amplify/api';
+import { createTemplateMapping, updateTemplateMapping } from '@/graphql/mutations';
+import { getTemplateMapping, listTemplateMappings } from '@/graphql/queries';
+import { CreateTemplateMappingInput, UpdateTemplateMappingInput } from '@/API';
 
 interface LocalMapping {
   placeholder: string;
@@ -64,6 +71,50 @@ function FieldSelect({
   );
 }
 
+// NOTE: Amplify is configured in main.tsx to use VITE_AWS_APPSYNC_GRAPHQL_ENDPOINT if present.
+const client = generateClient();
+
+// Fetch all TemplateMapping records for a templateId
+async function fetchTemplateMappingsByTemplateId(templateId: string) {
+  const result = await client.graphql({
+    query: listTemplateMappings,
+    variables: { filter: { templateID: { eq: templateId } }, limit: 1000 },
+  });
+  return result.data?.listTemplateMappings?.items || [];
+}
+
+// Upsert (create or update) TemplateMapping records for each placeholder
+async function saveTemplateMappings(mapping: FieldMapping[], templateId: string) {
+  const results = [];
+  for (const m of mapping) {
+    if (!m.placeholder) continue;
+    const input = {
+      templateID: templateId,
+      field: m.placeholder,
+      value: m.mappedColumn || '',
+      notes: m.notes || '',
+    };
+    console.log('Saving mapping:', input);
+    // Try update first, then create if not found
+    try {
+      const updateResult = await client.graphql({
+        query: updateTemplateMapping,
+        variables: { input: { ...input, id: `${templateId}:${m.placeholder}` } },
+      });
+      console.log('Update result:', updateResult);
+    } catch (err) {
+      console.log('Update failed, trying create:', err);
+      const createResult = await client.graphql({
+        query: createTemplateMapping,
+        variables: { input: { ...input, id: `${templateId}:${m.placeholder}` } },
+      });
+      console.log('Create result:', createResult);
+    }
+    results.push(input);
+  }
+  return results;
+}
+
 export default function FieldMapperPage() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
@@ -100,9 +151,6 @@ export default function FieldMapperPage() {
 
   // Initialize mapping state from Redux or create new
   const [mapping, setMappingState] = useState<FieldMapping[]>(() => {
-    if (existingMapping) {
-      return existingMapping.mappings;
-    }
     return template?.placeholders.map((ph: string) => ({ placeholder: ph })) || [];
   });
 
@@ -112,52 +160,38 @@ export default function FieldMapperPage() {
 
   // Load existing mappings from AWS when component mounts
   useEffect(() => {
-    const loadMappingsFromAWS = async () => {
-      if (!templateId || !providers.length) return;
-      
+    const loadTemplateMappings = async () => {
+      if (!templateId) return;
       setIsLoading(true);
       setError(null);
-      
       try {
-        // Get mappings for the first provider (as a template-level mapping)
-        const existingMappings = await awsMappings.getMappingsByTemplateAndProvider(
-          templateId,
-          providers[0].id
-        );
-        
-        if (existingMappings.length > 0) {
-          // Convert AWS mappings to our format
-          const awsMappingData: FieldMapping[] = template?.placeholders.map((ph: string) => {
-            const awsMapping = existingMappings.find(m => m.field === ph);
-            return {
-              placeholder: ph,
-              mappedColumn: awsMapping?.value || undefined,
-              notes: '',
-            };
+        console.log('Loading mappings for template:', templateId);
+        const mappingRecords = await fetchTemplateMappingsByTemplateId(templateId);
+        console.log('Loaded mapping records:', mappingRecords);
+        if (mappingRecords && mappingRecords.length > 0) {
+          const hydrated = template?.placeholders.map((ph: string) => {
+            const found = mappingRecords.find((rec: any) => rec.field === ph);
+            return found
+              ? { placeholder: ph, mappedColumn: found.value ?? undefined, notes: found.notes ?? undefined }
+              : { placeholder: ph };
           }) || [];
-          
-          setMappingState(awsMappingData);
-          
-          // Also update Redux
-          dispatch(setMapping({
-            templateId,
-            mapping: {
-              templateId,
-              mappings: awsMappingData,
-              lastModified: new Date().toISOString(),
-            },
-          }));
+          console.log('Hydrated mappings:', hydrated);
+          setMappingState(hydrated);
+          dispatch(setMapping({ templateId, mapping: hydrated }));
+        } else {
+          console.log('No existing mappings found');
+          setMappingState(template?.placeholders.map((ph: string) => ({ placeholder: ph })) || []);
         }
       } catch (err) {
-        console.error('Failed to load mappings from AWS:', err);
-        setError('Failed to load existing mappings from AWS');
+        console.error('Error loading template mappings:', err);
+        setError(`Failed to load template mappings: ${err instanceof Error ? err.message : 'Unknown error'}`);
       } finally {
         setIsLoading(false);
       }
     };
-
-    loadMappingsFromAWS();
-  }, [templateId, providers, template, dispatch]);
+    loadTemplateMappings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, template, dispatch]);
 
   // Hydrate columns from localforage if empty
   /*
@@ -229,63 +263,17 @@ export default function FieldMapperPage() {
   };
 
   const handleSave = async () => {
-    if (!templateId || !providers.length) return;
-    
     setIsSaving(true);
     setError(null);
-    
     try {
-      // Save to Redux first
-      const mappingData: TemplateMapping = {
-        templateId: templateId as string,
-        mappings: mapping,
-        lastModified: new Date().toISOString(),
-      };
-      
-      dispatch(setMapping({
-        templateId: templateId as string,
-        mapping: mappingData,
-      }));
-      
-      // Use the first provider as template-level mapping
-      const provider = providers[0];
-      
-      // Step 1: Delete existing mappings for this template-provider combination
-      await awsMappings.deleteMappingsByTemplateAndProvider(templateId, provider.id);
-      
-      // Step 2: Create new mappings using batch operation
-      const mappingsToCreate = mapping
-        .filter(m => m.mappedColumn) // Only save mapped fields
-        .map(m => ({
-          templateID: templateId,
-          providerID: provider.id,
-          field: m.placeholder,
-          value: m.mappedColumn!,
-        }));
-      
-      if (mappingsToCreate.length > 0) {
-        const createdMappings = await awsMappings.batchCreate(mappingsToCreate);
-        
-        if (createdMappings.length > 0) {
-          // Log audit entry
-          dispatch(logSecurityEvent({
-            action: 'FIELD_MAPPING',
-            details: 'Field mapping updated',
-            severity: 'LOW',
-            // Add other fields as needed
-          }));
-          
-          navigate('/templates');
-        } else {
-          throw new Error('Failed to save mappings to AWS');
-        }
-      } else {
-        // No mappings to save, but that's okay - just navigate
-        navigate('/templates');
-      }
+      console.log('Saving mappings for template:', templateId);
+      console.log('Mappings to save:', mapping);
+      await saveTemplateMappings(mapping, templateId!);
+      toast.success('Mappings saved successfully');
     } catch (err) {
-      console.error('Failed to save mappings:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save mappings');
+      console.error('Error saving mappings:', err);
+      setError(`Failed to save mappings: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error('Failed to save mappings');
     } finally {
       setIsSaving(false);
     }
@@ -347,56 +335,46 @@ export default function FieldMapperPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 space-y-6">
-      <div className="flex items-center justify-between border-b pb-4 mb-4 bg-white px-4 pt-6 rounded-lg shadow-sm">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/templates')} className="gap-1">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Templates
+      {/* Consistent Page Header */}
+      <PageHeader
+        title="Map Placeholders to Provider Fields"
+        description={template.name}
+        rightContent={
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={handleAutoMap}
+              className={`gap-2 ${autoMapActive ? 'bg-blue-50 text-blue-700' : ''}`}
+              disabled={isSaving}
+            >
+              <Sparkles className="h-4 w-4" /> 
+              Auto-Map
             </Button>
-            <span>/</span>
-            <span className="font-semibold text-gray-700">{template.name}</span>
+            <Button
+              variant="default"
+              onClick={async () => {
+                await handleSave();
+                if (!hasUnmapped && !isSaving && !error) {
+                  toast.success('Mappings saved successfully!');
+                } else if (error) {
+                  toast.error('Failed to save mappings.');
+                }
+              }}
+              className="gap-2"
+              disabled={isSaving || hasUnmapped}
+            >
+              {isSaving ? (
+                <>
+                  <LoadingSpinner size="sm" inline />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                'Save & Continue'
+              )}
+            </Button>
           </div>
-          <h1 className="text-2xl font-bold">Map Placeholders to Provider Fields</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <Button 
-            variant="outline" 
-            onClick={handleAutoMap}
-            className={`gap-2 ${autoMapActive ? 'bg-blue-50 text-blue-700' : ''}`}
-            disabled={isSaving}
-          >
-            <Sparkles className="h-4 w-4" /> 
-            Auto-Map
-          </Button>
-          <Button
-            variant="default"
-            onClick={handleSave}
-            className="gap-2"
-            disabled={isSaving || hasUnmapped}
-          >
-            {isSaving ? (
-              <>
-                <LoadingSpinner size="sm" inline />
-                <span>Saving...</span>
-              </>
-            ) : (
-              'Save & Continue'
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-red-700">
-            <AlertTriangle className="h-4 w-4" />
-            <span className="font-medium">Error:</span>
-            <span>{error}</span>
-          </div>
-        </div>
-      )}
-
+        }
+      />
       <div className="grid grid-cols-12 gap-6">
         {/* Left: Placeholders */}
         <Card className="col-span-3 p-4">
@@ -407,11 +385,6 @@ export default function FieldMapperPage() {
               onChange={e => setSearch(e.target.value)}
               className="w-full"
             />
-            <div className="flex gap-2 mb-2">
-              <Button variant={filter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setFilter('all')}>All</Button>
-              <Button variant={filter === 'mapped' ? 'default' : 'outline'} size="sm" onClick={() => setFilter('mapped')}>Mapped</Button>
-              <Button variant={filter === 'unmapped' ? 'default' : 'outline'} size="sm" onClick={() => setFilter('unmapped')}>Unmapped</Button>
-            </div>
             <ScrollArea className="h-[calc(100vh-300px)]">
               <div className="space-y-1">
                 {filteredPlaceholders.map((ph: string) => {
@@ -453,10 +426,29 @@ export default function FieldMapperPage() {
                 </div>
               )}
             </div>
+            {/* Rectangular blue-outlined filter tabs */}
             <div className="flex gap-2 mb-2">
-              <Button variant={filter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setFilter('all')}>All</Button>
-              <Button variant={filter === 'mapped' ? 'default' : 'outline'} size="sm" onClick={() => setFilter('mapped')}>Mapped</Button>
-              <Button variant={filter === 'unmapped' ? 'default' : 'outline'} size="sm" onClick={() => setFilter('unmapped')}>Unmapped</Button>
+              <button
+                className={`px-5 py-2 font-semibold text-sm border rounded-md transition-colors focus:outline-none focus:ring-0
+                  ${filter === 'all' ? 'bg-white text-blue-900 border-blue-500 shadow' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
+                onClick={() => setFilter('all')}
+              >
+                All <span className="ml-1 text-xs">({totalCount})</span>
+              </button>
+              <button
+                className={`px-5 py-2 font-semibold text-sm border rounded-md transition-colors focus:outline-none focus:ring-0
+                  ${filter === 'mapped' ? 'bg-white text-green-900 border-green-500 shadow' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'}`}
+                onClick={() => setFilter('mapped')}
+              >
+                Mapped <span className="ml-1 text-xs">({mappedCount})</span>
+              </button>
+              <button
+                className={`px-5 py-2 font-semibold text-sm border rounded-md transition-colors focus:outline-none focus:ring-0
+                  ${filter === 'unmapped' ? 'bg-white text-amber-900 border-amber-500 shadow' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
+                onClick={() => setFilter('unmapped')}
+              >
+                Unmapped <span className="ml-1 text-xs">({totalCount - mappedCount})</span>
+              </button>
             </div>
             <div className="w-full bg-gray-100 rounded-full h-2">
               <div

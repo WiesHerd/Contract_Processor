@@ -12,6 +12,7 @@ import { fetchMappingsIfNeeded, deleteMapping } from './mappingsSlice';
 import { fetchTemplatesIfNeeded } from './templatesSlice';
 import { awsMappings } from '@/utils/awsServices';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
 export default function MappingListPage() {
   const { templates, status: templatesStatus, error: templatesError } = useSelector((state: RootState) => state.templates);
@@ -36,13 +37,20 @@ export default function MappingListPage() {
     setDeletingTemplateId(templateId);
     try {
       // Delete all mappings for this template in DynamoDB
-      await awsMappings.deleteAllMappingsForTemplate(templateId);
+      const result = await awsMappings.deleteAllMappingsForTemplate(templateId);
       // Remove from Redux state
       dispatch(deleteMapping(templateId));
       // Optionally, refetch mappings
       dispatch(fetchMappingsIfNeeded());
+      if (result.status === 'success') {
+        toast.success(`All mappings for this template deleted (${result.deletedCount}).`);
+      } else if (result.status === 'not_found') {
+        toast.info('No mappings found for this template. Nothing to delete.');
+      } else {
+        toast.error('Mappings deletion completed with warnings. Check audit log.');
+      }
     } catch (error) {
-      alert('Failed to delete mapping: ' + (error instanceof Error ? error.message : error));
+      toast.error('Failed to delete mappings. Please try again or contact support.');
     } finally {
       setDeletingTemplateId(null);
     }

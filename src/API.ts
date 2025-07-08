@@ -12,6 +12,7 @@ export type CreateTemplateInput = {
   contractYear?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type ModelTemplateConditionInput = {
@@ -23,6 +24,7 @@ export type ModelTemplateConditionInput = {
   contractYear?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelTemplateConditionInput | null > | null,
   or?: Array< ModelTemplateConditionInput | null > | null,
   not?: ModelTemplateConditionInput | null,
@@ -79,6 +81,7 @@ export type Template = {
   contractYear?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type UpdateTemplateInput = {
@@ -91,6 +94,7 @@ export type UpdateTemplateInput = {
   contractYear?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type DeleteTemplateInput = {
@@ -132,6 +136,7 @@ export type CreateProviderInput = {
   dynamicFields?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type FTEBreakdownComponentInput = {
@@ -172,6 +177,7 @@ export type ModelProviderConditionInput = {
   dynamicFields?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelProviderConditionInput | null > | null,
   or?: Array< ModelProviderConditionInput | null > | null,
   not?: ModelProviderConditionInput | null,
@@ -237,6 +243,7 @@ export type Provider = {
   dynamicFields?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type FTEBreakdownComponent = {
@@ -280,6 +287,7 @@ export type UpdateProviderInput = {
   dynamicFields?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type DeleteProviderInput = {
@@ -295,6 +303,7 @@ export type CreateTemplateMappingInput = {
   notes?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type ModelTemplateMappingConditionInput = {
@@ -304,6 +313,7 @@ export type ModelTemplateMappingConditionInput = {
   notes?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelTemplateMappingConditionInput | null > | null,
   or?: Array< ModelTemplateMappingConditionInput | null > | null,
   not?: ModelTemplateMappingConditionInput | null,
@@ -334,6 +344,7 @@ export type TemplateMapping = {
   notes?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type UpdateTemplateMappingInput = {
@@ -344,6 +355,7 @@ export type UpdateTemplateMappingInput = {
   notes?: string | null,
   createdAt?: string | null,
   updatedAt?: string | null,
+  owner?: string | null,
 };
 
 export type DeleteTemplateMappingInput = {
@@ -356,6 +368,7 @@ export type CreateMappingInput = {
   providerID: string,
   field: string,
   value?: string | null,
+  owner?: string | null,
 };
 
 export type ModelMappingConditionInput = {
@@ -363,6 +376,7 @@ export type ModelMappingConditionInput = {
   providerID?: ModelIDInput | null,
   field?: ModelStringInput | null,
   value?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelMappingConditionInput | null > | null,
   or?: Array< ModelMappingConditionInput | null > | null,
   not?: ModelMappingConditionInput | null,
@@ -377,6 +391,7 @@ export type Mapping = {
   providerID: string,
   field: string,
   value?: string | null,
+  owner?: string | null,
   createdAt: string,
   updatedAt: string,
 };
@@ -387,6 +402,7 @@ export type UpdateMappingInput = {
   providerID?: string | null,
   field?: string | null,
   value?: string | null,
+  owner?: string | null,
 };
 
 export type DeleteMappingInput = {
@@ -398,12 +414,14 @@ export type CreateClauseInput = {
   text: string,
   tags?: Array< string | null > | null,
   condition?: string | null,
+  owner?: string | null,
 };
 
 export type ModelClauseConditionInput = {
   text?: ModelStringInput | null,
   tags?: ModelStringInput | null,
   condition?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelClauseConditionInput | null > | null,
   or?: Array< ModelClauseConditionInput | null > | null,
   not?: ModelClauseConditionInput | null,
@@ -417,6 +435,7 @@ export type Clause = {
   text: string,
   tags?: Array< string | null > | null,
   condition?: string | null,
+  owner?: string | null,
   createdAt: string,
   updatedAt: string,
 };
@@ -426,6 +445,7 @@ export type UpdateClauseInput = {
   text?: string | null,
   tags?: Array< string | null > | null,
   condition?: string | null,
+  owner?: string | null,
 };
 
 export type DeleteClauseInput = {
@@ -438,6 +458,7 @@ export type CreateAuditLogInput = {
   user?: string | null,
   timestamp: string,
   details?: string | null,
+  owner?: string | null,
 };
 
 export type ModelAuditLogConditionInput = {
@@ -445,6 +466,7 @@ export type ModelAuditLogConditionInput = {
   user?: ModelStringInput | null,
   timestamp?: ModelStringInput | null,
   details?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelAuditLogConditionInput | null > | null,
   or?: Array< ModelAuditLogConditionInput | null > | null,
   not?: ModelAuditLogConditionInput | null,
@@ -459,6 +481,7 @@ export type AuditLog = {
   user?: string | null,
   timestamp: string,
   details?: string | null,
+  owner?: string | null,
   createdAt: string,
   updatedAt: string,
 };
@@ -469,9 +492,74 @@ export type UpdateAuditLogInput = {
   user?: string | null,
   timestamp?: string | null,
   details?: string | null,
+  owner?: string | null,
 };
 
 export type DeleteAuditLogInput = {
+  id: string,
+};
+
+export type CreateContractGenerationLogInput = {
+  providerId: string,
+  contractYear: string,
+  templateId: string,
+  generatedAt: string,
+  generatedBy?: string | null,
+  outputType?: string | null,
+  status?: string | null,
+  fileUrl?: string | null,
+  notes?: string | null,
+};
+
+export type ModelContractGenerationLogConditionInput = {
+  providerId?: ModelIDInput | null,
+  contractYear?: ModelStringInput | null,
+  templateId?: ModelIDInput | null,
+  generatedAt?: ModelStringInput | null,
+  generatedBy?: ModelStringInput | null,
+  outputType?: ModelStringInput | null,
+  status?: ModelStringInput | null,
+  fileUrl?: ModelStringInput | null,
+  notes?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  and?: Array< ModelContractGenerationLogConditionInput | null > | null,
+  or?: Array< ModelContractGenerationLogConditionInput | null > | null,
+  not?: ModelContractGenerationLogConditionInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+};
+
+export type ContractGenerationLog = {
+  __typename: "ContractGenerationLog",
+  id: string,
+  providerId: string,
+  contractYear: string,
+  templateId: string,
+  generatedAt: string,
+  generatedBy?: string | null,
+  outputType?: string | null,
+  status?: string | null,
+  fileUrl?: string | null,
+  notes?: string | null,
+  owner?: string | null,
+  createdAt: string,
+  updatedAt: string,
+};
+
+export type UpdateContractGenerationLogInput = {
+  id: string,
+  providerId?: string | null,
+  contractYear?: string | null,
+  templateId?: string | null,
+  generatedAt?: string | null,
+  generatedBy?: string | null,
+  outputType?: string | null,
+  status?: string | null,
+  fileUrl?: string | null,
+  notes?: string | null,
+};
+
+export type DeleteContractGenerationLogInput = {
   id: string,
 };
 
@@ -485,6 +573,7 @@ export type ModelTemplateFilterInput = {
   contractYear?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelTemplateFilterInput | null > | null,
   or?: Array< ModelTemplateFilterInput | null > | null,
   not?: ModelTemplateFilterInput | null,
@@ -530,6 +619,7 @@ export type ModelProviderFilterInput = {
   dynamicFields?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelProviderFilterInput | null > | null,
   or?: Array< ModelProviderFilterInput | null > | null,
   not?: ModelProviderFilterInput | null,
@@ -549,6 +639,7 @@ export type ModelTemplateMappingFilterInput = {
   notes?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   and?: Array< ModelTemplateMappingFilterInput | null > | null,
   or?: Array< ModelTemplateMappingFilterInput | null > | null,
   not?: ModelTemplateMappingFilterInput | null,
@@ -566,6 +657,7 @@ export type ModelMappingFilterInput = {
   providerID?: ModelIDInput | null,
   field?: ModelStringInput | null,
   value?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
   and?: Array< ModelMappingFilterInput | null > | null,
@@ -584,6 +676,7 @@ export type ModelClauseFilterInput = {
   text?: ModelStringInput | null,
   tags?: ModelStringInput | null,
   condition?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
   and?: Array< ModelClauseFilterInput | null > | null,
@@ -603,6 +696,7 @@ export type ModelAuditLogFilterInput = {
   user?: ModelStringInput | null,
   timestamp?: ModelStringInput | null,
   details?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
   createdAt?: ModelStringInput | null,
   updatedAt?: ModelStringInput | null,
   and?: Array< ModelAuditLogFilterInput | null > | null,
@@ -613,6 +707,31 @@ export type ModelAuditLogFilterInput = {
 export type ModelAuditLogConnection = {
   __typename: "ModelAuditLogConnection",
   items:  Array<AuditLog | null >,
+  nextToken?: string | null,
+};
+
+export type ModelContractGenerationLogFilterInput = {
+  id?: ModelIDInput | null,
+  providerId?: ModelIDInput | null,
+  contractYear?: ModelStringInput | null,
+  templateId?: ModelIDInput | null,
+  generatedAt?: ModelStringInput | null,
+  generatedBy?: ModelStringInput | null,
+  outputType?: ModelStringInput | null,
+  status?: ModelStringInput | null,
+  fileUrl?: ModelStringInput | null,
+  notes?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  and?: Array< ModelContractGenerationLogFilterInput | null > | null,
+  or?: Array< ModelContractGenerationLogFilterInput | null > | null,
+  not?: ModelContractGenerationLogFilterInput | null,
+};
+
+export type ModelContractGenerationLogConnection = {
+  __typename: "ModelContractGenerationLogConnection",
+  items:  Array<ContractGenerationLog | null >,
   nextToken?: string | null,
 };
 
@@ -644,6 +763,7 @@ export type ModelSubscriptionTemplateFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionTemplateFilterInput | null > | null,
   or?: Array< ModelSubscriptionTemplateFilterInput | null > | null,
+  owner?: ModelStringInput | null,
 };
 
 export type ModelSubscriptionIDInput = {
@@ -712,6 +832,7 @@ export type ModelSubscriptionProviderFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionProviderFilterInput | null > | null,
   or?: Array< ModelSubscriptionProviderFilterInput | null > | null,
+  owner?: ModelStringInput | null,
 };
 
 export type ModelSubscriptionFloatInput = {
@@ -748,6 +869,7 @@ export type ModelSubscriptionTemplateMappingFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionTemplateMappingFilterInput | null > | null,
   or?: Array< ModelSubscriptionTemplateMappingFilterInput | null > | null,
+  owner?: ModelStringInput | null,
 };
 
 export type ModelSubscriptionMappingFilterInput = {
@@ -760,6 +882,7 @@ export type ModelSubscriptionMappingFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionMappingFilterInput | null > | null,
   or?: Array< ModelSubscriptionMappingFilterInput | null > | null,
+  owner?: ModelStringInput | null,
 };
 
 export type ModelSubscriptionClauseFilterInput = {
@@ -771,6 +894,7 @@ export type ModelSubscriptionClauseFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionClauseFilterInput | null > | null,
   or?: Array< ModelSubscriptionClauseFilterInput | null > | null,
+  owner?: ModelStringInput | null,
 };
 
 export type ModelSubscriptionAuditLogFilterInput = {
@@ -783,6 +907,25 @@ export type ModelSubscriptionAuditLogFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionAuditLogFilterInput | null > | null,
   or?: Array< ModelSubscriptionAuditLogFilterInput | null > | null,
+  owner?: ModelStringInput | null,
+};
+
+export type ModelSubscriptionContractGenerationLogFilterInput = {
+  id?: ModelSubscriptionIDInput | null,
+  providerId?: ModelSubscriptionIDInput | null,
+  contractYear?: ModelSubscriptionStringInput | null,
+  templateId?: ModelSubscriptionIDInput | null,
+  generatedAt?: ModelSubscriptionStringInput | null,
+  generatedBy?: ModelSubscriptionStringInput | null,
+  outputType?: ModelSubscriptionStringInput | null,
+  status?: ModelSubscriptionStringInput | null,
+  fileUrl?: ModelSubscriptionStringInput | null,
+  notes?: ModelSubscriptionStringInput | null,
+  createdAt?: ModelSubscriptionStringInput | null,
+  updatedAt?: ModelSubscriptionStringInput | null,
+  and?: Array< ModelSubscriptionContractGenerationLogFilterInput | null > | null,
+  or?: Array< ModelSubscriptionContractGenerationLogFilterInput | null > | null,
+  owner?: ModelStringInput | null,
 };
 
 export type CreateTemplateMutationVariables = {
@@ -802,6 +945,7 @@ export type CreateTemplateMutation = {
     contractYear?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -822,6 +966,7 @@ export type UpdateTemplateMutation = {
     contractYear?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -842,6 +987,7 @@ export type DeleteTemplateMutation = {
     contractYear?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -891,6 +1037,7 @@ export type CreateProviderMutation = {
     dynamicFields?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -940,6 +1087,7 @@ export type UpdateProviderMutation = {
     dynamicFields?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -989,6 +1137,7 @@ export type DeleteProviderMutation = {
     dynamicFields?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -1007,6 +1156,7 @@ export type CreateTemplateMappingMutation = {
     notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -1025,6 +1175,7 @@ export type UpdateTemplateMappingMutation = {
     notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -1043,6 +1194,7 @@ export type DeleteTemplateMappingMutation = {
     notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -1059,6 +1211,7 @@ export type CreateMappingMutation = {
     providerID: string,
     field: string,
     value?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1077,6 +1230,7 @@ export type UpdateMappingMutation = {
     providerID: string,
     field: string,
     value?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1095,6 +1249,7 @@ export type DeleteMappingMutation = {
     providerID: string,
     field: string,
     value?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1112,6 +1267,7 @@ export type CreateClauseMutation = {
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1129,6 +1285,7 @@ export type UpdateClauseMutation = {
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1146,6 +1303,7 @@ export type DeleteClauseMutation = {
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1164,6 +1322,7 @@ export type CreateAuditLogMutation = {
     user?: string | null,
     timestamp: string,
     details?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1182,6 +1341,7 @@ export type UpdateAuditLogMutation = {
     user?: string | null,
     timestamp: string,
     details?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1200,9 +1360,89 @@ export type DeleteAuditLogMutation = {
     user?: string | null,
     timestamp: string,
     details?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
+};
+
+export type CreateContractGenerationLogMutationVariables = {
+  input: CreateContractGenerationLogInput,
+  condition?: ModelContractGenerationLogConditionInput | null,
+};
+
+export type CreateContractGenerationLogMutation = {
+  createContractGenerationLog?:  {
+    __typename: "ContractGenerationLog",
+    id: string,
+    providerId: string,
+    contractYear: string,
+    templateId: string,
+    generatedAt: string,
+    generatedBy?: string | null,
+    outputType?: string | null,
+    status?: string | null,
+    fileUrl?: string | null,
+    notes?: string | null,
+    owner?: string | null,
+    createdAt: string,
+    updatedAt: string,
+  } | null,
+};
+
+export type UpdateContractGenerationLogMutationVariables = {
+  input: UpdateContractGenerationLogInput,
+  condition?: ModelContractGenerationLogConditionInput | null,
+};
+
+export type UpdateContractGenerationLogMutation = {
+  updateContractGenerationLog?:  {
+    __typename: "ContractGenerationLog",
+    id: string,
+    providerId: string,
+    contractYear: string,
+    templateId: string,
+    generatedAt: string,
+    generatedBy?: string | null,
+    outputType?: string | null,
+    status?: string | null,
+    fileUrl?: string | null,
+    notes?: string | null,
+    owner?: string | null,
+    createdAt: string,
+    updatedAt: string,
+  } | null,
+};
+
+export type DeleteContractGenerationLogMutationVariables = {
+  input: DeleteContractGenerationLogInput,
+  condition?: ModelContractGenerationLogConditionInput | null,
+};
+
+export type DeleteContractGenerationLogMutation = {
+  deleteContractGenerationLog?:  {
+    __typename: "ContractGenerationLog",
+    id: string,
+    providerId: string,
+    contractYear: string,
+    templateId: string,
+    generatedAt: string,
+    generatedBy?: string | null,
+    outputType?: string | null,
+    status?: string | null,
+    fileUrl?: string | null,
+    notes?: string | null,
+    owner?: string | null,
+    createdAt: string,
+    updatedAt: string,
+  } | null,
+};
+
+export type ListProviderYearsQueryVariables = {
+};
+
+export type ListProviderYearsQuery = {
+  listProviderYears?: Array< string | null > | null,
 };
 
 export type GetTemplateQueryVariables = {
@@ -1221,6 +1461,7 @@ export type GetTemplateQuery = {
     contractYear?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -1244,6 +1485,7 @@ export type ListTemplatesQuery = {
       contractYear?: string | null,
       createdAt?: string | null,
       updatedAt?: string | null,
+      owner?: string | null,
     } | null >,
     nextToken?: string | null,
   } | null,
@@ -1294,6 +1536,7 @@ export type GetProviderQuery = {
     dynamicFields?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -1341,6 +1584,7 @@ export type ListProvidersQuery = {
       dynamicFields?: string | null,
       createdAt?: string | null,
       updatedAt?: string | null,
+      owner?: string | null,
     } | null >,
     nextToken?: string | null,
   } | null,
@@ -1360,6 +1604,7 @@ export type GetTemplateMappingQuery = {
     notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
@@ -1381,6 +1626,7 @@ export type ListTemplateMappingsQuery = {
       notes?: string | null,
       createdAt?: string | null,
       updatedAt?: string | null,
+      owner?: string | null,
     } | null >,
     nextToken?: string | null,
   } | null,
@@ -1398,6 +1644,7 @@ export type GetMappingQuery = {
     providerID: string,
     field: string,
     value?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1419,6 +1666,7 @@ export type ListMappingsQuery = {
       providerID: string,
       field: string,
       value?: string | null,
+      owner?: string | null,
       createdAt: string,
       updatedAt: string,
     } | null >,
@@ -1437,6 +1685,7 @@ export type GetClauseQuery = {
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1457,6 +1706,7 @@ export type ListClausesQuery = {
       text: string,
       tags?: Array< string | null > | null,
       condition?: string | null,
+      owner?: string | null,
       createdAt: string,
       updatedAt: string,
     } | null >,
@@ -1476,6 +1726,7 @@ export type GetAuditLogQuery = {
     user?: string | null,
     timestamp: string,
     details?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1497,8 +1748,113 @@ export type ListAuditLogsQuery = {
       user?: string | null,
       timestamp: string,
       details?: string | null,
+      owner?: string | null,
       createdAt: string,
       updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type GetContractGenerationLogQueryVariables = {
+  id: string,
+};
+
+export type GetContractGenerationLogQuery = {
+  getContractGenerationLog?:  {
+    __typename: "ContractGenerationLog",
+    id: string,
+    providerId: string,
+    contractYear: string,
+    templateId: string,
+    generatedAt: string,
+    generatedBy?: string | null,
+    outputType?: string | null,
+    status?: string | null,
+    fileUrl?: string | null,
+    notes?: string | null,
+    owner?: string | null,
+    createdAt: string,
+    updatedAt: string,
+  } | null,
+};
+
+export type ListContractGenerationLogsQueryVariables = {
+  filter?: ModelContractGenerationLogFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type ListContractGenerationLogsQuery = {
+  listContractGenerationLogs?:  {
+    __typename: "ModelContractGenerationLogConnection",
+    items:  Array< {
+      __typename: "ContractGenerationLog",
+      id: string,
+      providerId: string,
+      contractYear: string,
+      templateId: string,
+      generatedAt: string,
+      generatedBy?: string | null,
+      outputType?: string | null,
+      status?: string | null,
+      fileUrl?: string | null,
+      notes?: string | null,
+      owner?: string | null,
+      createdAt: string,
+      updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type ProvidersByCompensationYearQueryVariables = {
+  compensationYear: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelProviderFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type ProvidersByCompensationYearQuery = {
+  providersByCompensationYear?:  {
+    __typename: "ModelProviderConnection",
+    items:  Array< {
+      __typename: "Provider",
+      id: string,
+      employeeId?: string | null,
+      name: string,
+      providerType?: string | null,
+      specialty?: string | null,
+      subspecialty?: string | null,
+      fte?: number | null,
+      administrativeFte?: number | null,
+      administrativeRole?: string | null,
+      yearsExperience?: number | null,
+      hourlyWage?: number | null,
+      baseSalary?: number | null,
+      originalAgreementDate?: string | null,
+      organizationName?: string | null,
+      startDate?: string | null,
+      contractTerm?: string | null,
+      ptoDays?: number | null,
+      holidayDays?: number | null,
+      cmeDays?: number | null,
+      cmeAmount?: number | null,
+      signingBonus?: number | null,
+      educationBonus?: number | null,
+      qualityBonus?: number | null,
+      compensationType?: string | null,
+      conversionFactor?: number | null,
+      wRVUTarget?: number | null,
+      compensationYear?: string | null,
+      credentials?: string | null,
+      compensationModel?: string | null,
+      templateTag?: string | null,
+      dynamicFields?: string | null,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+      owner?: string | null,
     } | null >,
     nextToken?: string | null,
   } | null,
@@ -1524,6 +1880,7 @@ export type TemplateMappingsByTemplateIDQuery = {
       notes?: string | null,
       createdAt?: string | null,
       updatedAt?: string | null,
+      owner?: string | null,
     } | null >,
     nextToken?: string | null,
   } | null,
@@ -1547,6 +1904,7 @@ export type MappingsByTemplateIDQuery = {
       providerID: string,
       field: string,
       value?: string | null,
+      owner?: string | null,
       createdAt: string,
       updatedAt: string,
     } | null >,
@@ -1573,6 +1931,7 @@ export type MappingsByTemplateAndProviderQuery = {
       providerID: string,
       field: string,
       value?: string | null,
+      owner?: string | null,
       createdAt: string,
       updatedAt: string,
     } | null >,
@@ -1598,6 +1957,69 @@ export type MappingsByProviderIDQuery = {
       providerID: string,
       field: string,
       value?: string | null,
+      owner?: string | null,
+      createdAt: string,
+      updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type GenerationLogsByProviderQueryVariables = {
+  providerId: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelContractGenerationLogFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type GenerationLogsByProviderQuery = {
+  generationLogsByProvider?:  {
+    __typename: "ModelContractGenerationLogConnection",
+    items:  Array< {
+      __typename: "ContractGenerationLog",
+      id: string,
+      providerId: string,
+      contractYear: string,
+      templateId: string,
+      generatedAt: string,
+      generatedBy?: string | null,
+      outputType?: string | null,
+      status?: string | null,
+      fileUrl?: string | null,
+      notes?: string | null,
+      owner?: string | null,
+      createdAt: string,
+      updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type GenerationLogsByContractYearQueryVariables = {
+  contractYear: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelContractGenerationLogFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type GenerationLogsByContractYearQuery = {
+  generationLogsByContractYear?:  {
+    __typename: "ModelContractGenerationLogConnection",
+    items:  Array< {
+      __typename: "ContractGenerationLog",
+      id: string,
+      providerId: string,
+      contractYear: string,
+      templateId: string,
+      generatedAt: string,
+      generatedBy?: string | null,
+      outputType?: string | null,
+      status?: string | null,
+      fileUrl?: string | null,
+      notes?: string | null,
+      owner?: string | null,
       createdAt: string,
       updatedAt: string,
     } | null >,
@@ -1607,6 +2029,7 @@ export type MappingsByProviderIDQuery = {
 
 export type OnCreateTemplateSubscriptionVariables = {
   filter?: ModelSubscriptionTemplateFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnCreateTemplateSubscription = {
@@ -1621,11 +2044,13 @@ export type OnCreateTemplateSubscription = {
     contractYear?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnUpdateTemplateSubscriptionVariables = {
   filter?: ModelSubscriptionTemplateFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnUpdateTemplateSubscription = {
@@ -1640,11 +2065,13 @@ export type OnUpdateTemplateSubscription = {
     contractYear?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnDeleteTemplateSubscriptionVariables = {
   filter?: ModelSubscriptionTemplateFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnDeleteTemplateSubscription = {
@@ -1659,11 +2086,13 @@ export type OnDeleteTemplateSubscription = {
     contractYear?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnCreateProviderSubscriptionVariables = {
   filter?: ModelSubscriptionProviderFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnCreateProviderSubscription = {
@@ -1707,11 +2136,13 @@ export type OnCreateProviderSubscription = {
     dynamicFields?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnUpdateProviderSubscriptionVariables = {
   filter?: ModelSubscriptionProviderFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnUpdateProviderSubscription = {
@@ -1755,11 +2186,13 @@ export type OnUpdateProviderSubscription = {
     dynamicFields?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnDeleteProviderSubscriptionVariables = {
   filter?: ModelSubscriptionProviderFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnDeleteProviderSubscription = {
@@ -1803,11 +2236,13 @@ export type OnDeleteProviderSubscription = {
     dynamicFields?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnCreateTemplateMappingSubscriptionVariables = {
   filter?: ModelSubscriptionTemplateMappingFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnCreateTemplateMappingSubscription = {
@@ -1820,11 +2255,13 @@ export type OnCreateTemplateMappingSubscription = {
     notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnUpdateTemplateMappingSubscriptionVariables = {
   filter?: ModelSubscriptionTemplateMappingFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnUpdateTemplateMappingSubscription = {
@@ -1837,11 +2274,13 @@ export type OnUpdateTemplateMappingSubscription = {
     notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnDeleteTemplateMappingSubscriptionVariables = {
   filter?: ModelSubscriptionTemplateMappingFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnDeleteTemplateMappingSubscription = {
@@ -1854,11 +2293,13 @@ export type OnDeleteTemplateMappingSubscription = {
     notes?: string | null,
     createdAt?: string | null,
     updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 
 export type OnCreateMappingSubscriptionVariables = {
   filter?: ModelSubscriptionMappingFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnCreateMappingSubscription = {
@@ -1869,6 +2310,7 @@ export type OnCreateMappingSubscription = {
     providerID: string,
     field: string,
     value?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1876,6 +2318,7 @@ export type OnCreateMappingSubscription = {
 
 export type OnUpdateMappingSubscriptionVariables = {
   filter?: ModelSubscriptionMappingFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnUpdateMappingSubscription = {
@@ -1886,6 +2329,7 @@ export type OnUpdateMappingSubscription = {
     providerID: string,
     field: string,
     value?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1893,6 +2337,7 @@ export type OnUpdateMappingSubscription = {
 
 export type OnDeleteMappingSubscriptionVariables = {
   filter?: ModelSubscriptionMappingFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnDeleteMappingSubscription = {
@@ -1903,6 +2348,7 @@ export type OnDeleteMappingSubscription = {
     providerID: string,
     field: string,
     value?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1910,6 +2356,7 @@ export type OnDeleteMappingSubscription = {
 
 export type OnCreateClauseSubscriptionVariables = {
   filter?: ModelSubscriptionClauseFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnCreateClauseSubscription = {
@@ -1919,6 +2366,7 @@ export type OnCreateClauseSubscription = {
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1926,6 +2374,7 @@ export type OnCreateClauseSubscription = {
 
 export type OnUpdateClauseSubscriptionVariables = {
   filter?: ModelSubscriptionClauseFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnUpdateClauseSubscription = {
@@ -1935,6 +2384,7 @@ export type OnUpdateClauseSubscription = {
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1942,6 +2392,7 @@ export type OnUpdateClauseSubscription = {
 
 export type OnDeleteClauseSubscriptionVariables = {
   filter?: ModelSubscriptionClauseFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnDeleteClauseSubscription = {
@@ -1951,6 +2402,7 @@ export type OnDeleteClauseSubscription = {
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1958,6 +2410,7 @@ export type OnDeleteClauseSubscription = {
 
 export type OnCreateAuditLogSubscriptionVariables = {
   filter?: ModelSubscriptionAuditLogFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnCreateAuditLogSubscription = {
@@ -1968,6 +2421,7 @@ export type OnCreateAuditLogSubscription = {
     user?: string | null,
     timestamp: string,
     details?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1975,6 +2429,7 @@ export type OnCreateAuditLogSubscription = {
 
 export type OnUpdateAuditLogSubscriptionVariables = {
   filter?: ModelSubscriptionAuditLogFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnUpdateAuditLogSubscription = {
@@ -1985,6 +2440,7 @@ export type OnUpdateAuditLogSubscription = {
     user?: string | null,
     timestamp: string,
     details?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,
@@ -1992,6 +2448,7 @@ export type OnUpdateAuditLogSubscription = {
 
 export type OnDeleteAuditLogSubscriptionVariables = {
   filter?: ModelSubscriptionAuditLogFilterInput | null,
+  owner?: string | null,
 };
 
 export type OnDeleteAuditLogSubscription = {
@@ -2002,6 +2459,79 @@ export type OnDeleteAuditLogSubscription = {
     user?: string | null,
     timestamp: string,
     details?: string | null,
+    owner?: string | null,
+    createdAt: string,
+    updatedAt: string,
+  } | null,
+};
+
+export type OnCreateContractGenerationLogSubscriptionVariables = {
+  filter?: ModelSubscriptionContractGenerationLogFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnCreateContractGenerationLogSubscription = {
+  onCreateContractGenerationLog?:  {
+    __typename: "ContractGenerationLog",
+    id: string,
+    providerId: string,
+    contractYear: string,
+    templateId: string,
+    generatedAt: string,
+    generatedBy?: string | null,
+    outputType?: string | null,
+    status?: string | null,
+    fileUrl?: string | null,
+    notes?: string | null,
+    owner?: string | null,
+    createdAt: string,
+    updatedAt: string,
+  } | null,
+};
+
+export type OnUpdateContractGenerationLogSubscriptionVariables = {
+  filter?: ModelSubscriptionContractGenerationLogFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnUpdateContractGenerationLogSubscription = {
+  onUpdateContractGenerationLog?:  {
+    __typename: "ContractGenerationLog",
+    id: string,
+    providerId: string,
+    contractYear: string,
+    templateId: string,
+    generatedAt: string,
+    generatedBy?: string | null,
+    outputType?: string | null,
+    status?: string | null,
+    fileUrl?: string | null,
+    notes?: string | null,
+    owner?: string | null,
+    createdAt: string,
+    updatedAt: string,
+  } | null,
+};
+
+export type OnDeleteContractGenerationLogSubscriptionVariables = {
+  filter?: ModelSubscriptionContractGenerationLogFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnDeleteContractGenerationLogSubscription = {
+  onDeleteContractGenerationLog?:  {
+    __typename: "ContractGenerationLog",
+    id: string,
+    providerId: string,
+    contractYear: string,
+    templateId: string,
+    generatedAt: string,
+    generatedBy?: string | null,
+    outputType?: string | null,
+    status?: string | null,
+    fileUrl?: string | null,
+    notes?: string | null,
+    owner?: string | null,
     createdAt: string,
     updatedAt: string,
   } | null,

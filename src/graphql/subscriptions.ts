@@ -8,8 +8,11 @@ type GeneratedSubscription<InputType, OutputType> = string & {
   __generatedSubscriptionOutput: OutputType;
 };
 
-export const onCreateTemplate = /* GraphQL */ `subscription OnCreateTemplate($filter: ModelSubscriptionTemplateFilterInput) {
-  onCreateTemplate(filter: $filter) {
+export const onCreateTemplate = /* GraphQL */ `subscription OnCreateTemplate(
+  $filter: ModelSubscriptionTemplateFilterInput
+  $owner: String
+) {
+  onCreateTemplate(filter: $filter, owner: $owner) {
     id
     name
     description
@@ -19,6 +22,7 @@ export const onCreateTemplate = /* GraphQL */ `subscription OnCreateTemplate($fi
     contractYear
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -26,8 +30,11 @@ export const onCreateTemplate = /* GraphQL */ `subscription OnCreateTemplate($fi
   APITypes.OnCreateTemplateSubscriptionVariables,
   APITypes.OnCreateTemplateSubscription
 >;
-export const onUpdateTemplate = /* GraphQL */ `subscription OnUpdateTemplate($filter: ModelSubscriptionTemplateFilterInput) {
-  onUpdateTemplate(filter: $filter) {
+export const onUpdateTemplate = /* GraphQL */ `subscription OnUpdateTemplate(
+  $filter: ModelSubscriptionTemplateFilterInput
+  $owner: String
+) {
+  onUpdateTemplate(filter: $filter, owner: $owner) {
     id
     name
     description
@@ -37,6 +44,7 @@ export const onUpdateTemplate = /* GraphQL */ `subscription OnUpdateTemplate($fi
     contractYear
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -44,8 +52,11 @@ export const onUpdateTemplate = /* GraphQL */ `subscription OnUpdateTemplate($fi
   APITypes.OnUpdateTemplateSubscriptionVariables,
   APITypes.OnUpdateTemplateSubscription
 >;
-export const onDeleteTemplate = /* GraphQL */ `subscription OnDeleteTemplate($filter: ModelSubscriptionTemplateFilterInput) {
-  onDeleteTemplate(filter: $filter) {
+export const onDeleteTemplate = /* GraphQL */ `subscription OnDeleteTemplate(
+  $filter: ModelSubscriptionTemplateFilterInput
+  $owner: String
+) {
+  onDeleteTemplate(filter: $filter, owner: $owner) {
     id
     name
     description
@@ -55,6 +66,7 @@ export const onDeleteTemplate = /* GraphQL */ `subscription OnDeleteTemplate($fi
     contractYear
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -62,8 +74,11 @@ export const onDeleteTemplate = /* GraphQL */ `subscription OnDeleteTemplate($fi
   APITypes.OnDeleteTemplateSubscriptionVariables,
   APITypes.OnDeleteTemplateSubscription
 >;
-export const onCreateProvider = /* GraphQL */ `subscription OnCreateProvider($filter: ModelSubscriptionProviderFilterInput) {
-  onCreateProvider(filter: $filter) {
+export const onCreateProvider = /* GraphQL */ `subscription OnCreateProvider(
+  $filter: ModelSubscriptionProviderFilterInput
+  $owner: String
+) {
+  onCreateProvider(filter: $filter, owner: $owner) {
     id
     employeeId
     name
@@ -102,6 +117,7 @@ export const onCreateProvider = /* GraphQL */ `subscription OnCreateProvider($fi
     dynamicFields
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -109,8 +125,11 @@ export const onCreateProvider = /* GraphQL */ `subscription OnCreateProvider($fi
   APITypes.OnCreateProviderSubscriptionVariables,
   APITypes.OnCreateProviderSubscription
 >;
-export const onUpdateProvider = /* GraphQL */ `subscription OnUpdateProvider($filter: ModelSubscriptionProviderFilterInput) {
-  onUpdateProvider(filter: $filter) {
+export const onUpdateProvider = /* GraphQL */ `subscription OnUpdateProvider(
+  $filter: ModelSubscriptionProviderFilterInput
+  $owner: String
+) {
+  onUpdateProvider(filter: $filter, owner: $owner) {
     id
     employeeId
     name
@@ -149,6 +168,7 @@ export const onUpdateProvider = /* GraphQL */ `subscription OnUpdateProvider($fi
     dynamicFields
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -156,8 +176,11 @@ export const onUpdateProvider = /* GraphQL */ `subscription OnUpdateProvider($fi
   APITypes.OnUpdateProviderSubscriptionVariables,
   APITypes.OnUpdateProviderSubscription
 >;
-export const onDeleteProvider = /* GraphQL */ `subscription OnDeleteProvider($filter: ModelSubscriptionProviderFilterInput) {
-  onDeleteProvider(filter: $filter) {
+export const onDeleteProvider = /* GraphQL */ `subscription OnDeleteProvider(
+  $filter: ModelSubscriptionProviderFilterInput
+  $owner: String
+) {
+  onDeleteProvider(filter: $filter, owner: $owner) {
     id
     employeeId
     name
@@ -196,6 +219,7 @@ export const onDeleteProvider = /* GraphQL */ `subscription OnDeleteProvider($fi
     dynamicFields
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -205,8 +229,9 @@ export const onDeleteProvider = /* GraphQL */ `subscription OnDeleteProvider($fi
 >;
 export const onCreateTemplateMapping = /* GraphQL */ `subscription OnCreateTemplateMapping(
   $filter: ModelSubscriptionTemplateMappingFilterInput
+  $owner: String
 ) {
-  onCreateTemplateMapping(filter: $filter) {
+  onCreateTemplateMapping(filter: $filter, owner: $owner) {
     id
     templateID
     field
@@ -214,6 +239,7 @@ export const onCreateTemplateMapping = /* GraphQL */ `subscription OnCreateTempl
     notes
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -223,8 +249,9 @@ export const onCreateTemplateMapping = /* GraphQL */ `subscription OnCreateTempl
 >;
 export const onUpdateTemplateMapping = /* GraphQL */ `subscription OnUpdateTemplateMapping(
   $filter: ModelSubscriptionTemplateMappingFilterInput
+  $owner: String
 ) {
-  onUpdateTemplateMapping(filter: $filter) {
+  onUpdateTemplateMapping(filter: $filter, owner: $owner) {
     id
     templateID
     field
@@ -232,6 +259,7 @@ export const onUpdateTemplateMapping = /* GraphQL */ `subscription OnUpdateTempl
     notes
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -241,8 +269,9 @@ export const onUpdateTemplateMapping = /* GraphQL */ `subscription OnUpdateTempl
 >;
 export const onDeleteTemplateMapping = /* GraphQL */ `subscription OnDeleteTemplateMapping(
   $filter: ModelSubscriptionTemplateMappingFilterInput
+  $owner: String
 ) {
-  onDeleteTemplateMapping(filter: $filter) {
+  onDeleteTemplateMapping(filter: $filter, owner: $owner) {
     id
     templateID
     field
@@ -250,6 +279,7 @@ export const onDeleteTemplateMapping = /* GraphQL */ `subscription OnDeleteTempl
     notes
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -257,13 +287,17 @@ export const onDeleteTemplateMapping = /* GraphQL */ `subscription OnDeleteTempl
   APITypes.OnDeleteTemplateMappingSubscriptionVariables,
   APITypes.OnDeleteTemplateMappingSubscription
 >;
-export const onCreateMapping = /* GraphQL */ `subscription OnCreateMapping($filter: ModelSubscriptionMappingFilterInput) {
-  onCreateMapping(filter: $filter) {
+export const onCreateMapping = /* GraphQL */ `subscription OnCreateMapping(
+  $filter: ModelSubscriptionMappingFilterInput
+  $owner: String
+) {
+  onCreateMapping(filter: $filter, owner: $owner) {
     id
     templateID
     providerID
     field
     value
+    owner
     createdAt
     updatedAt
     __typename
@@ -273,13 +307,17 @@ export const onCreateMapping = /* GraphQL */ `subscription OnCreateMapping($filt
   APITypes.OnCreateMappingSubscriptionVariables,
   APITypes.OnCreateMappingSubscription
 >;
-export const onUpdateMapping = /* GraphQL */ `subscription OnUpdateMapping($filter: ModelSubscriptionMappingFilterInput) {
-  onUpdateMapping(filter: $filter) {
+export const onUpdateMapping = /* GraphQL */ `subscription OnUpdateMapping(
+  $filter: ModelSubscriptionMappingFilterInput
+  $owner: String
+) {
+  onUpdateMapping(filter: $filter, owner: $owner) {
     id
     templateID
     providerID
     field
     value
+    owner
     createdAt
     updatedAt
     __typename
@@ -289,13 +327,17 @@ export const onUpdateMapping = /* GraphQL */ `subscription OnUpdateMapping($filt
   APITypes.OnUpdateMappingSubscriptionVariables,
   APITypes.OnUpdateMappingSubscription
 >;
-export const onDeleteMapping = /* GraphQL */ `subscription OnDeleteMapping($filter: ModelSubscriptionMappingFilterInput) {
-  onDeleteMapping(filter: $filter) {
+export const onDeleteMapping = /* GraphQL */ `subscription OnDeleteMapping(
+  $filter: ModelSubscriptionMappingFilterInput
+  $owner: String
+) {
+  onDeleteMapping(filter: $filter, owner: $owner) {
     id
     templateID
     providerID
     field
     value
+    owner
     createdAt
     updatedAt
     __typename
@@ -305,12 +347,16 @@ export const onDeleteMapping = /* GraphQL */ `subscription OnDeleteMapping($filt
   APITypes.OnDeleteMappingSubscriptionVariables,
   APITypes.OnDeleteMappingSubscription
 >;
-export const onCreateClause = /* GraphQL */ `subscription OnCreateClause($filter: ModelSubscriptionClauseFilterInput) {
-  onCreateClause(filter: $filter) {
+export const onCreateClause = /* GraphQL */ `subscription OnCreateClause(
+  $filter: ModelSubscriptionClauseFilterInput
+  $owner: String
+) {
+  onCreateClause(filter: $filter, owner: $owner) {
     id
     text
     tags
     condition
+    owner
     createdAt
     updatedAt
     __typename
@@ -320,12 +366,16 @@ export const onCreateClause = /* GraphQL */ `subscription OnCreateClause($filter
   APITypes.OnCreateClauseSubscriptionVariables,
   APITypes.OnCreateClauseSubscription
 >;
-export const onUpdateClause = /* GraphQL */ `subscription OnUpdateClause($filter: ModelSubscriptionClauseFilterInput) {
-  onUpdateClause(filter: $filter) {
+export const onUpdateClause = /* GraphQL */ `subscription OnUpdateClause(
+  $filter: ModelSubscriptionClauseFilterInput
+  $owner: String
+) {
+  onUpdateClause(filter: $filter, owner: $owner) {
     id
     text
     tags
     condition
+    owner
     createdAt
     updatedAt
     __typename
@@ -335,12 +385,16 @@ export const onUpdateClause = /* GraphQL */ `subscription OnUpdateClause($filter
   APITypes.OnUpdateClauseSubscriptionVariables,
   APITypes.OnUpdateClauseSubscription
 >;
-export const onDeleteClause = /* GraphQL */ `subscription OnDeleteClause($filter: ModelSubscriptionClauseFilterInput) {
-  onDeleteClause(filter: $filter) {
+export const onDeleteClause = /* GraphQL */ `subscription OnDeleteClause(
+  $filter: ModelSubscriptionClauseFilterInput
+  $owner: String
+) {
+  onDeleteClause(filter: $filter, owner: $owner) {
     id
     text
     tags
     condition
+    owner
     createdAt
     updatedAt
     __typename
@@ -350,13 +404,17 @@ export const onDeleteClause = /* GraphQL */ `subscription OnDeleteClause($filter
   APITypes.OnDeleteClauseSubscriptionVariables,
   APITypes.OnDeleteClauseSubscription
 >;
-export const onCreateAuditLog = /* GraphQL */ `subscription OnCreateAuditLog($filter: ModelSubscriptionAuditLogFilterInput) {
-  onCreateAuditLog(filter: $filter) {
+export const onCreateAuditLog = /* GraphQL */ `subscription OnCreateAuditLog(
+  $filter: ModelSubscriptionAuditLogFilterInput
+  $owner: String
+) {
+  onCreateAuditLog(filter: $filter, owner: $owner) {
     id
     action
     user
     timestamp
     details
+    owner
     createdAt
     updatedAt
     __typename
@@ -366,13 +424,17 @@ export const onCreateAuditLog = /* GraphQL */ `subscription OnCreateAuditLog($fi
   APITypes.OnCreateAuditLogSubscriptionVariables,
   APITypes.OnCreateAuditLogSubscription
 >;
-export const onUpdateAuditLog = /* GraphQL */ `subscription OnUpdateAuditLog($filter: ModelSubscriptionAuditLogFilterInput) {
-  onUpdateAuditLog(filter: $filter) {
+export const onUpdateAuditLog = /* GraphQL */ `subscription OnUpdateAuditLog(
+  $filter: ModelSubscriptionAuditLogFilterInput
+  $owner: String
+) {
+  onUpdateAuditLog(filter: $filter, owner: $owner) {
     id
     action
     user
     timestamp
     details
+    owner
     createdAt
     updatedAt
     __typename
@@ -382,13 +444,17 @@ export const onUpdateAuditLog = /* GraphQL */ `subscription OnUpdateAuditLog($fi
   APITypes.OnUpdateAuditLogSubscriptionVariables,
   APITypes.OnUpdateAuditLogSubscription
 >;
-export const onDeleteAuditLog = /* GraphQL */ `subscription OnDeleteAuditLog($filter: ModelSubscriptionAuditLogFilterInput) {
-  onDeleteAuditLog(filter: $filter) {
+export const onDeleteAuditLog = /* GraphQL */ `subscription OnDeleteAuditLog(
+  $filter: ModelSubscriptionAuditLogFilterInput
+  $owner: String
+) {
+  onDeleteAuditLog(filter: $filter, owner: $owner) {
     id
     action
     user
     timestamp
     details
+    owner
     createdAt
     updatedAt
     __typename
@@ -397,4 +463,79 @@ export const onDeleteAuditLog = /* GraphQL */ `subscription OnDeleteAuditLog($fi
 ` as GeneratedSubscription<
   APITypes.OnDeleteAuditLogSubscriptionVariables,
   APITypes.OnDeleteAuditLogSubscription
+>;
+export const onCreateContractGenerationLog = /* GraphQL */ `subscription OnCreateContractGenerationLog(
+  $filter: ModelSubscriptionContractGenerationLogFilterInput
+  $owner: String
+) {
+  onCreateContractGenerationLog(filter: $filter, owner: $owner) {
+    id
+    providerId
+    contractYear
+    templateId
+    generatedAt
+    generatedBy
+    outputType
+    status
+    fileUrl
+    notes
+    owner
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnCreateContractGenerationLogSubscriptionVariables,
+  APITypes.OnCreateContractGenerationLogSubscription
+>;
+export const onUpdateContractGenerationLog = /* GraphQL */ `subscription OnUpdateContractGenerationLog(
+  $filter: ModelSubscriptionContractGenerationLogFilterInput
+  $owner: String
+) {
+  onUpdateContractGenerationLog(filter: $filter, owner: $owner) {
+    id
+    providerId
+    contractYear
+    templateId
+    generatedAt
+    generatedBy
+    outputType
+    status
+    fileUrl
+    notes
+    owner
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnUpdateContractGenerationLogSubscriptionVariables,
+  APITypes.OnUpdateContractGenerationLogSubscription
+>;
+export const onDeleteContractGenerationLog = /* GraphQL */ `subscription OnDeleteContractGenerationLog(
+  $filter: ModelSubscriptionContractGenerationLogFilterInput
+  $owner: String
+) {
+  onDeleteContractGenerationLog(filter: $filter, owner: $owner) {
+    id
+    providerId
+    contractYear
+    templateId
+    generatedAt
+    generatedBy
+    outputType
+    status
+    fileUrl
+    notes
+    owner
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnDeleteContractGenerationLogSubscriptionVariables,
+  APITypes.OnDeleteContractGenerationLogSubscription
 >;

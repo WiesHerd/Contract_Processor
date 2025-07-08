@@ -24,6 +24,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { generateClient } from 'aws-amplify/api';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import type { LoadingAction } from '@/types/provider';
 
 // Enterprise-grade field mapping configuration
 const REQUIRED_FIELDS = [
@@ -245,7 +246,6 @@ export default function ProviderDataManager() {
   const dispatch = useDispatch<AppDispatch>();
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSticky, setIsSticky] = useState(true);
-  const [fullscreen, setFullscreen] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [pendingUploadSummary, setPendingUploadSummary] = useState<{ uploaded: number; skipped: number; errors: ValidationError[] } | null>(null);
@@ -258,7 +258,6 @@ export default function ProviderDataManager() {
   const loading = useSelector(selectProvidersLoading);
   const error = useSelector(selectProvidersError);
   const lastSync = useSelector((state: RootState) => state.provider.lastSync);
-  const tableScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { 
@@ -267,6 +266,12 @@ export default function ProviderDataManager() {
     loadingAction,
     uploadProgress,
     uploadTotal
+  }: {
+    clearProgress: number | undefined;
+    clearTotal: number | undefined;
+    loadingAction: LoadingAction;
+    uploadProgress: number | undefined;
+    uploadTotal: number | undefined;
   } = useSelector((state: RootState) => ({
     clearProgress: state.provider.clearProgress,
     clearTotal: state.provider.clearTotal,
@@ -278,7 +283,7 @@ export default function ProviderDataManager() {
   // Track when clearing is complete to close the progress modal
   const [showClearingModal, setShowClearingModal] = useState(false);
   useEffect(() => {
-    if (loadingAction && loadingAction === 'clearing') {
+    if (loadingAction && loadingAction === ('clearing' as LoadingAction)) {
       setShowClearingModal(true);
     } else if (showClearingModal && (!loadingAction || loadingAction !== 'clearing')) {
       setShowClearingModal(false);
@@ -471,6 +476,7 @@ export default function ProviderDataManager() {
 
   // Handle clear table with DynamoDB sync
   const handleClearTable = useCallback(() => {
+    setShowConfirm(false); // Close the confirmation modal immediately
     dispatch(fetchProviders()).then(() => {
       dispatch(clearAllProviders());
     });
@@ -492,7 +498,7 @@ export default function ProviderDataManager() {
   };
 
   return (
-    <div className={`min-h-screen bg-gray-50/50 ${fullscreen ? 'fixed inset-0 z-50 p-8 overflow-auto' : 'pt-0 pb-4 px-2 sm:px-4'}`}>
+    <div className="min-h-screen bg-gray-50/50">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">
@@ -527,57 +533,47 @@ export default function ProviderDataManager() {
             )}
           </div>
           <hr className="my-3 border-gray-100" />
-          <div className="flex flex-wrap items-center gap-3 justify-end">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="hidden"
-              ref={fileInputRef}
-              disabled={loading}
-            />
-            <Button
-              variant="outline"
-              className="bg-white"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
-            >
-              <Upload className="w-4 h-4 mr-2" />
-              Upload CSV
-            </Button>
-            <Button
-              variant="outline"
-              className="bg-white"
-              onClick={downloadTemplate}
-              disabled={loading}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download CSV Template
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => setShowConfirm(true)}
-              disabled={loading || providers.length === 0}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Clear Table
-            </Button>
-            <div className="flex items-center gap-2">
-              <Checkbox id="sticky-name" checked={isSticky} onCheckedChange={() => setIsSticky(!isSticky)} />
-              <Label htmlFor="sticky-name" className="text-sm font-medium">Sticky Name Column</Label>
+          <div className="flex flex-wrap items-center justify-between gap-4 mt-4">
+            {/* Left group: Upload/Download */}
+            <div className="flex items-center gap-3">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                className="hidden"
+                ref={fileInputRef}
+                disabled={loading}
+              />
+              <Button
+                variant="outline"
+                className="bg-white"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload CSV
+              </Button>
+              <Button
+                variant="outline"
+                className="bg-white"
+                onClick={downloadTemplate}
+                disabled={loading}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download CSV Template
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setFullscreen(!fullscreen)}
-              disabled={loading}
-            >
-              {fullscreen ? (
-                <Minimize2 className="w-4 h-4" />
-              ) : (
-                <Maximize2 className="w-4 h-4" />
-              )}
-            </Button>
+            {/* Right group: Sticky toggle, Clear Table */}
+            <div className="flex items-center gap-3">
+              <Button
+                variant="destructive"
+                onClick={() => setShowConfirm(true)}
+                disabled={loading || providers.length === 0}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Clear Table
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -585,8 +581,6 @@ export default function ProviderDataManager() {
           <ProviderManager
             providers={providers}
             loading={loading}
-            isSticky={isSticky}
-            tableScrollRef={tableScrollRef}
           />
         </div>
 

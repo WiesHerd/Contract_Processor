@@ -1,6 +1,6 @@
-import { awsBulkOperations } from '../src/utils/awsServices.js';
+import { awsBulkOperations } from '../src/utils/awsServices';
 import { Amplify } from 'aws-amplify';
-import awsconfig from '../src/aws-exports.js';
+import awsconfig from '../src/aws-exports';
 
 // Configure Amplify
 Amplify.configure(awsconfig);

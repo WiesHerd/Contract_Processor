@@ -1,4 +1,4 @@
-type Template @model @auth(rules: [{ allow: public }]) {
+type Template @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
   name: String!
   description: String
@@ -8,9 +8,10 @@ type Template @model @auth(rules: [{ allow: public }]) {
   contractYear: String
   createdAt: AWSDateTime
   updatedAt: AWSDateTime
+  owner: String
 }
 
-type Provider @model @auth(rules: [{ allow: public }]) {
+type Provider @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
   employeeId: String
   name: String!
@@ -45,6 +46,7 @@ type Provider @model @auth(rules: [{ allow: public }]) {
   dynamicFields: AWSJSON
   createdAt: AWSDateTime
   updatedAt: AWSDateTime
+  owner: String
 }
 
 type FTEBreakdownComponent {
@@ -53,7 +55,7 @@ type FTEBreakdownComponent {
 }
 
 # Template-level field mappings (independent of providers)
-type TemplateMapping @model @auth(rules: [{ allow: public }]) {
+type TemplateMapping @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
   templateID: ID! @index(name: "byTemplate", queryField: "templateMappingsByTemplateID")
   field: String!
@@ -61,30 +63,48 @@ type TemplateMapping @model @auth(rules: [{ allow: public }]) {
   notes: String
   createdAt: AWSDateTime
   updatedAt: AWSDateTime
+  owner: String
 }
 
 # Provider-specific field mappings (for custom overrides)
-type Mapping @model @auth(rules: [{ allow: public }]) {
+type Mapping @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
   templateID: ID! @index(name: "byTemplate", queryField: "mappingsByTemplateID") @index(name: "byTemplateAndProvider", queryField: "mappingsByTemplateAndProvider", sortKeyFields: ["providerID"])
   providerID: ID! @index(name: "byProvider", queryField: "mappingsByProviderID")
   field: String!
   value: String
+  owner: String
 }
 
-type Clause @model @auth(rules: [{ allow: public }]) {
+type Clause @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
   text: String!
   tags: [String]
   condition: String
+  owner: String
 }
 
-type AuditLog @model @auth(rules: [{ allow: public }]) {
+type AuditLog @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
   action: String!
   user: String
   timestamp: AWSDateTime!
   details: String
+  owner: String
+}
+
+type ContractGenerationLog @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+  id: ID!
+  providerId: ID! @index(name: "byProvider", queryField: "generationLogsByProvider")
+  contractYear: String! @index(name: "byContractYear", queryField: "generationLogsByContractYear")
+  templateId: ID!
+  generatedAt: AWSDateTime!
+  generatedBy: String
+  outputType: String
+  status: String
+  fileUrl: String
+  notes: String
+  owner: String
 }
 
 # Custom queries
@@ -95,6 +115,36 @@ type Query {
 type ProviderConnection {
   items: [Provider]
   nextToken: String
+}
+
+# Input types for ContractGenerationLog mutations
+input CreateContractGenerationLogInput {
+  providerId: ID!
+  contractYear: String!
+  templateId: ID!
+  generatedAt: AWSDateTime!
+  generatedBy: String
+  outputType: String
+  status: String
+  fileUrl: String
+  notes: String
+}
+
+input UpdateContractGenerationLogInput {
+  id: ID!
+  providerId: ID
+  contractYear: String
+  templateId: ID
+  generatedAt: AWSDateTime
+  generatedBy: String
+  outputType: String
+  status: String
+  fileUrl: String
+  notes: String
+}
+
+input DeleteContractGenerationLogInput {
+  id: ID!
 }
 
 input DeleteTemplateInput {

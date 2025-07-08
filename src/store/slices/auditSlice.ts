@@ -399,24 +399,22 @@ export const fetchAuditLogs = createAsyncThunk(
     try {
       // Convert our filters to GraphQL filter format
       const graphqlFilter: ModelAuditLogFilterInput = {};
-      
       if (filters?.userId) {
         graphqlFilter.user = { eq: filters.userId };
       }
-      
+      // Only include filter if it has at least one key
+      const variables: any = { limit: 1000 };
+      if (Object.keys(graphqlFilter).length > 0) {
+        variables.filter = graphqlFilter;
+      }
       const result = await client.graphql({
         query: listAuditLogs,
-        variables: { 
-          filter: graphqlFilter,
-          limit: 1000,
-        },
+        variables,
       });
-      
       // Transform the results to include our enhanced fields
       const items = result.data.listAuditLogs?.items || [];
       return items.map((item: any) => {
         if (!item) return null;
-        
         try {
           const parsedDetails = JSON.parse(item.details || '{}');
           return {

@@ -63,6 +63,7 @@ import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCom
 import { Provider as LocalProvider } from '../types/provider';
 import { withRetry, isRetryableError, AWSError } from './retry';
 
+// NOTE: Amplify is configured in main.tsx to use VITE_AWS_APPSYNC_GRAPHQL_ENDPOINT if present.
 const client = generateClient();
 
 // Initialize DynamoDB client
@@ -537,9 +538,7 @@ export const awsMappings = {
   },
 
   async batchCreate(mappings: CreateMappingInput[]): Promise<Mapping[]> {
-    const appId = import.meta.env.VITE_AWS_APP_ID || 'uncqgyngxvgzfceslcwqtprza4';
-    const env = import.meta.env.VITE_AWS_ENV || 'dev';
-    const tableName = `Mapping-${appId}-${env}`;
+    const tableName = import.meta.env.VITE_DYNAMODB_MAPPING_TABLE;
 
     const writeRequests = mappings.map(mapping => ({
       PutRequest: {
@@ -578,10 +577,7 @@ export const awsMappings = {
   },
 
   async deleteMappingsByTemplateAndProvider(templateId: string, providerId: string): Promise<void> {
-    const appId = import.meta.env.VITE_AWS_APP_ID || 'uncqgyngxvgzfceslcwqtprza4';
-    const env = import.meta.env.VITE_AWS_ENV || 'dev';
-    const tableName = `Mapping-${appId}-${env}`;
-
+    const tableName = import.meta.env.VITE_DYNAMODB_MAPPING_TABLE;
     // 1. Query for mappings to get their primary keys (id)
     const queryParams = {
         TableName: tableName,
@@ -592,27 +588,22 @@ export const awsMappings = {
             ':providerId': providerId,
         },
     };
-
     try {
         const queryResult = await withRetry(async () => docClient.send(new QueryCommand(queryParams)));
         const mappingsToDelete = queryResult.Items;
-
         if (!mappingsToDelete || mappingsToDelete.length === 0) {
             return; // Nothing to delete
         }
-
         // 2. Batch delete the mappings
         const deleteRequests = mappingsToDelete.map(mapping => ({
             DeleteRequest: {
                 Key: { id: mapping.id },
             },
         }));
-
         const batches = [];
         for (let i = 0; i < deleteRequests.length; i += 25) {
             batches.push(deleteRequests.slice(i, i + 25));
         }
-
         for (const batch of batches) {
             const batchParams: BatchWriteCommandInput = {
                 RequestItems: {
@@ -622,17 +613,41 @@ export const awsMappings = {
             await withRetry(async () => docClient.send(new BatchWriteCommand(batchParams)));
         }
     } catch (error: any) {
+        if (error.name === 'ResourceNotFoundException') {
+            // Log and treat as no-op
+            console.warn(`Mapping table or index not found for template ${templateId} and provider ${providerId}. Treating as no-op.`);
+            // Audit log for missing resource
+            try {
+                const userEmail = (typeof window !== 'undefined' && localStorage.getItem('userEmail')) || 'unknown';
+                const userId = (typeof window !== 'undefined' && localStorage.getItem('userId')) || 'unknown';
+                await awsAuditLogs.create({
+                    action: 'DELETE_MAPPING',
+                    user: userEmail,
+                    timestamp: new Date().toISOString(),
+                    details: JSON.stringify({
+                        message: 'Mapping table or index not found (ResourceNotFoundException)',
+                        templateId,
+                        providerId,
+                        status: 'not_found',
+                        userId,
+                    }),
+                });
+            } catch (auditError) {
+                console.error('Failed to log ResourceNotFoundException to audit log:', auditError);
+            }
+            return;
+        }
         console.error(`Error deleting mappings for template ${templateId} and provider ${providerId}:`, error);
         throw new AWSError('Failed to delete mappings', error.name, error.$metadata?.httpStatusCode, isRetryableError(error));
     }
   },
 
   // Enterprise utility: Delete all mappings for a template (regardless of provider)
-  async deleteAllMappingsForTemplate(templateId: string): Promise<void> {
-    const appId = import.meta.env.VITE_AWS_APP_ID || 'uncqgyngxvgzfceslcwqtprza4';
-    const env = import.meta.env.VITE_AWS_ENV || 'dev';
-    const tableName = `Mapping-${appId}-${env}`;
-
+  async deleteAllMappingsForTemplate(templateId: string): Promise<{ deletedCount: number, attemptedCount: number, templateId: string, status: string }> {
+    const tableName = import.meta.env.VITE_DYNAMODB_MAPPING_TABLE;
+    let deletedCount = 0;
+    let attemptedCount = 0;
+    let status = 'success';
     // 1. Query for all mappings for this template
     const scanParams = {
       TableName: tableName,
@@ -641,12 +656,15 @@ export const awsMappings = {
         ':templateId': templateId,
       },
     };
-
+    let logDetails: any = {};
     try {
       const scanResult = await withRetry(async () => docClient.send(new ScanCommand(scanParams)));
       const mappingsToDelete = scanResult.Items;
+      attemptedCount = mappingsToDelete?.length || 0;
       if (!mappingsToDelete || mappingsToDelete.length === 0) {
-        return; // Nothing to delete
+        status = 'not_found';
+        logDetails = { message: 'No mappings found for template', templateId };
+        return { deletedCount: 0, attemptedCount: 0, templateId, status };
       }
       // 2. Batch delete the mappings
       const deleteRequests = mappingsToDelete.map(mapping => ({
@@ -665,11 +683,36 @@ export const awsMappings = {
           },
         };
         await withRetry(async () => docClient.send(new BatchWriteCommand(batchParams)));
+        deletedCount += batch.length;
       }
+      logDetails = { message: 'Mappings deleted', templateId, deletedCount, attemptedCount };
     } catch (error: any) {
+      status = 'error';
+      logDetails = { message: 'Error deleting mappings', templateId, error: error?.message || error };
       console.error(`Error deleting all mappings for template ${templateId}:`, error);
-      throw new AWSError('Failed to delete all mappings for template', error.name, error.$metadata?.httpStatusCode, isRetryableError(error));
+    } finally {
+      // Audit log (always log the attempt)
+      try {
+        const userEmail = (typeof window !== 'undefined' && localStorage.getItem('userEmail')) || 'unknown';
+        const userId = (typeof window !== 'undefined' && localStorage.getItem('userId')) || 'unknown';
+        await awsAuditLogs.create({
+          action: 'DELETE_MAPPING',
+          user: userEmail,
+          timestamp: new Date().toISOString(),
+          details: JSON.stringify({
+            ...logDetails,
+            deletedCount,
+            attemptedCount,
+            status,
+            userId,
+          }),
+        });
+      } catch (auditError) {
+        // Do not throw if audit log fails
+        console.error('Failed to log mapping deletion to audit log:', auditError);
+      }
     }
+    return { deletedCount, attemptedCount, templateId, status };
   },
 };
 

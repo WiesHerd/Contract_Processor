@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Logo } from './Logo';
+import Logo from './Logo';
 import { FileText, Users, FilePlus2, ClipboardList, LogOut } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -42,7 +42,7 @@ const navigationCards = [
     bg: 'hover:bg-orange-50'
   },
   {
-    title: 'Audit',
+    title: 'Activity Log',
     description: 'View FMV override logs and metadata',
     icon: <ClipboardList className="w-6 h-6" />,
     path: '/audit',
@@ -84,21 +84,34 @@ export const WelcomeScreen = () => {
           Log Out
         </button>
       )}
+      {/* Instructions button on the top left */}
+      <button
+        className="absolute top-6 left-6 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition font-semibold"
+        onClick={() => navigate('/instructions')}
+      >
+        Instructions
+      </button>
       <div className="max-w-7xl mx-auto px-4 py-12">
+        {/* Title and Tagline with Branding */}
         <div className="flex flex-col items-center justify-center mb-12">
-          <Logo size="large" />
-          <p className="text-lg text-gray-600 max-w-2xl text-center mt-6">
-            Streamline your provider contract management with our intelligent automation platform.
-          </p>
-          <button
-            className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition font-semibold text-lg"
-            onClick={() => navigate('/instructions')}
+          <div className="min-h-[72px] flex items-center justify-center">
+            <Logo size={56} />
+          </div>
+          <h1
+            className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-800 via-purple-700 to-indigo-800 drop-shadow-lg mt-5 mb-3 text-center"
+            style={{ letterSpacing: '-0.02em', paddingTop: '0.25em', paddingBottom: '0.25em' }}
           >
-            Instructions
-          </button>
+            Welcome to ContractEngine
+          </h1>
+          <p className="text-lg text-gray-600 font-medium text-center max-w-2xl">
+            Automate provider contracts with confidence and efficiency.
+          </p>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Subtle background accent */}
+        <div className="absolute inset-0 pointer-events-none z-0">
+          <div className="w-2/3 h-64 bg-gradient-to-r from-blue-50 via-white to-purple-50 rounded-full blur-2xl opacity-60 mx-auto mt-12" />
+        </div>
+        <div className="relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 z-10">
           {navigationCards.map((card) => (
             <button
               key={card.path}
@@ -109,12 +122,9 @@ export const WelcomeScreen = () => {
               <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 transition-transform duration-200 group-hover:scale-125 group-hover:-translate-y-1 ${card.iconColor}`}>
                 {card.icon}
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {card.title}
               </h2>
-              <p className="text-gray-600">
-                {card.description}
-              </p>
             </button>
           ))}
         </div>

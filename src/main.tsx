@@ -5,7 +5,13 @@ import config from './amplifyconfiguration.json'
 import { Buffer } from 'buffer'
 import { initializeMonitoring } from './utils/monitoring'
 
-Amplify.configure(config)
+// Override AppSync endpoint with .env if present
+const amplifyConfig = {
+  ...config,
+  aws_appsync_graphqlEndpoint: import.meta.env.VITE_AWS_APPSYNC_GRAPHQL_ENDPOINT || config.aws_appsync_graphqlEndpoint,
+};
+
+Amplify.configure(amplifyConfig)
 import App from './App.tsx'
 import './index.css'
 

@@ -73,7 +73,7 @@ const AdminDashboard: React.FC = () => {
   const auditLogs = useSelector((state: RootState) => state.audit.logs);
 
   // --- State Management ---
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'system' | 'audit' | 'performance'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'system' | 'activitylog' | 'performance'>('overview');
   const [systemStats, setSystemStats] = useState<SystemStats>({
     totalProviders: 0,
     totalTemplates: 0,
@@ -320,22 +320,19 @@ const AdminDashboard: React.FC = () => {
               <td className="px-4 py-2 border-b font-mono">{clauses && clauses.length > 0 ? clauses.length : 'No data'}</td>
             </tr>
             <tr>
-              <td className="px-4 py-2 border-b">Audit Logs</td>
+                  <td className="px-4 py-2 border-b">Activity Logs</td>
               <td className="px-4 py-2 border-b font-mono">{auditLogs && auditLogs.length > 0 ? auditLogs.length : 'No data'}</td>
             </tr>
           </tbody>
         </table>
           </div>
         );
-      case 'audit':
+      case 'activitylog':
         return (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-neutral-800">Audit Logs</h2>
-              <Button onClick={exportAuditLogToCSV} variant="outline">
-                <Download className="w-4 h-4 mr-2" />
-                Export CSV
-              </Button>
+              <h2 className="text-lg font-semibold text-neutral-800">Activity Logs</h2>
+              <Button onClick={exportAuditLogToCSV} variant="outline">Export Activity Log</Button>
             </div>
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <table className="min-w-full divide-y divide-gray-200">
@@ -522,15 +519,15 @@ const AdminDashboard: React.FC = () => {
               System
             </button>
             <button
-              onClick={() => setActiveTab('audit')}
+              onClick={() => setActiveTab('activitylog')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'audit'
+                activeTab === 'activitylog'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
               <Shield className="w-4 h-4 inline mr-2" />
-              Audit Logs
+              Activity Logs
             </button>
             <button
               onClick={() => setActiveTab('performance')}

@@ -22,6 +22,7 @@ export const createTemplate = /* GraphQL */ `mutation CreateTemplate(
     contractYear
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -43,6 +44,7 @@ export const updateTemplate = /* GraphQL */ `mutation UpdateTemplate(
     contractYear
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -64,6 +66,7 @@ export const deleteTemplate = /* GraphQL */ `mutation DeleteTemplate(
     contractYear
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -114,6 +117,7 @@ export const createProvider = /* GraphQL */ `mutation CreateProvider(
     dynamicFields
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -164,6 +168,7 @@ export const updateProvider = /* GraphQL */ `mutation UpdateProvider(
     dynamicFields
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -214,6 +219,7 @@ export const deleteProvider = /* GraphQL */ `mutation DeleteProvider(
     dynamicFields
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -233,6 +239,7 @@ export const createTemplateMapping = /* GraphQL */ `mutation CreateTemplateMappi
     notes
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -252,6 +259,7 @@ export const updateTemplateMapping = /* GraphQL */ `mutation UpdateTemplateMappi
     notes
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -271,6 +279,7 @@ export const deleteTemplateMapping = /* GraphQL */ `mutation DeleteTemplateMappi
     notes
     createdAt
     updatedAt
+    owner
     __typename
   }
 }
@@ -288,6 +297,7 @@ export const createMapping = /* GraphQL */ `mutation CreateMapping(
     providerID
     field
     value
+    owner
     createdAt
     updatedAt
     __typename
@@ -307,6 +317,7 @@ export const updateMapping = /* GraphQL */ `mutation UpdateMapping(
     providerID
     field
     value
+    owner
     createdAt
     updatedAt
     __typename
@@ -326,6 +337,7 @@ export const deleteMapping = /* GraphQL */ `mutation DeleteMapping(
     providerID
     field
     value
+    owner
     createdAt
     updatedAt
     __typename
@@ -344,6 +356,7 @@ export const createClause = /* GraphQL */ `mutation CreateClause(
     text
     tags
     condition
+    owner
     createdAt
     updatedAt
     __typename
@@ -362,6 +375,7 @@ export const updateClause = /* GraphQL */ `mutation UpdateClause(
     text
     tags
     condition
+    owner
     createdAt
     updatedAt
     __typename
@@ -380,6 +394,7 @@ export const deleteClause = /* GraphQL */ `mutation DeleteClause(
     text
     tags
     condition
+    owner
     createdAt
     updatedAt
     __typename
@@ -399,6 +414,7 @@ export const createAuditLog = /* GraphQL */ `mutation CreateAuditLog(
     user
     timestamp
     details
+    owner
     createdAt
     updatedAt
     __typename
@@ -418,6 +434,7 @@ export const updateAuditLog = /* GraphQL */ `mutation UpdateAuditLog(
     user
     timestamp
     details
+    owner
     createdAt
     updatedAt
     __typename
@@ -437,6 +454,7 @@ export const deleteAuditLog = /* GraphQL */ `mutation DeleteAuditLog(
     user
     timestamp
     details
+    owner
     createdAt
     updatedAt
     __typename
@@ -445,4 +463,79 @@ export const deleteAuditLog = /* GraphQL */ `mutation DeleteAuditLog(
 ` as GeneratedMutation<
   APITypes.DeleteAuditLogMutationVariables,
   APITypes.DeleteAuditLogMutation
+>;
+export const createContractGenerationLog = /* GraphQL */ `mutation CreateContractGenerationLog(
+  $input: CreateContractGenerationLogInput!
+  $condition: ModelContractGenerationLogConditionInput
+) {
+  createContractGenerationLog(input: $input, condition: $condition) {
+    id
+    providerId
+    contractYear
+    templateId
+    generatedAt
+    generatedBy
+    outputType
+    status
+    fileUrl
+    notes
+    owner
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateContractGenerationLogMutationVariables,
+  APITypes.CreateContractGenerationLogMutation
+>;
+export const updateContractGenerationLog = /* GraphQL */ `mutation UpdateContractGenerationLog(
+  $input: UpdateContractGenerationLogInput!
+  $condition: ModelContractGenerationLogConditionInput
+) {
+  updateContractGenerationLog(input: $input, condition: $condition) {
+    id
+    providerId
+    contractYear
+    templateId
+    generatedAt
+    generatedBy
+    outputType
+    status
+    fileUrl
+    notes
+    owner
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateContractGenerationLogMutationVariables,
+  APITypes.UpdateContractGenerationLogMutation
+>;
+export const deleteContractGenerationLog = /* GraphQL */ `mutation DeleteContractGenerationLog(
+  $input: DeleteContractGenerationLogInput!
+  $condition: ModelContractGenerationLogConditionInput
+) {
+  deleteContractGenerationLog(input: $input, condition: $condition) {
+    id
+    providerId
+    contractYear
+    templateId
+    generatedAt
+    generatedBy
+    outputType
+    status
+    fileUrl
+    notes
+    owner
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteContractGenerationLogMutationVariables,
+  APITypes.DeleteContractGenerationLogMutation
 >;

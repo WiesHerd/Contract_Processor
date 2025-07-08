@@ -205,7 +205,7 @@ export const ProviderList: React.FC = () => {
         <Table className="min-w-full">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[50px] sticky left-0 bg-white z-20 font-semibold">
+              <TableHead className="w-[50px] sticky left-0 bg-gray-50 z-20 font-semibold text-sm text-gray-900" style={{ color: 'red', fontWeight: 400 }}>
                 <Checkbox
                   checked={selectedProviders.length > 0 && selectedProviders.length === providers.length}
                   onCheckedChange={handleSelectAll}
@@ -216,7 +216,9 @@ export const ProviderList: React.FC = () => {
                 <TableHead
                   key={column.key}
                   className={
-                    column.sticky ? 'sticky left-[50px] bg-white z-10 font-semibold' : 'font-semibold'
+                    column.sticky
+                      ? 'sticky left-[50px] bg-gray-50 z-10 font-semibold text-sm text-gray-900'
+                      : 'font-semibold text-sm text-gray-900 bg-gray-50'
                   }
                 >
                   {column.label}
@@ -234,19 +236,39 @@ export const ProviderList: React.FC = () => {
                     aria-label={`Select ${provider.name}`}
                   />
                 </TableCell>
-                {finalColumnConfig.map((column, colIdx) => (
-                  <TableCell
-                    key={column.key}
-                    className={
-                      colIdx === 0
-                        ? (column.sticky ? 'sticky left-[50px] bg-white z-10 font-semibold' : 'font-semibold')
-                        : (column.sticky ? 'sticky left-[50px] bg-white z-10' : '')
-                    }
-                    style={colIdx !== 0 ? { fontWeight: 400, fontFamily: 'inherit' } : {}}
-                  >
-                    {formatCellValue(getProviderValue(provider, column.key), column.key)}
-                  </TableCell>
-                ))}
+                {finalColumnConfig.map((column, colIdx) => {
+                  const isNumeric = [
+                    'fte', 'administrativeFte', 'baseSalary', 'hourlyWage', 'yearsExperience',
+                    'cmeAmount', 'cmeDays', 'ptoDays', 'holidayDays', 'signingBonus', 'qualityBonus',
+                    'educationBonus', 'contractTerm', 'conversionFactor', 'wRVUTarget'
+                  ].includes(column.key);
+                  // Enterprise-grade: Only Provider Name is bold and dark
+                  if (column.key === 'name') {
+                    return (
+                      <TableCell
+                        key={column.key}
+                        className={
+                          (column.sticky ? 'sticky left-[50px] bg-white z-10 ' : '') +
+                          ' font-semibold text-gray-900 text-left'
+                        }
+                      >
+                        {formatCellValue(getProviderValue(provider, column.key), column.key)}
+                      </TableCell>
+                    );
+                  }
+                  return (
+                    <TableCell
+                      key={column.key}
+                      className={
+                        (column.sticky ? 'sticky left-[50px] bg-white z-10 ' : '') +
+                        ' font-normal text-sm ' +
+                        (isNumeric ? 'text-right text-gray-700' : 'text-left text-gray-700')
+                      }
+                    >
+                      {formatCellValue(getProviderValue(provider, column.key), column.key)}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
             ))}
           </TableBody>

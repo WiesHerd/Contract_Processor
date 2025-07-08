@@ -4,7 +4,7 @@ import { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/PageHeader';
 import { CLAUSES as SHARED_CLAUSES } from '@/features/clauses/clausesData';
-import { saveClause } from '@/utils/s3Storage';
+import { awsClauses } from '@/utils/awsServices';
 import { Clause } from '@/types/clause';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fetchClausesIfNeeded, addClause, updateClause, deleteClause } from '@/store/slices/clauseSlice';
@@ -14,7 +14,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Trash2 } from 'lucide-react';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { AgGridReact } from 'ag-grid-react';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
+import { ColDef } from 'ag-grid-community';
 import { Input } from '@/components/ui/input';
 
 const clauseCategories: Clause['category'][] = ['compensation', 'benefits', 'termination', 'restrictive', 'other'];
@@ -64,9 +67,16 @@ export default function ClauseManager() {
     setModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this clause?')) {
-      dispatch(deleteClause(id));
+      try {
+        await awsClauses.delete({ id });
+        dispatch(deleteClause(id));
+        toast.success('Clause deleted successfully!');
+      } catch (err) {
+        console.error('Error deleting clause:', err);
+        toast.error('Failed to delete clause. Please try again.');
+      }
     }
   };
 
@@ -80,41 +90,105 @@ export default function ClauseManager() {
     const now = new Date().toISOString();
     try {
       if (editClause) {
-        const updatedClause: Clause = {
-          ...editClause,
-          title: form.title,
-          content: form.content,
-          category: form.category,
-          updatedAt: now,
+        // Update existing clause in DynamoDB
+        const updateInput = {
+          id: editClause.id,
+          text: form.content,
+          tags: editClause.tags,
+          condition: editClause.conditions?.[0]?.value || undefined,
         };
-        await saveClause(updatedClause);
-        dispatch(updateClause(updatedClause));
-        toast.success('Clause updated successfully!');
+        const updatedClause = await awsClauses.update(updateInput);
+        if (updatedClause) {
+          // Transform back to internal format and update Redux
+          const transformedClause: Clause = {
+            id: updatedClause.id,
+            title: form.title,
+            content: updatedClause.text,
+            type: 'custom',
+            category: form.category,
+            tags: updatedClause.tags?.filter((tag): tag is string => tag !== null) || [],
+            applicableProviderTypes: ['physician'],
+            applicableCompensationModels: ['base'],
+            createdAt: updatedClause.createdAt,
+            updatedAt: updatedClause.updatedAt,
+            version: '1.0.0',
+          };
+          dispatch(updateClause(transformedClause));
+          toast.success('Clause updated successfully!');
+        }
       } else {
-        const newClause: Clause = {
-          id: generateId(),
-          title: form.title,
-          content: form.content,
-          type: 'custom',
-          category: form.category,
+        // Create new clause in DynamoDB
+        const createInput = {
+          text: form.content,
           tags: [],
-          applicableProviderTypes: ['physician'],
-          applicableCompensationModels: ['base'],
-          createdAt: now,
-          updatedAt: now,
-          version: '1.0.0',
+          condition: undefined,
         };
-        await saveClause(newClause);
-        dispatch(addClause(newClause));
-        toast.success('Clause added successfully!');
+        const createdClause = await awsClauses.create(createInput);
+        if (createdClause) {
+          // Transform back to internal format and add to Redux
+          const transformedClause: Clause = {
+            id: createdClause.id,
+            title: form.title,
+            content: createdClause.text,
+            type: 'custom',
+            category: form.category,
+            tags: createdClause.tags?.filter((tag): tag is string => tag !== null) || [],
+            applicableProviderTypes: ['physician'],
+            applicableCompensationModels: ['base'],
+            createdAt: createdClause.createdAt,
+            updatedAt: createdClause.updatedAt,
+            version: '1.0.0',
+          };
+          dispatch(addClause(transformedClause));
+          toast.success('Clause added successfully!');
+        }
       }
       setModalOpen(false);
     } catch (err) {
+      console.error('Error saving clause:', err);
       toast.error('Failed to save clause. Please try again.');
     } finally {
       setSaving(false);
     }
   };
+
+  const renderActions = (clause: Clause) => (
+    <>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="icon" variant="ghost" className="mr-1" aria-label="Edit Clause" onClick={() => openEditModal(clause)}>
+              <Pencil className="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="icon" variant="ghost" aria-label="Delete Clause" onClick={() => handleDelete(clause.id)}>
+              <Trash2 className="w-4 h-4 text-red-500" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </>
+  );
+
+  const clauseColumnDefs: ColDef<any, any>[] = [
+    { headerName: 'Title', field: 'title', minWidth: 180, cellRenderer: (params: any) => (
+      <span className="font-medium text-gray-900 max-w-xs truncate" title={params.value}>{params.value}</span>
+    ), sortable: true },
+    { headerName: 'Category', field: 'category', minWidth: 120, cellRenderer: (params: any) => (
+      <span className="badge badge-outline capitalize">{params.value}</span>
+    ), sortable: true },
+    { headerName: 'Last Updated', field: 'updatedAt', minWidth: 140, cellRenderer: (params: any) => (
+      <span className="text-gray-700">{params.value ? new Date(params.value).toLocaleDateString() : '-'}</span>
+    ), sortable: true },
+    { headerName: 'Actions', field: 'actions', minWidth: 120, cellRenderer: (params: any) => renderActions(params.data) },
+  ];
 
   if (loading) {
     return (
@@ -202,58 +276,27 @@ export default function ClauseManager() {
               </select>
             </div>
           </div>
-          {/* Clause Table */}
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[180px]">Title</TableHead>
-                  <TableHead className="min-w-[120px]">Category</TableHead>
-                  <TableHead className="min-w-[140px]">Last Updated</TableHead>
-                  <TableHead className="min-w-[120px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedClauses.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-gray-500">
-                      No clauses found.
-                      <Button variant="default" className="ml-4" onClick={openAddModal}>Add Your First Clause</Button>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedClauses.map((clause, idx) => (
-                    <TableRow key={clause.id} className={idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}>
-                      <TableCell className="font-medium text-gray-900 max-w-xs truncate" title={clause.title}>{clause.title}</TableCell>
-                      <TableCell><Badge variant="outline" className="capitalize">{clause.category}</Badge></TableCell>
-                      <TableCell className="text-gray-700">{clause.updatedAt ? new Date(clause.updatedAt).toLocaleDateString() : '-'}</TableCell>
-                      <TableCell>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button size="icon" variant="ghost" className="mr-1" aria-label="Edit Clause" onClick={() => openEditModal(clause)}>
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Edit</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button size="icon" variant="ghost" aria-label="Delete Clause" onClick={() => handleDelete(clause.id)}>
-                                <Trash2 className="w-4 h-4 text-red-500" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Delete</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+          {/* Clause Table with AG Grid */}
+          <div className="ag-theme-alpine w-full" style={{ fontSize: '14px', fontFamily: 'var(--font-sans, sans-serif)', fontWeight: 400, color: '#111827' }}>
+            <AgGridReact
+              rowData={filteredClauses}
+              columnDefs={clauseColumnDefs}
+              domLayout="autoHeight"
+              suppressRowClickSelection={true}
+              rowSelection="single"
+              pagination={false}
+              enableCellTextSelection={true}
+              headerHeight={40}
+              rowHeight={36}
+              suppressDragLeaveHidesColumns={true}
+              suppressScrollOnNewData={true}
+              suppressColumnVirtualisation={false}
+              suppressRowVirtualisation={false}
+              defaultColDef={{ tooltipValueGetter: params => params.value, resizable: true, sortable: true, filter: true, cellStyle: { fontSize: '14px', fontFamily: 'var(--font-sans, sans-serif)', fontWeight: 400, color: '#111827', display: 'flex', alignItems: 'center', height: '100%' } }}
+              enableBrowserTooltips={true}
+              enableRangeSelection={true}
+              suppressMovableColumns={false}
+            />
           </div>
         </div>
         {/* Modal - Sectioned, Modern, Professional */}

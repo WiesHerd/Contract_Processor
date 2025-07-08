@@ -1,5 +1,5 @@
 import React from 'react';
-import { Logo } from './Logo';
+import Logo from './Logo';
 import { motion } from 'framer-motion';
 
 export const Footer = () => {
@@ -20,7 +20,7 @@ export const Footer = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <Logo size="small" />
+            <Logo size={24} />
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Streamlining provider contract management with intelligent automation.
             </p>

@@ -1,59 +1,51 @@
-import React from 'react';
+import React from "react";
 
-export const Logo = ({ className = '', size = 'default' }: { className?: string; size?: 'small' | 'default' | 'large' }) => {
-  const dimensions = {
-    small: 'w-6 h-6',
-    default: 'w-8 h-8',
-    large: 'w-12 h-12'
-  };
-
+// Enterprise-grade logo: hex/cube with blue accent and page fold
+export default function Logo({ size = 32 }: { size?: number }) {
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <svg
-        width={size === 'small' ? '24' : size === 'large' ? '48' : '32'}
-        height={size === 'small' ? '24' : size === 'large' ? '48' : '32'}
-        viewBox="0 0 32 32"
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="ContractEngine logo"
+      style={{ display: 'block' }}
+    >
+      {/* Main hex outline */}
+      <polygon
+        points="16,4 28,10 28,22 16,28 4,22 4,10"
+        stroke="#222"
+        strokeWidth="2"
+        fill="white"
+      />
+      {/* Blue accent face (bottom right) */}
+      <polygon
+        points="16,28 28,22 28,10 16,16"
+        fill="#2563eb" // Tailwind blue-600
+        opacity="0.85"
+      />
+      {/* Subtle page fold (top right) */}
+      <polygon
+        points="28,10 22,7 16,10 16,16"
+        fill="#e0e7ef"
+        opacity="0.9"
+      />
+      {/* Cube inner lines */}
+      <polyline
+        points="16,4 16,16 28,22"
+        stroke="#222"
+        strokeWidth="1.2"
         fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className={`text-primary ${dimensions[size]}`}
-      >
-        <rect width="32" height="32" rx="8" fill="currentColor" fillOpacity="0.1"/>
-        <path
-          d="M16 2L4 9V23L16 30L28 23V9L16 2Z"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M16 16L16 30"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M16 16L28 23"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M16 16L4 23"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <span className={`font-bold text-gray-900 ${
-        size === 'small' ? 'text-lg' : 
-        size === 'large' ? 'text-2xl' : 
-        'text-xl'
-      }`}>
-        ContractEngine
-      </span>
-    </div>
+        opacity="0.7"
+      />
+      <polyline
+        points="16,16 4,22"
+        stroke="#222"
+        strokeWidth="1.2"
+        fill="none"
+        opacity="0.7"
+      />
+    </svg>
   );
-}; 
+} 
