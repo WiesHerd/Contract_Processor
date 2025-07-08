@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
@@ -20,6 +20,7 @@ export default function MappingListPage() {
   const navigate = useNavigate();
   const dispatch: AppDispatch = useDispatch();
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+  const location = useLocation();
 
   // Load templates and mappings with caching
   useEffect(() => {
@@ -29,6 +30,11 @@ export default function MappingListPage() {
   useEffect(() => {
     dispatch(fetchMappingsIfNeeded());
   }, [dispatch]);
+
+  useEffect(() => {
+    // Refetch mappings every time you return to this page
+    dispatch(fetchMappingsIfNeeded());
+  }, [dispatch, location.key]);
 
   const isLoading = templatesStatus === 'loading' || templatesStatus === 'idle' || mappingsLoading;
   const error = templatesError || mappingsError;

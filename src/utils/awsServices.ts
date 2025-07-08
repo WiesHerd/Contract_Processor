@@ -24,7 +24,12 @@ import {
   ListProvidersQuery,
   ListMappingsQuery,
   ListClausesQuery,
-  ListAuditLogsQuery
+  ListAuditLogsQuery,
+  CreateTemplateMappingInput,
+  UpdateTemplateMappingInput,
+  DeleteTemplateMappingInput,
+  TemplateMapping,
+  ListTemplateMappingsQuery
 } from '../API';
 import { TemplateType } from '../types/template';
 import { 
@@ -42,7 +47,10 @@ import {
   deleteClause,
   createAuditLog,
   updateAuditLog,
-  deleteAuditLog
+  deleteAuditLog,
+  createTemplateMapping,
+  updateTemplateMapping,
+  deleteTemplateMapping
 } from '../graphql/mutations';
 import { 
   getTemplate,
@@ -54,7 +62,9 @@ import {
   listProviders,
   listMappings,
   listClauses,
-  listAuditLogs
+  listAuditLogs,
+  getTemplateMapping,
+  listTemplateMappings
 } from '../graphql/queries';
 
 // Direct DynamoDB client for advanced operations
@@ -888,6 +898,106 @@ export const awsAuditLogs = {
         return (result.data?.listAuditLogs?.items || []).filter((item: any) => item !== null);
       } catch (error) {
         console.error('Error querying audit logs by user and date range:', error);
+        throw error;
+      }
+    });
+  }
+};
+
+// Enhanced Template Mapping Operations (for template-level mappings)
+export const awsTemplateMappings = {
+  async create(input: CreateTemplateMappingInput): Promise<TemplateMapping | null> {
+    return withRetry(async () => {
+      try {
+        const result = await client.graphql({
+          query: createTemplateMapping,
+          variables: { input }
+        });
+        return result.data?.createTemplateMapping || null;
+      } catch (error) {
+        console.error('Error creating template mapping:', error);
+        throw error;
+      }
+    });
+  },
+
+  async update(input: UpdateTemplateMappingInput): Promise<TemplateMapping | null> {
+    return withRetry(async () => {
+      try {
+        const result = await client.graphql({
+          query: updateTemplateMapping,
+          variables: { input }
+        });
+        return result.data?.updateTemplateMapping || null;
+      } catch (error) {
+        console.error('Error updating template mapping:', error);
+        throw error;
+      }
+    });
+  },
+
+  async delete(input: DeleteTemplateMappingInput): Promise<TemplateMapping | null> {
+    return withRetry(async () => {
+      try {
+        const result = await client.graphql({
+          query: deleteTemplateMapping,
+          variables: { input }
+        });
+        return result.data?.deleteTemplateMapping || null;
+      } catch (error) {
+        console.error('Error deleting template mapping:', error);
+        throw error;
+      }
+    });
+  },
+
+  async get(id: string): Promise<TemplateMapping | null> {
+    return withRetry(async () => {
+      try {
+        const result = await client.graphql({
+          query: getTemplateMapping,
+          variables: { id }
+        });
+        return result.data?.getTemplateMapping || null;
+      } catch (error) {
+        console.error('Error getting template mapping:', error);
+        throw error;
+      }
+    });
+  },
+
+  async list(limit?: number, nextToken?: string): Promise<ListTemplateMappingsQuery['listTemplateMappings']> {
+    return withRetry(async () => {
+      try {
+        const result = await client.graphql({
+          query: listTemplateMappings,
+          variables: { limit, nextToken }
+        });
+        return result.data?.listTemplateMappings || null;
+      } catch (error) {
+        console.error('Error listing template mappings:', error);
+        throw error;
+      }
+    });
+  },
+
+  async getMappingsByTemplateId(templateId: string): Promise<TemplateMapping[]> {
+    return withRetry(async () => {
+      try {
+        const result = await client.graphql({
+          query: listTemplateMappings,
+          variables: { 
+            filter: { 
+              templateID: { eq: templateId }
+            },
+            limit: 1000 
+          }
+        });
+        
+        return (result.data?.listTemplateMappings?.items || [])
+          .filter((item): item is TemplateMapping => item !== null);
+      } catch (error) {
+        console.error(`Error getting template mappings for template ${templateId}:`, error);
         throw error;
       }
     });

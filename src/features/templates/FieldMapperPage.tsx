@@ -104,9 +104,13 @@ async function saveTemplateMappings(mapping: FieldMapping[], templateId: string)
       console.log('Update result:', updateResult);
     } catch (err) {
       console.log('Update failed, trying create:', err);
+      // Add condition to only create if item does not exist
       const createResult = await client.graphql({
         query: createTemplateMapping,
-        variables: { input: { ...input, id: `${templateId}:${m.placeholder}` } },
+        variables: {
+          input: { ...input, id: `${templateId}:${m.placeholder}` },
+          condition: { id: { attributeExists: false } } as any,
+        },
       });
       console.log('Create result:', createResult);
     }
@@ -177,7 +181,14 @@ export default function FieldMapperPage() {
           }) || [];
           console.log('Hydrated mappings:', hydrated);
           setMappingState(hydrated);
-          dispatch(setMapping({ templateId, mapping: hydrated }));
+          dispatch(setMapping({
+            templateId,
+            mapping: {
+              templateId,
+              mappings: hydrated,
+              lastModified: new Date().toISOString(),
+            },
+          }));
         } else {
           console.log('No existing mappings found');
           setMappingState(template?.placeholders.map((ph: string) => ({ placeholder: ph })) || []);
