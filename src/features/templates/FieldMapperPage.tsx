@@ -438,29 +438,25 @@ export default function FieldMapperPage() {
               )}
             </div>
             {/* Rectangular blue-outlined filter tabs */}
-            <div className="flex gap-2 mb-2">
-              <button
-                className={`px-5 py-2 font-semibold text-sm border rounded-md transition-colors focus:outline-none focus:ring-0
-                  ${filter === 'all' ? 'bg-white text-blue-900 border-blue-500 shadow' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
-                onClick={() => setFilter('all')}
-              >
-                All <span className="ml-1 text-xs">({totalCount})</span>
-              </button>
-              <button
-                className={`px-5 py-2 font-semibold text-sm border rounded-md transition-colors focus:outline-none focus:ring-0
-                  ${filter === 'mapped' ? 'bg-white text-green-900 border-green-500 shadow' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'}`}
-                onClick={() => setFilter('mapped')}
-              >
-                Mapped <span className="ml-1 text-xs">({mappedCount})</span>
-              </button>
-              <button
-                className={`px-5 py-2 font-semibold text-sm border rounded-md transition-colors focus:outline-none focus:ring-0
-                  ${filter === 'unmapped' ? 'bg-white text-amber-900 border-amber-500 shadow' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
-                onClick={() => setFilter('unmapped')}
-              >
-                Unmapped <span className="ml-1 text-xs">({totalCount - mappedCount})</span>
-              </button>
-            </div>
+            <Tabs value={filter} onValueChange={setFilter} className="mb-2">
+              <TabsList className="flex gap-2 border-b border-blue-200 bg-transparent justify-start">
+                <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                  All <span className="ml-1 text-xs">({totalCount})</span>
+                </TabsTrigger>
+                <TabsTrigger value="mapped" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                  Mapped <span className="ml-1 text-xs">({mappedCount})</span>
+                </TabsTrigger>
+                <TabsTrigger value="unmapped" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                  Unmapped <span className="ml-1 text-xs">({totalCount - mappedCount})</span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             <div className="w-full bg-gray-100 rounded-full h-2">
               <div
                 className={`h-2 rounded-full transition-all duration-500 ${
