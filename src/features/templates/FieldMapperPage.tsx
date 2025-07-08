@@ -220,20 +220,16 @@ export default function FieldMapperPage() {
   const percent = totalCount > 0 ? Math.round((mappedCount / totalCount) * 100) : 0;
 
   // Filtered mapping and placeholders
+  // Unified filter for both sides
   const filteredMapping = mapping.filter(m => {
+    const matchesSearch = !search || m.placeholder.toLowerCase().includes(search.toLowerCase());
+    if (!matchesSearch) return false;
     if (filter === 'all') return true;
     if (filter === 'mapped') return !!m.mappedColumn;
     if (filter === 'unmapped') return !m.mappedColumn;
     return true;
   });
-  const filteredPlaceholders = template?.placeholders.filter((ph: string) => {
-    const m = mapping.find(m => m.placeholder === ph);
-    if (search && !ph.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filter === 'all') return true;
-    if (filter === 'mapped') return m && !!m.mappedColumn;
-    if (filter === 'unmapped') return m && !m.mappedColumn;
-    return true;
-  }) || [];
+  const filteredPlaceholders = filteredMapping.map(m => m.placeholder);
 
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
@@ -386,42 +382,38 @@ export default function FieldMapperPage() {
           </div>
         }
       />
-      <div className="grid grid-cols-12 gap-6">
+      <div className="grid grid-cols-12 gap-6 min-h-[600px] items-stretch">
         {/* Left: Placeholders */}
-        <Card className="col-span-3 p-4">
-          <div className="space-y-4">
-            <Input
-              placeholder="Search placeholders..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full"
-            />
-            <ScrollArea className="h-[calc(100vh-300px)]">
-              <div className="space-y-1">
-                {filteredPlaceholders.map((ph: string) => {
+        <Card className="col-span-3 p-4 bg-white flex flex-col h-full min-w-[220px]">
+          <h2 className="text-lg font-semibold mb-2">Placeholders</h2>
+          <span className="text-xs text-gray-500 mb-2">{filteredPlaceholders.length} of {template.placeholders.length} placeholders</span>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="space-y-1">
+              {filteredPlaceholders.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">
+                  No placeholders match your search.<br />
+                  <span className="text-xs">Try a different keyword or filter.</span>
+                </div>
+              ) : (
+                filteredPlaceholders.map((ph: string) => {
                   const isMapped = mapping.find(m => m.placeholder === ph)?.mappedColumn;
                   return (
                     <button
                       key={ph}
                       onClick={() => handlePlaceholderClick(ph)}
-                      className={`w-full flex items-center gap-2 py-2 px-3 rounded-lg text-sm transition-colors ${
-                        isMapped 
-                          ? 'bg-green-50 text-green-700 hover:bg-green-100' 
-                          : 'bg-red-50 text-red-700 hover:bg-red-100'
-                      }`}
+                      className={`w-full flex items-center gap-2 py-2 px-3 rounded-lg text-sm transition-colors bg-white hover:bg-blue-50 ${isMapped ? 'text-green-700' : 'text-red-700'}`}
                     >
                       <span className="font-mono truncate">{ph}</span>
-                      {isMapped ? <CheckCircle className="h-4 w-4 flex-shrink-0" /> : <XCircle className="h-4 w-4 flex-shrink-0" />}
+                      {isMapped ? <CheckCircle className="h-4 w-4 flex-shrink-0 text-green-600" /> : <XCircle className="h-4 w-4 flex-shrink-0 text-red-400" />}
                     </button>
                   );
-                })}
-              </div>
-            </ScrollArea>
-          </div>
+                })
+              )}
+            </div>
+          </ScrollArea>
         </Card>
-
         {/* Right: Mapping Table */}
-        <Card className="col-span-9 p-4">
+        <Card className="col-span-9 p-4 h-full min-h-0 flex flex-col">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
@@ -437,26 +429,35 @@ export default function FieldMapperPage() {
                 </div>
               )}
             </div>
-            {/* Rectangular blue-outlined filter tabs */}
-            <Tabs value={filter} onValueChange={setFilter} className="mb-2">
-              <TabsList className="flex gap-2 border-b border-blue-200 bg-transparent justify-start">
-                <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                  All <span className="ml-1 text-xs">({totalCount})</span>
-                </TabsTrigger>
-                <TabsTrigger value="mapped" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                  Mapped <span className="ml-1 text-xs">({mappedCount})</span>
-                </TabsTrigger>
-                <TabsTrigger value="unmapped" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                  Unmapped <span className="ml-1 text-xs">({totalCount - mappedCount})</span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {/* Filter tabs and search on the same row */}
+            <div className="flex items-center justify-between mb-2">
+              <Tabs value={filter} onValueChange={setFilter} className="">
+                <TabsList className="flex gap-2 border-b border-blue-200 bg-transparent justify-start">
+                  <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                    data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                    All <span className="ml-1 text-xs">({totalCount})</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="mapped" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                    data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                    Mapped <span className="ml-1 text-xs">({mappedCount})</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="unmapped" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                    data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                    Unmapped <span className="ml-1 text-xs">({totalCount - mappedCount})</span>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search placeholders..."
+                className="max-w-xs ml-4"
+                aria-label="Search placeholders"
+              />
+            </div>
             <div className="w-full bg-gray-100 rounded-full h-2">
               <div
                 className={`h-2 rounded-full transition-all duration-500 ${
@@ -465,70 +466,72 @@ export default function FieldMapperPage() {
                 style={{ width: `${percent}%` }}
               />
             </div>
-            <ScrollArea className="h-[calc(100vh-400px)]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Placeholder</TableHead>
-                    <TableHead>Mapped Column</TableHead>
-                    <TableHead>Preview</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead className="w-[100px]">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredMapping.map((m, idx) => {
-                    const col = m.mappedColumn && provider ? provider[m.mappedColumn] : undefined;
-                    const isMapped = !!m.mappedColumn;
-                    return (
-                      <TableRow
-                        key={m.placeholder}
-                        ref={el => (rowRefs.current[m.placeholder] = el)}
-                        className={isMapped ? 'bg-green-50/50' : 'bg-red-50/50'}
-                      >
-                        <TableCell className="font-mono text-sm">{m.placeholder}</TableCell>
-                        <TableCell>
-                          <FieldSelect
-                            value={m.mappedColumn}
-                            options={columns}
-                            onChange={val => {
-                              setMappingState(current =>
-                                current.map(item =>
-                                  item.placeholder === m.placeholder ? { ...item, mappedColumn: val } : item
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Placeholder</TableHead>
+                      <TableHead>Mapped Column</TableHead>
+                      <TableHead>Preview</TableHead>
+                      <TableHead>Notes</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMapping.map((m, idx) => {
+                      const col = m.mappedColumn && provider ? provider[m.mappedColumn] : undefined;
+                      const isMapped = !!m.mappedColumn;
+                      return (
+                        <TableRow
+                          key={m.placeholder}
+                          ref={el => (rowRefs.current[m.placeholder] = el)}
+                          className={isMapped ? 'bg-green-50/50' : 'bg-red-50/50'}
+                        >
+                          <TableCell className="font-mono text-sm">{m.placeholder}</TableCell>
+                          <TableCell>
+                            <FieldSelect
+                              value={m.mappedColumn}
+                              options={columns}
+                              onChange={val => {
+                                setMappingState(current =>
+                                  current.map(item =>
+                                    item.placeholder === m.placeholder ? { ...item, mappedColumn: val } : item
+                                  )
+                                );
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="font-mono text-gray-500 truncate max-w-xs">
+                            {m.mappedColumn && provider && provider[m.mappedColumn] ? String(provider[m.mappedColumn]) : <i className="text-gray-400">No preview</i>}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={m.notes || ''}
+                              onChange={e =>
+                                setMappingState((prev: FieldMapping[]) =>
+                                  prev.map((mm: FieldMapping, i: number) =>
+                                    i === idx ? { ...mm, notes: e.target.value } : mm
+                                  )
                                 )
-                              );
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell className="font-mono text-gray-500 truncate max-w-xs">
-                          {m.mappedColumn && provider && provider[m.mappedColumn] ? String(provider[m.mappedColumn]) : <i className="text-gray-400">No preview</i>}
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={m.notes || ''}
-                            onChange={e =>
-                              setMappingState((prev: FieldMapping[]) =>
-                                prev.map((mm: FieldMapping, i: number) =>
-                                  i === idx ? { ...mm, notes: e.target.value } : mm
-                                )
-                              )
-                            }
-                            placeholder="Notes or logic (optional)"
-                            className="w-full"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {isMapped ? (
-                            <CheckCircle className="h-5 w-5 text-green-600" />
-                          ) : (
-                            <AlertTriangle className="h-5 w-5 text-amber-500" />
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                              }
+                              placeholder="Notes or logic (optional)"
+                              className="w-full"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {isMapped ? (
+                              <CheckCircle className="h-5 w-5 text-green-600" />
+                            ) : (
+                              <AlertTriangle className="h-5 w-5 text-amber-500" />
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </ScrollArea>
           </div>
         </Card>
