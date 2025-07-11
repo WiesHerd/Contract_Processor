@@ -4,7 +4,7 @@ import { RootState } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search } from 'lucide-react';
 import {
   setSelectedTemplate,
   setSelectedProvider,
@@ -36,7 +36,7 @@ import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import type { AppDispatch } from '@/store';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ContractGenerationLogService } from '@/services/contractGenerationLogService';
+import { ContractGenerationLogService, ContractGenerationLog } from '@/services/contractGenerationLogService';
 import { AgGridReact } from 'ag-grid-react';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
@@ -123,7 +123,6 @@ export default function ContractGenerator() {
   const [editorModalOpen, setEditorModalOpen] = useState(false);
   const editorRef = useRef<any>(null);
   const [clauseSearch, setClauseSearch] = useState('');
-  const topScrollRef = useRef<HTMLDivElement>(null);
   const [gridScrollWidth, setGridScrollWidth] = useState(0);
   const [gridClientWidth, setGridClientWidth] = useState(0);
   const [activeView, setActiveView] = useState<'generator' | 'logs'>('generator');
@@ -333,15 +332,23 @@ b, strong { font-weight: bold !important; }
 
   const hydrateGeneratedContracts = React.useCallback(async () => {
     try {
-      const result = await ContractGenerationLogService.listLogs();
-      if (result && result.items) {
-        result.items.forEach(log => {
+      let allLogs: ContractGenerationLog[] = [];
+      let nextToken = undefined;
+      do {
+        const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
+        if (result && result.items) {
+          allLogs = allLogs.concat(result.items);
+        }
+        nextToken = result?.nextToken;
+      } while (nextToken);
+      if (allLogs.length > 0) {
+        allLogs.forEach(log => {
           if (log.providerId && log.templateId && log.status && log.generatedAt) {
             dispatch(addGeneratedContract({
               providerId: log.providerId,
               templateId: log.templateId,
               status: log.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-              generatedAt: log.generatedAt
+              generatedAt: log.generatedAt,
             }));
           }
         });
@@ -356,7 +363,7 @@ b, strong { font-weight: bold !important; }
         setAlertError('Could not load contract generation status from the backend. Please try again later.');
       }
     }
-  }, [dispatch, generatedContracts]);
+  }, [dispatch]);
 
   const handleGenerate = async () => {
     if (!selectedTemplate || selectedProviderIds.length !== 1) return;
@@ -374,8 +381,8 @@ b, strong { font-weight: bold !important; }
       setIsBulkGenerating(false);
       return;
     }
-    const visibleProviderIds = paginatedProviders.map(p => p.id);
-    const selectedProviders = providers.filter(p => visibleProviderIds.includes(p.id) && selectedProviderIds.includes(p.id));
+    // Use all filtered providers, not just paginated
+    const selectedProviders = filteredProviders.filter(p => selectedProviderIds.includes(p.id));
     if (selectedProviders.length < 2) {
       setUserError('Please select at least two providers to use Generate All.');
       setIsBulkGenerating(false);
@@ -730,23 +737,36 @@ b, strong { font-weight: bold !important; }
         );
       }
       if (status === 'Not Generated') {
-        return <span className="text-gray-400 font-medium flex items-center gap-1"><span className="w-4 h-4">—</span> Not Generated</span>;
+        return <span className="text-gray-400 font-medium flex items-center gap-1"><span className="w-4 h-4">—</span> Ready to Generate</span>;
       }
       return <span className="text-gray-500 font-medium flex items-center gap-1"><Loader2 className="w-4 h-4 animate-spin" /> Pending</span>;
     }, sortable: true },
-    { headerName: 'Matched Template', field: 'matchedTemplate', minWidth: 180, cellRenderer: (params: any) => (
-      <span>{params.value || 'No Match'}</span>
+    // --- Template Used column (only one)
+    { headerName: 'Template Used', field: 'templateUsed', minWidth: 200, cellRenderer: (params: any) => (
+      <span>{params.value || '—'}</span>
     ), sortable: true },
   ], [paginatedProviders, selectedProviderIds, setSelectedProviderIds]);
 
-  // Prepare row data for AG Grid, including matchedTemplate and generationStatus
+  // Prepare row data for AG Grid, including only templateUsed and generationStatus
   const agGridRows = paginatedProviders.map((provider: Provider) => {
-    // Determine matched template (simple example: by templateTag)
-    const matchedTemplate = templates.find(t => 'templateTag' in t && t.templateTag === provider.templateTag)?.name || 'No Match';
+    // Find the latest successful generated contract for this provider
+    const latestSuccessContract = generatedContracts
+      .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
+      .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+    let templateUsed = '—';
+    let generationStatus = 'Not Generated';
+    if (latestSuccessContract) {
+      const t = templates.find(t => t.id === latestSuccessContract.templateId);
+      if (t) templateUsed = `${t.name} (v${t.version})`;
+      else templateUsed = latestSuccessContract.templateId;
+      generationStatus = 'Success';
+    } else {
+      generationStatus = 'Not Generated';
+    }
     return {
       ...provider,
-      matchedTemplate,
-      generationStatus: getGenerationStatus(provider.id, selectedTemplate?.id || ''),
+      templateUsed,
+      generationStatus,
     };
   });
 
@@ -759,41 +779,37 @@ b, strong { font-weight: bold !important; }
 
   // CSV Export
   const handleExportCSV = () => {
-    // AG Grid provides export via grid API, but for simplicity, we can use a basic CSV export here
+    // Use all filtered providers, not just paginated
+    const allRows = filteredProviders.map((provider: Provider) => {
+      // Find the latest successful generated contract for this provider
+      const latestSuccessContract = generatedContracts
+        .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
+        .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+      let templateUsed = '—';
+      let generationStatus = 'Not Generated';
+      if (latestSuccessContract) {
+        const t = templates.find(t => t.id === latestSuccessContract.templateId);
+        if (t) templateUsed = `${t.name} (v${t.version})`;
+        else templateUsed = latestSuccessContract.templateId;
+        generationStatus = 'Success';
+      } else {
+        generationStatus = 'Not Generated';
+      }
+      return {
+        ...provider,
+        templateUsed,
+        generationStatus,
+      };
+    });
+    // Use all columns, including Template Used
     const headers = agGridColumnDefs.filter(col => col.field && col.field !== 'checkbox').map(col => col.headerName);
-    const rows = agGridRows.map(row =>
+    const rows = allRows.map(row =>
       agGridColumnDefs.filter(col => col.field && col.field !== 'checkbox').map(col => (row as any)[col.field] ?? '')
     );
     const csv = [headers, ...rows].map(r => r.map(String).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     saveAs(blob, 'providers.csv');
   };
-
-  // Sync top scrollbar with AG Grid (matching provider screen)
-  useEffect(() => {
-    const gridEl = document.querySelector('.ag-center-cols-viewport') as HTMLElement;
-    if (!gridEl || !topScrollRef.current) return;
-    const handleGridScroll = () => {
-      if (topScrollRef.current) {
-        topScrollRef.current.scrollLeft = gridEl.scrollLeft;
-      }
-    };
-    const handleTopScroll = () => {
-      if (gridEl && topScrollRef.current) {
-        gridEl.scrollLeft = topScrollRef.current.scrollLeft;
-      }
-    };
-    gridEl.addEventListener('scroll', handleGridScroll);
-    topScrollRef.current.addEventListener('scroll', handleTopScroll);
-    // Set widths
-    setGridScrollWidth(gridEl.scrollWidth);
-    setGridClientWidth(gridEl.clientWidth);
-    // Cleanup
-    return () => {
-      gridEl.removeEventListener('scroll', handleGridScroll);
-      topScrollRef.current?.removeEventListener('scroll', handleTopScroll);
-    };
-  }, [agGridRows, agGridColumnDefs]);
 
   // After provider and template are selected and merged, set editorContent
   useEffect(() => {
@@ -848,20 +864,43 @@ b, strong { font-weight: bold !important; }
   const selectedClause = clauseLibrary.find(c => c.id === selectedClauseId);
 
   // Add state and memo for filter values and unique lists at the top of the component
-  const uniqueSpecialties = useMemo(() => {
-    const specialties = providers.map(p => p.specialty).filter((s): s is string => !!s);
-    return [...new Set(specialties)];
+  // Compute unique options for cascading filters
+  const specialtyOptions = useMemo(() => {
+    const set = new Set<string>();
+    providers.forEach(p => { if (p.specialty) set.add(p.specialty); });
+    return Array.from(set).sort();
   }, [providers]);
 
-  const uniqueSubspecialties = useMemo(() => {
-    const subspecialties = providers.map(p => p.subspecialty).filter((s): s is string => !!s);
-    return [...new Set(subspecialties)];
-  }, [providers]);
+  const subspecialtyOptions = useMemo(() => {
+    return providers
+      .filter(p => selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty)
+      .map(p => p.subspecialty)
+      .filter((s): s is string => !!s)
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .sort();
+  }, [providers, selectedSpecialty]);
 
-  const uniqueProviderTypes = useMemo(() => {
-    const types = providers.map(p => p.providerType).filter((s): s is string => !!s);
-    return [...new Set(types)];
-  }, [providers]);
+  const providerTypeOptions = useMemo(() => {
+    return providers
+      .filter(p => (selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty) &&
+                   (selectedSubspecialty === "__ALL__" || p.subspecialty === selectedSubspecialty))
+      .map(p => p.providerType)
+      .filter((s): s is string => !!s)
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .sort();
+  }, [providers, selectedSpecialty, selectedSubspecialty]);
+
+  // Reset lower-level filters if their value is no longer valid
+  useEffect(() => {
+    if (selectedSubspecialty !== "__ALL__" && !subspecialtyOptions.includes(selectedSubspecialty)) {
+      setSelectedSubspecialty("__ALL__");
+    }
+    // After resetting subspecialty, check provider type
+    if (selectedProviderType !== "__ALL__" && !providerTypeOptions.includes(selectedProviderType)) {
+      setSelectedProviderType("__ALL__");
+    }
+    // eslint-disable-next-line
+  }, [selectedSpecialty, subspecialtyOptions, providerTypeOptions]);
 
   // Compute filtered rows for each tab
   const pendingRows = agGridRows.filter(row => row.generationStatus === 'Pending' || row.generationStatus === 'Needs Review');
@@ -951,21 +990,6 @@ b, strong { font-weight: bold !important; }
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
           {/* Modern Filter Sections */}
           <div className="flex flex-col gap-4 mb-2">
-            {/* Search Providers Section */}
-            <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 flex flex-col sm:flex-row sm:items-end sm:gap-4">
-              <div className="flex flex-col flex-1 min-w-[200px]">
-                <span className="mb-1 font-semibold text-gray-800 text-sm tracking-wide">Search Providers</span>
-                <Input
-                  placeholder="Search by name or specialty..."
-                  value={search}
-                  onChange={e => {
-                    setSearch(e.target.value);
-                    setPageIndex(0);
-                  }}
-                  className="w-full"
-                />
-              </div>
-            </div>
             {/* Bulk Processing Section */}
             <div className="rounded-xl border border-blue-100 bg-gray-50 shadow-sm p-0 transition-all duration-300 ${bulkOpen ? 'pb-6' : 'pb-0'}">
               <div className="flex items-center gap-3 px-6 pt-6 pb-2 cursor-pointer select-none" onClick={() => setBulkOpen(v => !v)}>
@@ -998,7 +1022,7 @@ b, strong { font-weight: bold !important; }
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__ALL__">All Specialties</SelectItem>
-                        {uniqueSpecialties.map(s => (
+                        {specialtyOptions.map(s => (
                           <SelectItem key={s} value={s}>{s}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1018,7 +1042,7 @@ b, strong { font-weight: bold !important; }
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__ALL__">All Subspecialties</SelectItem>
-                        {uniqueSubspecialties.map(s => (
+                        {subspecialtyOptions.map(s => (
                           <SelectItem key={s} value={s}>{s}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1038,7 +1062,7 @@ b, strong { font-weight: bold !important; }
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__ALL__">All Types</SelectItem>
-                        {uniqueProviderTypes.map(s => (
+                        {providerTypeOptions.map(s => (
                           <SelectItem key={s} value={s}>{s}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1143,24 +1167,10 @@ b, strong { font-weight: bold !important; }
             </div>
           </div>
 
-          {/* Top horizontal scrollbar synced with AG Grid */}
-          <div
-            ref={topScrollRef}
-            style={{
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              width: '100%',
-              height: 16,
-              marginBottom: 2,
-              background: 'transparent',
-            }}
-          >
-            <div style={{ width: gridScrollWidth, height: 1 }} />
-          </div>
           {/* Tabs for Pending / Processed / All */}
           <div className="mb-2 flex justify-between items-center">
-            <Tabs value={statusTab} onValueChange={setStatusTab} className="w-full">
-              <TabsList className="flex gap-2 border-b border-blue-200 bg-transparent justify-start">
+            <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'pending' | 'processed' | 'all')} className="w-full">
+              <TabsList className="flex gap-2 border-b-0 bg-transparent justify-start relative after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-[1.5px] after:bg-gray-200 after:z-10 overflow-visible">
                 <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
                   data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
                   data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
@@ -1184,8 +1194,59 @@ b, strong { font-weight: bold !important; }
               </TabsList>
             </Tabs>
           </div>
-          {/* Provider Table with AG Grid */}
-          <div className="ag-theme-alpine w-full" style={{ fontSize: '14px', fontFamily: 'var(--font-sans, sans-serif)', fontWeight: 400, color: '#111827' }}>
+
+          {/* Search Provider Section - Moved below bulk processing */}
+          <div className="mb-4">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex-1 min-w-0">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    placeholder="Search providers..."
+                    value={search}
+                    onChange={e => {
+                      setSearch(e.target.value);
+                      setPageIndex(0);
+                    }}
+                    className="pl-10 pr-4 py-2 w-full"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <Select
+                  value={selectedProviderType}
+                  onValueChange={val => {
+                    setSelectedProviderType(val);
+                    setPageIndex(0);
+                  }}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__ALL__">All Types</SelectItem>
+                    {providerTypeOptions.map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                <Button
+                  onClick={() => setSearch('')}
+                  variant="outline"
+                  size="sm"
+                  className="px-3"
+                >
+                  Clear
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* AG Grid Table */}
+          <div className="ag-theme-alpine w-full" style={{ height: '600px' }}>
             <AgGridReact
               rowData={visibleRows}
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
@@ -1206,7 +1267,9 @@ b, strong { font-weight: bold !important; }
               }}
               enableBrowserTooltips={true}
               enableRangeSelection={true}
-              suppressMovableColumns={false}
+              singleClickEdit={true}
+              suppressClipboardPaste={false}
+              suppressCopyRowsToClipboard={false}
             />
           </div>
           <div className="text-sm text-gray-600 mt-2">

@@ -1,745 +1,488 @@
-import React, { useState, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { RootState, AppDispatch } from '@/store';
-import { 
-  fetchUsers, 
-  fetchUserGroups, 
-  createUser, 
-  updateUser, 
-  deleteUser, 
-  bulkUserOperation,
-  setFilters,
-  setSelectedUsers,
-  clearError
-} from '@/store/slices/userSlice';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Users, 
-  UserPlus, 
-  Edit, 
-  Trash2, 
-  Search, 
-  Filter, 
-  Download, 
-  Upload,
-  Shield,
-  UserCheck,
-  UserX,
-  MoreHorizontal,
-  Plus
-} from 'lucide-react';
-import { User, UserGroup, CreateUserInput, UpdateUserInput } from '@/types/user';
-import { toast } from 'sonner';
+import { Loader2, Plus, Trash2, UserPlus, Shield, Users, Activity, Info } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState, AppDispatch } from '@/store';
+import { fetchAuditLogs } from '@/store/slices/auditSlice';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
-interface UserFormData {
-  username: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber: string;
-  password: string;
-  groups: string[];
-  enabled: boolean;
+interface User {
+  Username: string;
+  Attributes: Array<{ Name: string; Value: string }>;
+  Enabled: boolean;
+  UserStatus: string;
+  groups?: string[];
 }
 
-const UserManagement: React.FC = () => {
-  const dispatch: AppDispatch = useDispatch();
-  const { 
-    users, 
-    userGroups, 
-    loading, 
-    error, 
-    filters, 
-    selectedUsers,
-    bulkOperationInProgress,
-    bulkOperationProgress 
-  } = useSelector((state: RootState) => state.users);
+interface Role {
+  GroupName: string;
+  Description?: string;
+  Precedence?: number;
+}
 
-  const [activeTab, setActiveTab] = useState<'users' | 'groups'>('users');
+interface UserManagementProps {
+  users: User[];
+  onRefresh: () => void;
+  section: 'users' | 'activity';
+  setSection: React.Dispatch<React.SetStateAction<'users' | 'activity'>>;
+}
+
+const ACTIVITY_COLUMNS = [
+  { key: 'timestamp', label: 'Timestamp' },
+  { key: 'user', label: 'User' },
+  { key: 'action', label: 'Action' },
+  { key: 'severity', label: 'Severity' },
+  { key: 'category', label: 'Category' },
+  { key: 'details', label: 'Details' },
+  { key: 'resource', label: 'Resource' },
+];
+
+const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, section, setSection }) => {
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  
+  // Modal states
+  const [showRoleModal, setShowRoleModal] = useState(false);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
-  const [showEditUserModal, setShowEditUserModal] = useState(false);
-  const [showBulkOperationsModal, setShowBulkOperationsModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [groupFilter, setGroupFilter] = useState<string>('');
-  const [userFormData, setUserFormData] = useState<UserFormData>({
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  
+  // Form states
+  const [newUser, setNewUser] = useState({
     username: '',
     email: '',
-    firstName: '',
-    lastName: '',
-    phoneNumber: '',
-    password: '',
-    groups: [],
-    enabled: true,
+    groups: [] as string[],
   });
 
-  // Load data on component mount
-  useEffect(() => {
-    dispatch(fetchUsers());
-    dispatch(fetchUserGroups());
-  }, [dispatch]);
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
+  const pagedUsers = useMemo(() => users.slice((page - 1) * pageSize, page * pageSize), [users, page]);
 
-  // Clear error when component unmounts
-  useEffect(() => {
-    return () => {
-      dispatch(clearError());
-    };
-  }, [dispatch]);
+  // Redux for audit logs
+  const dispatch = useDispatch<AppDispatch>();
+  const { logs: auditLogs, isLoading: logsLoading, error: logsError } = useSelector((state: RootState) => state.audit);
 
-  // Filter users based on search and filters
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = !searchTerm || 
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase().includes(searchTerm.toLowerCase());
+  // Fetch roles on component mount
+  useEffect(() => {
+    fetchRoles();
+  }, []);
+
+  // Fetch audit logs when switching to activity section
+  useEffect(() => {
+    if (section === 'activity' && auditLogs.length === 0 && !logsLoading) {
+      dispatch(fetchAuditLogs());
+    }
+  }, [section, dispatch, auditLogs.length, logsLoading]);
+
+  const fetchRoles = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('http://localhost:4000/api/roles');
+      if (!response.ok) throw new Error('Failed to fetch roles');
+      const data = await response.json();
+      setRoles(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch roles');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManageRoles = (user: User) => {
+    setSelectedUser(user);
+    setSelectedRoles(user.groups || []);
+    setShowRoleModal(true);
+  };
+
+  const handleSaveRoles = async () => {
+    if (!selectedUser) return;
     
-    const matchesStatus = !statusFilter || user.status === statusFilter;
-    const matchesGroup = !groupFilter || user.groups.includes(groupFilter);
-    
-    return matchesSearch && matchesStatus && matchesGroup;
-  });
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Get current user roles
+      const currentRoles = selectedUser.groups || [];
+      
+      // Add new roles
+      for (const role of selectedRoles) {
+        if (!currentRoles.includes(role)) {
+          const response = await fetch(`http://localhost:4000/api/roles/${role}/add`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: selectedUser.Username }),
+          });
+          if (!response.ok) throw new Error(`Failed to add role ${role}`);
+        }
+      }
+      
+      // Remove roles that are no longer selected
+      for (const role of currentRoles) {
+        if (!selectedRoles.includes(role)) {
+          const response = await fetch(`http://localhost:4000/api/roles/${role}/remove`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: selectedUser.Username }),
+          });
+          if (!response.ok) throw new Error(`Failed to remove role ${role}`);
+        }
+      }
+      
+      setSuccess('User roles updated successfully');
+      setShowRoleModal(false);
+      onRefresh(); // Refresh user list to get updated roles
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update user roles');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateUser = async () => {
     try {
-      const userData: CreateUserInput = {
-        username: userFormData.username,
-        email: userFormData.email,
-        firstName: userFormData.firstName,
-        lastName: userFormData.lastName,
-        phoneNumber: userFormData.phoneNumber,
-        password: userFormData.password,
-        groups: userFormData.groups,
-        sendInvitation: true,
-      };
-
-      await dispatch(createUser(userData)).unwrap();
-      setShowCreateUserModal(false);
-      resetUserForm();
-      toast.success('User created successfully');
-    } catch (error) {
-      toast.error(`Failed to create user: ${error}`);
-    }
-  };
-
-  const handleUpdateUser = async () => {
-    if (!editingUser) return;
-
-    try {
-      const userData: UpdateUserInput = {
-        id: editingUser.id,
-        firstName: userFormData.firstName,
-        lastName: userFormData.lastName,
-        phoneNumber: userFormData.phoneNumber,
-        enabled: userFormData.enabled,
-        groups: userFormData.groups,
-      };
-
-      await dispatch(updateUser(userData)).unwrap();
-      setShowEditUserModal(false);
-      setEditingUser(null);
-      resetUserForm();
-      toast.success('User updated successfully');
-    } catch (error) {
-      toast.error(`Failed to update user: ${error}`);
-    }
-  };
-
-  const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      await dispatch(deleteUser(userId)).unwrap();
-      toast.success('User deleted successfully');
-    } catch (error) {
-      toast.error(`Failed to delete user: ${error}`);
-    }
-  };
-
-  const handleBulkOperation = async (operation: 'enable' | 'disable' | 'delete' | 'addToGroup' | 'removeFromGroup', groupName?: string) => {
-    if (selectedUsers.length === 0) {
-      toast.error('Please select users first');
-      return;
-    }
-
-    try {
-      await dispatch(bulkUserOperation({
-        userIds: selectedUsers,
-        operation,
-        groupName,
-      })).unwrap();
+      setLoading(true);
+      setError(null);
       
-      setShowBulkOperationsModal(false);
-      dispatch(setSelectedUsers([]));
-      toast.success(`Bulk ${operation} completed successfully`);
-    } catch (error) {
-      toast.error(`Failed to perform bulk operation: ${error}`);
+      const response = await fetch('http://localhost:4000/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create user');
+      }
+      
+      setSuccess('User created successfully');
+      setShowCreateUserModal(false);
+      setNewUser({ username: '', email: '', groups: [] }); // Reset groups
+      onRefresh(); // Refresh user list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create user');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const resetUserForm = () => {
-    setUserFormData({
-      username: '',
-      email: '',
-      firstName: '',
-      lastName: '',
-      phoneNumber: '',
-      password: '',
-      groups: [],
-      enabled: true,
-    });
-  };
-
-  const openEditModal = (user: User) => {
-    setEditingUser(user);
-    setUserFormData({
-      username: user.username,
-      email: user.email,
-      firstName: user.firstName || '',
-      lastName: user.lastName || '',
-      phoneNumber: user.attributes.phone_number || '',
-      password: '',
-      groups: user.groups,
-      enabled: user.enabled,
-    });
-    setShowEditUserModal(true);
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      dispatch(setSelectedUsers(filteredUsers.map(user => user.id)));
-    } else {
-      dispatch(setSelectedUsers([]));
-    }
-  };
-
-  const handleSelectUser = (userId: string, checked: boolean) => {
-    if (checked) {
-      dispatch(setSelectedUsers([...selectedUsers, userId]));
-    } else {
-      dispatch(setSelectedUsers(selectedUsers.filter(id => id !== userId)));
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      CONFIRMED: { color: 'bg-green-100 text-green-800', text: 'Active' },
-      UNCONFIRMED: { color: 'bg-yellow-100 text-yellow-800', text: 'Pending' },
-      ARCHIVED: { color: 'bg-gray-100 text-gray-800', text: 'Archived' },
-      COMPROMISED: { color: 'bg-red-100 text-red-800', text: 'Compromised' },
-      RESET_REQUIRED: { color: 'bg-orange-100 text-orange-800', text: 'Reset Required' },
-      FORCE_CHANGE_PASSWORD: { color: 'bg-purple-100 text-purple-800', text: 'Force Change' },
-    };
+  const handleDeleteUser = async (username: string) => {
+    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
     
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.UNCONFIRMED;
-    return <Badge className={config.color}>{config.text}</Badge>;
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch(`http://localhost:4000/api/users/${username}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) throw new Error('Failed to delete user');
+      
+      setSuccess('User deleted successfully');
+      onRefresh(); // Refresh user list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete user');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <LoadingSpinner 
-          size="lg" 
-          message="Loading User Management..." 
-          color="primary"
-        />
-      </div>
-    );
-  }
+  const [showInviteSentModal, setShowInviteSentModal] = useState(false);
+
+  const handleResendInvite = async (username: string) => {
+    if (!window.confirm(`Resend invitation email to ${username}?`)) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`http://localhost:4000/api/users/${encodeURIComponent(username)}/resend-invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setShowInviteSentModal(true);
+        setSuccess(null); // Hide old success alert
+      } else {
+        setError('Failed to resend invitation: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getUserEmail = (user: User) => {
+    return user.Attributes.find(attr => attr.Name === 'email')?.Value || 'No email';
+  };
+
+  const getUserStatus = (user: User) => {
+    return user.Enabled ? 'Active' : 'Disabled';
+  };
+
+  const getUserRoles = (user: User) => {
+    return user.groups || [];
+  };
+
+  const USER_COLUMNS = [
+    { key: 'Username', label: 'Username' },
+    { key: 'Email', label: 'Email' },
+    { key: 'Status', label: 'Status' },
+    { key: 'Roles', label: 'Roles' },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
-          <p className="text-gray-600 mt-2">Manage users and user groups for your organization</p>
+    <div className="w-full">
+      <div className="bg-white rounded-lg shadow p-6 w-full">
+        {section === 'users' && (
+          <div className="flex justify-end mb-2">
+            <Button onClick={() => setShowCreateUserModal(true)} className="bg-blue-600 hover:bg-blue-700">
+              <UserPlus className="w-4 h-4 mr-2" />
+              Create User
+            </Button>
+          </div>
+        )}
+        {error && (
+          <Alert className="border-red-200 bg-red-50 mb-4">
+            <AlertDescription className="text-red-800">{error}</AlertDescription>
+          </Alert>
+        )}
+        {success && (
+          <Alert className="border-green-200 bg-green-50 mb-4">
+            <AlertDescription className="text-green-800">{success}</AlertDescription>
+          </Alert>
+        )}
+        <div className="overflow-x-auto border rounded-lg">
+          <Table className="min-w-full">
+            <TableHeader>
+              <TableRow>
+                {USER_COLUMNS.map(col => (
+                  <TableHead key={col.key} className="font-semibold text-sm text-gray-900 bg-gray-50">{col.label}</TableHead>
+                ))}
+                <TableHead className="font-semibold text-sm text-gray-900 bg-gray-50">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pagedUsers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={USER_COLUMNS.length + 1} className="text-center text-gray-400 py-8">No users found. Please add a user to get started.</TableCell>
+                </TableRow>
+              ) : (
+                pagedUsers.map((user, idx) => (
+                  <TableRow key={user.Username} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <TableCell>{user.Username}</TableCell>
+                    <TableCell>{user.Attributes.find((a: any) => a.Name === 'email')?.Value || ''}</TableCell>
+                    <TableCell>{user.Enabled ? 'Active' : 'Disabled'}</TableCell>
+                    <TableCell>{(user.groups && user.groups.length > 0) ? user.groups.join(', ') : <span className="text-gray-400">No roles</span>}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleManageRoles(user)} disabled={loading}>Manage Roles</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>Resend Invite</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.Username)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
-        <div className="flex space-x-3">
-          <Button
-            variant="outline"
-            onClick={() => setShowBulkOperationsModal(true)}
-            disabled={selectedUsers.length === 0}
+        <div className="flex gap-2 items-center mt-2">
+          <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1}>{'«'}</Button>
+          <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page === 1}>{'‹'}</Button>
+          <span className="text-sm">Page {page} of {totalPages}</span>
+          <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page === totalPages}>{'›'}</Button>
+          <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>{'»'}</Button>
+          <select
+            className="ml-2 border rounded px-2 py-1 text-sm focus:outline-none"
+            value={pageSize}
+            onChange={e => {
+              setPage(1);
+              // If you want to make page size dynamic, update pageSize state here
+            }}
+            style={{ minWidth: 80 }}
+            disabled
           >
-            <MoreHorizontal className="w-4 h-4 mr-2" />
-            Bulk Operations ({selectedUsers.length})
-          </Button>
-          <Button onClick={() => setShowCreateUserModal(true)}>
-            <UserPlus className="w-4 h-4 mr-2" />
-            Add User
-          </Button>
+            <option value={10}>10 / page</option>
+          </select>
         </div>
-      </div>
-
-      {/* Error Alert */}
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'users'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <Users className="w-4 h-4 inline mr-2" />
-            Users ({users.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('groups')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'groups'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <Shield className="w-4 h-4 inline mr-2" />
-            Groups ({userGroups.length})
-          </button>
-        </nav>
-      </div>
-
-      {/* Users Tab */}
-      {activeTab === 'users' && (
-        <div className="space-y-6">
-          {/* Filters */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Filter className="w-5 h-5 mr-2" />
-                Filters
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      placeholder="Search users..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">All statuses</SelectItem>
-                      <SelectItem value="CONFIRMED">Active</SelectItem>
-                      <SelectItem value="UNCONFIRMED">Pending</SelectItem>
-                      <SelectItem value="ARCHIVED">Archived</SelectItem>
-                      <SelectItem value="COMPROMISED">Compromised</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
-                  <Select value={groupFilter} onValueChange={setGroupFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All groups" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">All groups</SelectItem>
-                      {userGroups.map(group => (
-                        <SelectItem key={group.id} value={group.name}>
-                          {group.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSearchTerm('');
-                      setStatusFilter('');
-                      setGroupFilter('');
-                    }}
-                  >
-                    Clear Filters
-                  </Button>
-                </div>
+        {/* Manage Roles Modal */}
+        <Dialog open={showRoleModal} onOpenChange={setShowRoleModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Manage User Roles</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">User: {selectedUser?.Username}</Label>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Users Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Users ({filteredUsers.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-3">
-                        <Checkbox
-                          checked={selectedUsers.length === filteredUsers.length && filteredUsers.length > 0}
-                          onCheckedChange={handleSelectAll}
-                        />
-                      </th>
-                      <th className="text-left p-3 font-medium">Name</th>
-                      <th className="text-left p-3 font-medium">Email</th>
-                      <th className="text-left p-3 font-medium">Status</th>
-                      <th className="text-left p-3 font-medium">Groups</th>
-                      <th className="text-left p-3 font-medium">Last Sign In</th>
-                      <th className="text-left p-3 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.map(user => (
-                      <tr key={user.id} className="border-b hover:bg-gray-50">
-                        <td className="p-3">
-                          <Checkbox
-                            checked={selectedUsers.includes(user.id)}
-                            onCheckedChange={(checked) => handleSelectUser(user.id, checked as boolean)}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <div>
-                            <div className="font-medium">
-                              {user.firstName && user.lastName 
-                                ? `${user.firstName} ${user.lastName}`
-                                : user.username
-                              }
-                            </div>
-                            <div className="text-sm text-gray-500">@{user.username}</div>
-                          </div>
-                        </td>
-                        <td className="p-3">{user.email}</td>
-                        <td className="p-3">{getStatusBadge(user.status)}</td>
-                        <td className="p-3">
-                          <div className="flex flex-wrap gap-1">
-                            {user.groups.map(group => (
-                              <Badge key={group} variant="secondary" className="text-xs">
-                                {group}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="p-3 text-sm text-gray-500">
-                          {user.lastSignIn 
-                            ? new Date(user.lastSignIn).toLocaleDateString()
-                            : 'Never'
+              <div className="mt-4">
+                <Label className="text-sm font-medium">Assign Roles</Label>
+                <div className="flex flex-wrap gap-4 mt-2">
+                  {roles.map((role) => (
+                    <div key={role.GroupName} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`manage-role-${role.GroupName}`}
+                        checked={selectedRoles.includes(role.GroupName)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRoles([...selectedRoles, role.GroupName]);
+                          } else {
+                            setSelectedRoles(selectedRoles.filter((g) => g !== role.GroupName));
                           }
-                        </td>
-                        <td className="p-3">
-                          <div className="flex space-x-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openEditModal(user)}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleDeleteUser(user.id)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <Label htmlFor={`manage-role-${role.GroupName}`} className="text-sm">
+                        {role.GroupName}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Groups Tab */}
-      {activeTab === 'groups' && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>User Groups</CardTitle>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Group
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowRoleModal(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveRoles} disabled={loading}>
+                  {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Save Changes
                 </Button>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {userGroups.map(group => (
-                  <Card key={group.id} className="p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-semibold">{group.name}</h3>
-                      <Badge variant="secondary">{group.userCount} users</Badge>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-3">{group.description}</p>
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {group.permissions.map(permission => (
-                        <Badge key={permission} variant="outline" className="text-xs">
-                          {permission}
-                        </Badge>
-                      ))}
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline">
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="destructive">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create User Modal */}
+        <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Create New User</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  placeholder="Enter username"
+                />
               </div>
-            </CardContent>
-          </Card>
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  placeholder="Enter email"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Assign Roles</Label>
+                <div className="flex flex-wrap gap-4 mt-2">
+                  {roles.map((role) => (
+                    <div key={role.GroupName} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`create-role-${role.GroupName}`}
+                        checked={newUser.groups?.includes(role.GroupName)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setNewUser({ ...newUser, groups: [...(newUser.groups || []), role.GroupName] });
+                          } else {
+                            setNewUser({ ...newUser, groups: (newUser.groups || []).filter((g) => g !== role.GroupName) });
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <Label htmlFor={`create-role-${role.GroupName}`} className="text-sm">
+                        {role.GroupName}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowCreateUserModal(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateUser} disabled={loading} className="bg-blue-600 hover:bg-blue-700 w-full">
+                  {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Create User
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Invitation Sent Modal */}
+        <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Invitation Sent</DialogTitle>
+            </DialogHeader>
+            <div className="py-4 text-center text-lg">Invitation email was sent successfully.</div>
+            <DialogFooter>
+              <Button onClick={() => setShowInviteSentModal(false)} autoFocus>OK</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+      {section === 'activity' && (
+        <div className="overflow-x-auto border rounded-lg">
+          {logsLoading ? (
+            <div className="flex justify-center items-center py-12">
+              <LoadingSpinner size="md" message="Loading activity logs..." color="primary" />
+            </div>
+          ) : auditLogs.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">No activity logs found.</div>
+          ) : (
+            <Table className="min-w-full">
+              <TableHeader>
+                <TableRow>
+                  {ACTIVITY_COLUMNS.map(col => (
+                    <TableHead key={col.key} className="font-semibold text-sm text-gray-900 bg-gray-50">{col.label}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {auditLogs.map((log, idx) => {
+                  let parsedDetails: any = {};
+                  try {
+                    parsedDetails = log.details ? JSON.parse(log.details) : {};
+                  } catch {}
+                  return (
+                    <TableRow key={log.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <TableCell>{log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}</TableCell>
+                      <TableCell>{log.user || ''}</TableCell>
+                      <TableCell>{log.action || ''}</TableCell>
+                      <TableCell>{log.severity || ''}</TableCell>
+                      <TableCell>{log.category || ''}</TableCell>
+                      <TableCell>{parsedDetails.originalDetails || ''}</TableCell>
+                      <TableCell>{log.resourceType || parsedDetails.resourceType || ''}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
         </div>
       )}
-
-      {/* Create User Modal */}
-      <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create New User</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Username</label>
-              <Input
-                value={userFormData.username}
-                onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
-                placeholder="Enter username"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
-              <Input
-                type="email"
-                value={userFormData.email}
-                onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
-                placeholder="Enter email"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">First Name</label>
-                <Input
-                  value={userFormData.firstName}
-                  onChange={(e) => setUserFormData({ ...userFormData, firstName: e.target.value })}
-                  placeholder="First name"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Last Name</label>
-                <Input
-                  value={userFormData.lastName}
-                  onChange={(e) => setUserFormData({ ...userFormData, lastName: e.target.value })}
-                  placeholder="Last name"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Phone Number</label>
-              <Input
-                value={userFormData.phoneNumber}
-                onChange={(e) => setUserFormData({ ...userFormData, phoneNumber: e.target.value })}
-                placeholder="Phone number"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Password</label>
-              <Input
-                type="password"
-                value={userFormData.password}
-                onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
-                placeholder="Enter password"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Groups</label>
-              <Select
-                value={userFormData.groups[0] || ''}
-                onValueChange={(value) => setUserFormData({ ...userFormData, groups: value ? [value] : [] })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {userGroups.map(group => (
-                    <SelectItem key={group.id} value={group.name}>
-                      {group.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <Button variant="outline" onClick={() => setShowCreateUserModal(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleCreateUser}>
-                Create User
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit User Modal */}
-      <Dialog open={showEditUserModal} onOpenChange={setShowEditUserModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">First Name</label>
-                <Input
-                  value={userFormData.firstName}
-                  onChange={(e) => setUserFormData({ ...userFormData, firstName: e.target.value })}
-                  placeholder="First name"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Last Name</label>
-                <Input
-                  value={userFormData.lastName}
-                  onChange={(e) => setUserFormData({ ...userFormData, lastName: e.target.value })}
-                  placeholder="Last name"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Phone Number</label>
-              <Input
-                value={userFormData.phoneNumber}
-                onChange={(e) => setUserFormData({ ...userFormData, phoneNumber: e.target.value })}
-                placeholder="Phone number"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Groups</label>
-              <Select
-                value={userFormData.groups[0] || ''}
-                onValueChange={(value) => setUserFormData({ ...userFormData, groups: value ? [value] : [] })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {userGroups.map(group => (
-                    <SelectItem key={group.id} value={group.name}>
-                      {group.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                checked={userFormData.enabled}
-                onCheckedChange={(checked) => setUserFormData({ ...userFormData, enabled: checked as boolean })}
-              />
-              <label className="text-sm font-medium">User is enabled</label>
-            </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <Button variant="outline" onClick={() => setShowEditUserModal(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleUpdateUser}>
-                Update User
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Bulk Operations Modal */}
-      <Dialog open={showBulkOperationsModal} onOpenChange={setShowBulkOperationsModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Bulk Operations ({selectedUsers.length} users)</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="outline"
-                onClick={() => handleBulkOperation('enable')}
-                disabled={bulkOperationInProgress}
-              >
-                <UserCheck className="w-4 h-4 mr-2" />
-                Enable Users
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleBulkOperation('disable')}
-                disabled={bulkOperationInProgress}
-              >
-                <UserX className="w-4 h-4 mr-2" />
-                Disable Users
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="outline"
-                onClick={() => handleBulkOperation('addToGroup', 'Admin')}
-                disabled={bulkOperationInProgress}
-              >
-                <Shield className="w-4 h-4 mr-2" />
-                Add to Admin
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleBulkOperation('removeFromGroup', 'Admin')}
-                disabled={bulkOperationInProgress}
-              >
-                <Shield className="w-4 h-4 mr-2" />
-                Remove from Admin
-              </Button>
-            </div>
-            <Button
-              variant="destructive"
-              onClick={() => handleBulkOperation('delete')}
-              disabled={bulkOperationInProgress}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Users
-            </Button>
-            {bulkOperationInProgress && bulkOperationProgress && (
-              <div className="text-sm text-gray-600">
-                Progress: {bulkOperationProgress.completed} / {bulkOperationProgress.total}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
