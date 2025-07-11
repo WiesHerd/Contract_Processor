@@ -45,6 +45,16 @@ const ACTIVITY_COLUMNS = [
   { key: 'resource', label: 'Resource' },
 ];
 
+const getUserEmail = (user: User) => {
+  return user.Attributes.find(attr => attr.Name === 'email')?.Value || 'No email';
+};
+const getUserStatus = (user: User) => {
+  return user.Enabled ? 'Active' : 'Disabled';
+};
+const getUserRoles = (user: User) => {
+  return user.groups || [];
+};
+
 const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, section, setSection }) => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,7 +78,23 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
-  const pagedUsers = useMemo(() => users.slice((page - 1) * pageSize, page * pageSize), [users, page]);
+  const [userSearch, setUserSearch] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('');
+  const filteredUsers = useMemo(() => {
+    return users.filter(user => {
+      const username = user.Username.toLowerCase();
+      const email = getUserEmail(user).toLowerCase();
+      const status = getUserStatus(user).toLowerCase();
+      const roles = (user.groups || []).map(r => r.toLowerCase()).join(',');
+      return (
+        (!userSearch || username.includes(userSearch.toLowerCase()) || email.includes(userSearch.toLowerCase())) &&
+        (!userStatusFilter || status === userStatusFilter.toLowerCase()) &&
+        (!userRoleFilter || roles.includes(userRoleFilter.toLowerCase()))
+      );
+    });
+  }, [users, userSearch, userStatusFilter, userRoleFilter]);
+  const pagedUsers = useMemo(() => filteredUsers.slice((page - 1) * pageSize, page * pageSize), [filteredUsers, page]);
 
   // Redux for audit logs
   const dispatch = useDispatch<AppDispatch>();
@@ -224,18 +250,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     }
   };
 
-  const getUserEmail = (user: User) => {
-    return user.Attributes.find(attr => attr.Name === 'email')?.Value || 'No email';
-  };
-
-  const getUserStatus = (user: User) => {
-    return user.Enabled ? 'Active' : 'Disabled';
-  };
-
-  const getUserRoles = (user: User) => {
-    return user.groups || [];
-  };
-
   const USER_COLUMNS = [
     { key: 'Username', label: 'Username' },
     { key: 'Email', label: 'Email' },
@@ -243,213 +257,294 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     { key: 'Roles', label: 'Roles' },
   ];
 
+  const [logSearch, setLogSearch] = useState('');
+  const [logSeverityFilter, setLogSeverityFilter] = useState('');
+  const [logCategoryFilter, setLogCategoryFilter] = useState('');
+  const filteredLogs = useMemo(() => {
+    return auditLogs.filter(log => {
+      const user = (log.user || '').toLowerCase();
+      const action = (log.action || '').toLowerCase();
+      const severity = (log.severity || '').toLowerCase();
+      const category = (log.category || '').toLowerCase();
+      const details = (log.details || '').toLowerCase();
+      return (
+        (!logSearch || user.includes(logSearch.toLowerCase()) || action.includes(logSearch.toLowerCase()) || details.includes(logSearch.toLowerCase())) &&
+        (!logSeverityFilter || severity === logSeverityFilter.toLowerCase()) &&
+        (!logCategoryFilter || category === logCategoryFilter.toLowerCase())
+      );
+    });
+  }, [auditLogs, logSearch, logSeverityFilter, logCategoryFilter]);
+
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [resourceModalOpen, setResourceModalOpen] = useState(false);
+  const [resourceModalData, setResourceModalData] = useState<any>(null);
+
   return (
     <div className="w-full">
-      <div className="bg-white rounded-lg shadow p-6 w-full">
-        {section === 'users' && (
-          <div className="flex justify-end mb-2">
+      {section === 'users' && (
+        <div className="bg-white rounded-lg shadow p-6 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+            <div className="flex gap-2 items-center">
+              <Input
+                placeholder="Search username or email..."
+                value={userSearch}
+                onChange={e => { setUserSearch(e.target.value); setPage(1); }}
+                className="w-56"
+              />
+              <select
+                value={userStatusFilter}
+                onChange={e => { setUserStatusFilter(e.target.value); setPage(1); }}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Disabled">Disabled</option>
+              </select>
+              <select
+                value={userRoleFilter}
+                onChange={e => { setUserRoleFilter(e.target.value); setPage(1); }}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="">All Roles</option>
+                {roles.map(role => (
+                  <option key={role.GroupName} value={role.GroupName}>{role.GroupName}</option>
+                ))}
+              </select>
+            </div>
             <Button onClick={() => setShowCreateUserModal(true)} className="bg-blue-600 hover:bg-blue-700">
               <UserPlus className="w-4 h-4 mr-2" />
               Create User
             </Button>
           </div>
-        )}
-        {error && (
-          <Alert className="border-red-200 bg-red-50 mb-4">
-            <AlertDescription className="text-red-800">{error}</AlertDescription>
-          </Alert>
-        )}
-        {success && (
-          <Alert className="border-green-200 bg-green-50 mb-4">
-            <AlertDescription className="text-green-800">{success}</AlertDescription>
-          </Alert>
-        )}
-        <div className="overflow-x-auto border rounded-lg">
-          <Table className="min-w-full">
-            <TableHeader>
-              <TableRow>
-                {USER_COLUMNS.map(col => (
-                  <TableHead key={col.key} className="font-semibold text-sm text-gray-900 bg-gray-50">{col.label}</TableHead>
-                ))}
-                <TableHead className="font-semibold text-sm text-gray-900 bg-gray-50">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pagedUsers.length === 0 ? (
+          {error && (
+            <Alert className="border-red-200 bg-red-50 mb-4">
+              <AlertDescription className="text-red-800">{error}</AlertDescription>
+            </Alert>
+          )}
+          {success && (
+            <Alert className="border-green-200 bg-green-50 mb-4">
+              <AlertDescription className="text-green-800">{success}</AlertDescription>
+            </Alert>
+          )}
+          <div className="overflow-x-auto border rounded-lg">
+            <Table className="min-w-full">
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={USER_COLUMNS.length + 1} className="text-center text-gray-400 py-8">No users found. Please add a user to get started.</TableCell>
+                  {USER_COLUMNS.map(col => (
+                    <TableHead key={col.key} className="font-semibold text-sm text-gray-900 bg-gray-50">{col.label}</TableHead>
+                  ))}
+                  <TableHead className="font-semibold text-sm text-gray-900 bg-gray-50">Actions</TableHead>
                 </TableRow>
-              ) : (
-                pagedUsers.map((user, idx) => (
-                  <TableRow key={user.Username} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <TableCell>{user.Username}</TableCell>
-                    <TableCell>{user.Attributes.find((a: any) => a.Name === 'email')?.Value || ''}</TableCell>
-                    <TableCell>{user.Enabled ? 'Active' : 'Disabled'}</TableCell>
-                    <TableCell>{(user.groups && user.groups.length > 0) ? user.groups.join(', ') : <span className="text-gray-400">No roles</span>}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleManageRoles(user)} disabled={loading}>Manage Roles</Button>
-                        <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>Resend Invite</Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.Username)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
-                      </div>
-                    </TableCell>
+              </TableHeader>
+              <TableBody>
+                {pagedUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={USER_COLUMNS.length + 1} className="text-center text-gray-400 py-8">No users found. Please add a user to get started.</TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        <div className="flex gap-2 items-center mt-2">
-          <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1}>{'«'}</Button>
-          <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page === 1}>{'‹'}</Button>
-          <span className="text-sm">Page {page} of {totalPages}</span>
-          <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page === totalPages}>{'›'}</Button>
-          <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>{'»'}</Button>
-          <select
-            className="ml-2 border rounded px-2 py-1 text-sm focus:outline-none"
-            value={pageSize}
-            onChange={e => {
-              setPage(1);
-              // If you want to make page size dynamic, update pageSize state here
-            }}
-            style={{ minWidth: 80 }}
-            disabled
-          >
-            <option value={10}>10 / page</option>
-          </select>
-        </div>
-        {/* Manage Roles Modal */}
-        <Dialog open={showRoleModal} onOpenChange={setShowRoleModal}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Manage User Roles</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label className="text-sm font-medium">User: {selectedUser?.Username}</Label>
-              </div>
-              <div className="mt-4">
-                <Label className="text-sm font-medium">Assign Roles</Label>
-                <div className="flex flex-wrap gap-4 mt-2">
-                  {roles.map((role) => (
-                    <div key={role.GroupName} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`manage-role-${role.GroupName}`}
-                        checked={selectedRoles.includes(role.GroupName)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedRoles([...selectedRoles, role.GroupName]);
-                          } else {
-                            setSelectedRoles(selectedRoles.filter((g) => g !== role.GroupName));
-                          }
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor={`manage-role-${role.GroupName}`} className="text-sm">
-                        {role.GroupName}
-                      </Label>
-                    </div>
-                  ))}
+                ) : (
+                  pagedUsers.map((user, idx) => (
+                    <TableRow key={user.Username} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <TableCell>{user.Username}</TableCell>
+                      <TableCell>{user.Attributes.find((a: any) => a.Name === 'email')?.Value || ''}</TableCell>
+                      <TableCell>{user.Enabled ? 'Active' : 'Disabled'}</TableCell>
+                      <TableCell>{(user.groups && user.groups.length > 0) ? user.groups.join(', ') : <span className="text-gray-400">No roles</span>}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => handleManageRoles(user)} disabled={loading}>Manage Roles</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>Resend Invite</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.Username)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex gap-2 items-center mt-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1}>{'«'}</Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page === 1}>{'‹'}</Button>
+            <span className="text-sm">Page {page} of {totalPages}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page === totalPages}>{'›'}</Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>{'»'}</Button>
+            <select
+              className="ml-2 border rounded px-2 py-1 text-sm focus:outline-none"
+              value={pageSize}
+              onChange={e => {
+                setPage(1);
+                // If you want to make page size dynamic, update pageSize state here
+              }}
+              style={{ minWidth: 80 }}
+              disabled
+            >
+              <option value={10}>10 / page</option>
+            </select>
+          </div>
+          {/* Manage Roles Modal */}
+          <Dialog open={showRoleModal} onOpenChange={setShowRoleModal}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Manage User Roles</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">User: {selectedUser?.Username}</Label>
+                </div>
+                <div className="mt-4">
+                  <Label className="text-sm font-medium">Assign Roles</Label>
+                  <div className="flex flex-wrap gap-4 mt-2">
+                    {roles.map((role) => (
+                      <div key={role.GroupName} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={`manage-role-${role.GroupName}`}
+                          checked={selectedRoles.includes(role.GroupName)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRoles([...selectedRoles, role.GroupName]);
+                            } else {
+                              setSelectedRoles(selectedRoles.filter((g) => g !== role.GroupName));
+                            }
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <Label htmlFor={`manage-role-${role.GroupName}`} className="text-sm">
+                          {role.GroupName}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowRoleModal(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSaveRoles} disabled={loading}>
+                    {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Save Changes
+                  </Button>
                 </div>
               </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowRoleModal(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveRoles} disabled={loading}>
-                  {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
 
-        {/* Create User Modal */}
-        <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Create New User</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  placeholder="Enter username"
-                />
-              </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  placeholder="Enter email"
-                />
-              </div>
-              <div>
-                <Label className="text-sm font-medium">Assign Roles</Label>
-                <div className="flex flex-wrap gap-4 mt-2">
-                  {roles.map((role) => (
-                    <div key={role.GroupName} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`create-role-${role.GroupName}`}
-                        checked={newUser.groups?.includes(role.GroupName)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setNewUser({ ...newUser, groups: [...(newUser.groups || []), role.GroupName] });
-                          } else {
-                            setNewUser({ ...newUser, groups: (newUser.groups || []).filter((g) => g !== role.GroupName) });
-                          }
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor={`create-role-${role.GroupName}`} className="text-sm">
-                        {role.GroupName}
-                      </Label>
-                    </div>
-                  ))}
+          {/* Create User Modal */}
+          <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Create New User</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    value={newUser.username}
+                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                    placeholder="Enter username"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                    placeholder="Enter email"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Assign Roles</Label>
+                  <div className="flex flex-wrap gap-4 mt-2">
+                    {roles.map((role) => (
+                      <div key={role.GroupName} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={`create-role-${role.GroupName}`}
+                          checked={newUser.groups?.includes(role.GroupName)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setNewUser({ ...newUser, groups: [...(newUser.groups || []), role.GroupName] });
+                            } else {
+                              setNewUser({ ...newUser, groups: (newUser.groups || []).filter((g) => g !== role.GroupName) });
+                            }
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <Label htmlFor={`create-role-${role.GroupName}`} className="text-sm">
+                          {role.GroupName}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowCreateUserModal(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateUser} disabled={loading} className="bg-blue-600 hover:bg-blue-700 w-full">
+                    {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Create User
+                  </Button>
                 </div>
               </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowCreateUserModal(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleCreateUser} disabled={loading} className="bg-blue-600 hover:bg-blue-700 w-full">
-                  {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Create User
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
 
-        {/* Invitation Sent Modal */}
-        <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Invitation Sent</DialogTitle>
-            </DialogHeader>
-            <div className="py-4 text-center text-lg">Invitation email was sent successfully.</div>
-            <DialogFooter>
-              <Button onClick={() => setShowInviteSentModal(false)} autoFocus>OK</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+          {/* Invitation Sent Modal */}
+          <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Invitation Sent</DialogTitle>
+              </DialogHeader>
+              <div className="py-4 text-center text-lg">Invitation email was sent successfully.</div>
+              <DialogFooter>
+                <Button onClick={() => setShowInviteSentModal(false)} autoFocus>OK</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
       {section === 'activity' && (
         <div className="overflow-x-auto border rounded-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 p-2">
+            <div className="flex gap-2 items-center">
+              <Input
+                placeholder="Search user, action, or details..."
+                value={logSearch}
+                onChange={e => setLogSearch(e.target.value)}
+                className="w-56"
+              />
+              <select
+                value={logSeverityFilter}
+                onChange={e => setLogSeverityFilter(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="">All Severities</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="error">Error</option>
+                <option value="critical">Critical</option>
+              </select>
+              <select
+                value={logCategoryFilter}
+                onChange={e => setLogCategoryFilter(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="">All Categories</option>
+                <option value="auth">Auth</option>
+                <option value="user_management">User Management</option>
+                <option value="system">System</option>
+              </select>
+            </div>
+          </div>
           {logsLoading ? (
             <div className="flex justify-center items-center py-12">
               <LoadingSpinner size="md" message="Loading activity logs..." color="primary" />
             </div>
-          ) : auditLogs.length === 0 ? (
+          ) : filteredLogs.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No activity logs found.</div>
           ) : (
             <Table className="min-w-full">
@@ -461,21 +556,52 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {auditLogs.map((log, idx) => {
+                {filteredLogs.map((log, idx) => {
                   let parsedDetails: any = {};
                   try {
                     parsedDetails = log.details ? JSON.parse(log.details) : {};
                   } catch {}
+                  // Subtle color for severity
+                  let severityClass = '';
+                  if (["error", "critical"].includes((log.severity || '').toLowerCase())) severityClass = 'text-red-600 font-semibold';
+                  else if (["high", "warning"].includes((log.severity || '').toLowerCase())) severityClass = 'text-yellow-700 font-semibold';
+                  else severityClass = 'text-gray-700';
+                  // Expandable details for error/critical
+                  const isExpandable = ["error", "critical"].includes((log.severity || '').toLowerCase());
+                  const isExpanded = expandedLogId === log.id;
                   return (
-                    <TableRow key={log.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <TableCell>{log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}</TableCell>
-                      <TableCell>{log.user || ''}</TableCell>
-                      <TableCell>{log.action || ''}</TableCell>
-                      <TableCell>{log.severity || ''}</TableCell>
-                      <TableCell>{log.category || ''}</TableCell>
-                      <TableCell>{parsedDetails.originalDetails || ''}</TableCell>
-                      <TableCell>{log.resourceType || parsedDetails.resourceType || ''}</TableCell>
-                    </TableRow>
+                    <>
+                      <TableRow key={log.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <TableCell>{log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}</TableCell>
+                        <TableCell>{log.user || ''}</TableCell>
+                        <TableCell>{log.action || ''}</TableCell>
+                        <TableCell className={severityClass}>{log.severity || ''}</TableCell>
+                        <TableCell>{log.category || ''}</TableCell>
+                        <TableCell>
+                          {isExpandable ? (
+                            <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExpandedLogId(isExpanded ? null : log.id)}>
+                              {isExpanded ? (parsedDetails.originalDetails || log.details || '') : 'Show details'}
+                            </span>
+                          ) : (
+                            parsedDetails.originalDetails || log.details || ''
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span>{log.resourceId || ''}</span>
+                          {(log.resourceType || log.metadata) && (
+                            <button
+                              type="button"
+                              className="ml-1 text-blue-600 hover:text-blue-800 focus:outline-none"
+                              title="Show resource details"
+                              onClick={() => { setResourceModalData(log); setResourceModalOpen(true); }}
+                            >
+                              <Info className="inline w-4 h-4 align-middle" />
+                            </button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {/* Optionally, add a second row for expanded error details if you want more space */}
+                    </>
                   );
                 })}
               </TableBody>
@@ -483,6 +609,35 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
           )}
         </div>
       )}
+      {/* Resource Details Modal */}
+      <Dialog open={resourceModalOpen} onOpenChange={setResourceModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Resource Details</DialogTitle>
+          </DialogHeader>
+          {resourceModalData && (
+            <div className="space-y-2">
+              {resourceModalData.resourceType && (
+                <div><strong>Resource Type:</strong> {resourceModalData.resourceType}</div>
+              )}
+              {resourceModalData.resourceId && (
+                <div><strong>Resource ID:</strong> {resourceModalData.resourceId}</div>
+              )}
+              {resourceModalData.metadata && (
+                <div>
+                  <strong>Metadata:</strong>
+                  <pre className="bg-gray-100 rounded p-2 text-xs overflow-x-auto mt-1">
+                    {JSON.stringify(resourceModalData.metadata, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setResourceModalOpen(false)} autoFocus>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
