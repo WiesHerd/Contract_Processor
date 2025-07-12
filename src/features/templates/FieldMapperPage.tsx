@@ -12,7 +12,7 @@ import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft, Loader2 } fro
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { CommandDialog } from '@/components/ui/command';
 import localforage from 'localforage';
-import { updateMapping, setMapping, FieldMapping, TemplateMapping } from './mappingsSlice';
+import { updateMapping, setMapping, FieldMapping, LocalTemplateMapping } from './mappingsSlice';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -37,38 +37,236 @@ interface LocalMapping {
   notes?: string;
 }
 
-// Replace CommandSelect with Select-based dropdown
+// Enhanced Field Select with search and categorization
 function FieldSelect({
   value,
   options,
   onChange,
   placeholder = 'Select field',
+  fieldDataCount,
 }: {
   value: string | undefined;
   options: string[];
   onChange: (val: string) => void;
   placeholder?: string;
+  fieldDataCount?: Map<string, number>;
 }) {
   const NONE_VALUE = '--NONE--';
+  const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useClickOutside(containerRef, () => setOpen(false));
+
+  // Filter fields based on search query
+  const filteredOptions = options.filter(option =>
+    option.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!open) return;
+      
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setSearchQuery('');
+      } else if (e.key === 'Enter' && filteredOptions.length > 0) {
+        // Select first filtered option
+        onChange(filteredOptions[0]);
+        setOpen(false);
+        setSearchQuery('');
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, filteredOptions, onChange]);
+
+  // Categorize fields for better organization
+  const categorizeFields = (fields: string[]) => {
+    const categories = {
+      'Basic Info': [] as string[],
+      'FTE & Scheduling': [] as string[],
+      'Compensation': [] as string[],
+      'Dates & Time': [] as string[],
+      'Medical & Clinical': [] as string[],
+      'Administrative': [] as string[],
+      'Other': [] as string[]
+    };
+
+    fields.forEach(field => {
+      const fieldLower = field.toLowerCase();
+      
+      if (fieldLower.includes('name') || fieldLower.includes('id') || fieldLower.includes('email') || 
+          fieldLower.includes('phone') || fieldLower.includes('address') || fieldLower.includes('title')) {
+        categories['Basic Info'].push(field);
+      } else if (fieldLower.includes('fte') || fieldLower.includes('schedule') || fieldLower.includes('hours') ||
+                 fieldLower.includes('shift') || fieldLower.includes('call') || fieldLower.includes('clinic')) {
+        categories['FTE & Scheduling'].push(field);
+      } else if (fieldLower.includes('salary') || fieldLower.includes('wage') || fieldLower.includes('pay') ||
+                 fieldLower.includes('compensation') || fieldLower.includes('bonus') || fieldLower.includes('incentive') ||
+                 fieldLower.includes('wrvu') || fieldLower.includes('conversion') || fieldLower.includes('rate')) {
+        categories['Compensation'].push(field);
+      } else if (fieldLower.includes('date') || fieldLower.includes('year') || fieldLower.includes('month') ||
+                 fieldLower.includes('day') || fieldLower.includes('time') || fieldLower.includes('start') ||
+                 fieldLower.includes('end') || fieldLower.includes('expire')) {
+        categories['Dates & Time'].push(field);
+      } else if (fieldLower.includes('medical') || fieldLower.includes('clinical') || fieldLower.includes('specialty') ||
+                 fieldLower.includes('subspecialty') || fieldLower.includes('department') || fieldLower.includes('division') ||
+                 fieldLower.includes('provider') || fieldLower.includes('physician') || fieldLower.includes('doctor')) {
+        categories['Medical & Clinical'].push(field);
+      } else if (fieldLower.includes('admin') || fieldLower.includes('management') || fieldLower.includes('director') ||
+                 fieldLower.includes('chief') || fieldLower.includes('head') || fieldLower.includes('leader') ||
+                 fieldLower.includes('organization') || fieldLower.includes('contract') || fieldLower.includes('agreement')) {
+        categories['Administrative'].push(field);
+      } else {
+        categories['Other'].push(field);
+      }
+    });
+
+    // Sort fields within each category
+    Object.keys(categories).forEach(cat => {
+      categories[cat as keyof typeof categories].sort((a, b) => {
+        // Sort by data availability first, then alphabetically
+        const aCount = fieldDataCount?.get(a) || 0;
+        const bCount = fieldDataCount?.get(b) || 0;
+        if (aCount !== bCount) return bCount - aCount;
+        return a.localeCompare(b);
+      });
+    });
+
+    return categories;
+  };
+
+  const categorizedFields = categorizeFields(filteredOptions);
+
+  // Get data availability indicator
+  const getDataIndicator = (field: string) => {
+    const count = fieldDataCount?.get(field) || 0;
+    const total = fieldDataCount ? Array.from(fieldDataCount.values()).reduce((max, val) => Math.max(max, val), 0) : 0;
+    
+    if (count === 0) return { color: 'text-gray-400', text: 'No data' };
+    if (count === total) return { color: 'text-green-600', text: 'All records' };
+    if (count > total * 0.8) return { color: 'text-blue-600', text: 'Most records' };
+    if (count > total * 0.5) return { color: 'text-yellow-600', text: 'Some records' };
+    return { color: 'text-orange-600', text: 'Few records' };
+  };
 
   return (
-    <Select
-      value={value || NONE_VALUE}
-      onValueChange={(val) => onChange(val === NONE_VALUE ? '' : val)}
-    >
-      <SelectTrigger className="w-[200px]">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="max-h-96 overflow-y-auto">
-        <SelectItem value={NONE_VALUE}>-- None --</SelectItem>
-        {options.map(opt => (
-          <SelectItem key={opt} value={opt}>
-            {opt}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="relative" ref={containerRef}>
+      <Button
+        variant="outline"
+        role="combobox"
+        aria-expanded={open}
+        className="w-[280px] justify-between"
+        onClick={() => setOpen(!open)}
+      >
+        {value && value !== NONE_VALUE ? (
+          <span className="flex items-center">
+            <span className="truncate">{value}</span>
+            {fieldDataCount && (
+              <span className={`ml-2 text-xs ${getDataIndicator(value).color}`}>
+                •
+              </span>
+            )}
+          </span>
+        ) : (
+          placeholder
+        )}
+        <span className="ml-2 h-4 w-4 shrink-0 opacity-50">⌄</span>
+      </Button>
+      
+      {open && (
+        <div className="absolute z-50 w-[400px] mt-1 bg-white border rounded-md shadow-lg">
+          <div className="p-3 border-b">
+            <Input
+              placeholder="Search fields..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8"
+              autoFocus
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              {filteredOptions.length} of {options.length} fields
+            </div>
+          </div>
+          
+          <ScrollArea className="max-h-96">
+            <div className="p-2">
+              {/* None option */}
+              <div
+                className="flex items-center px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-gray-100"
+                onClick={() => {
+                  onChange('');
+                  setOpen(false);
+                  setSearchQuery('');
+                }}
+              >
+                <span className="text-gray-500">-- None --</span>
+              </div>
+              
+              {/* Categorized fields */}
+              {Object.entries(categorizedFields).map(([category, fields]) => {
+                if (fields.length === 0) return null;
+                
+                return (
+                  <div key={category} className="mt-3">
+                    <div className="px-2 py-1 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                      {category} ({fields.length})
+                    </div>
+                    {fields.map((field) => {
+                      const indicator = getDataIndicator(field);
+                      return (
+                        <div
+                          key={field}
+                          className="flex items-center justify-between px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-gray-100"
+                          onClick={() => {
+                            onChange(field);
+                            setOpen(false);
+                            setSearchQuery('');
+                          }}
+                        >
+                          <span className="truncate flex-1">{field}</span>
+                          {fieldDataCount && (
+                            <span className={`ml-2 text-xs ${indicator.color} flex items-center`}>
+                              <span className="w-2 h-2 rounded-full bg-current mr-1"></span>
+                              <span className="hidden sm:inline">{indicator.text}</span>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              
+              {filteredOptions.length === 0 && (
+                <div className="px-2 py-4 text-sm text-gray-500 text-center">
+                  No fields found matching "{searchQuery}"
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+    </div>
   );
+}
+
+// Click outside to close
+function useClickOutside(ref: React.RefObject<HTMLElement>, handler: () => void) {
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        handler();
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [ref, handler]);
 }
 
 // NOTE: Amplify is configured in main.tsx to use VITE_AWS_APPSYNC_GRAPHQL_ENDPOINT if present.
@@ -86,36 +284,56 @@ async function fetchTemplateMappingsByTemplateId(templateId: string) {
 // Upsert (create or update) TemplateMapping records for each placeholder
 async function saveTemplateMappings(mapping: FieldMapping[], templateId: string) {
   const results = [];
+  
+  // First, fetch existing mappings to see what exists
+  const existingMappings = await fetchTemplateMappingsByTemplateId(templateId);
+  
   for (const m of mapping) {
     if (!m.placeholder) continue;
+    
     const input = {
       templateID: templateId,
       field: m.placeholder,
       value: m.mappedColumn || '',
       notes: m.notes || '',
     };
+    
     console.log('Saving mapping:', input);
-    // Try update first, then create if not found
+    
+    // Check if mapping already exists
+    const existingMapping = existingMappings.find((existing: any) => 
+      existing.templateID === templateId && existing.field === m.placeholder
+    );
+    
     try {
+      if (existingMapping) {
+        // Update existing mapping
+        const updateInput = {
+          id: existingMapping.id,
+          ...input
+        };
+        
       const updateResult = await client.graphql({
         query: updateTemplateMapping,
-        variables: { input: { ...input, id: `${templateId}:${m.placeholder}` } },
+          variables: { input: updateInput },
       });
       console.log('Update result:', updateResult);
-    } catch (err) {
-      console.log('Update failed, trying create:', err);
-      // Add condition to only create if item does not exist
+        results.push(input);
+      } else {
+        // Create new mapping (let DynamoDB auto-generate the ID)
       const createResult = await client.graphql({
         query: createTemplateMapping,
-        variables: {
-          input: { ...input, id: `${templateId}:${m.placeholder}` },
-          condition: { id: { attributeExists: false } } as any,
-        },
+          variables: { input },
       });
       console.log('Create result:', createResult);
+        results.push(input);
+      }
+    } catch (err) {
+      console.error('Failed to save mapping:', input, err);
+      throw new Error(`Failed to save mapping for ${m.placeholder}: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-    results.push(input);
   }
+  
   return results;
 }
 
@@ -129,6 +347,7 @@ export default function FieldMapperPage() {
   const providers = useSelector((state: RootState) => state.provider.providers);
   const providerLoading = useSelector((state: RootState) => state.provider.loading);
   const [columns, setColumns] = useState<string[]>([]);
+  const [fieldDataCount, setFieldDataCount] = useState<Map<string, number>>(new Map());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,17 +355,103 @@ export default function FieldMapperPage() {
 
   // Fetch providers if missing on mount
   useEffect(() => {
+    console.log('FieldMapperPage - Provider state check:', {
+      providersCount: providers?.length || 0,
+      providerLoading,
+      hasTriedFetch,
+      firstProvider: providers?.[0] ? Object.keys(providers[0]) : 'No providers'
+    });
+    
     if ((!providers || providers.length === 0) && !providerLoading && !hasTriedFetch) {
+      console.log('FieldMapperPage - Fetching providers...');
       dispatch(fetchProviders());
       setHasTriedFetch(true);
     }
   }, [providers, providerLoading, hasTriedFetch, dispatch]);
 
   useEffect(() => {
+    console.log('FieldMapperPage - Column detection triggered:', {
+      providersCount: providers?.length || 0,
+      firstProviderKeys: providers?.[0] ? Object.keys(providers[0]) : 'No providers',
+      firstProviderDynamicFields: providers?.[0]?.dynamicFields ? Object.keys(providers[0].dynamicFields) : 'No dynamic fields'
+    });
+    
     if (providers && providers.length > 0) {
-      // Use keys from the first provider object as the source of truth for columns
-      const providerKeys = Object.keys(providers[0]);
-      setColumns(providerKeys);
+      // Collect all fields from all providers (both flat fields and dynamicFields)
+      const allFields = new Set<string>();
+      const dataCount = new Map<string, number>();
+      
+      providers.forEach((provider, index) => {
+        // Add flat fields (excluding system fields)
+        Object.keys(provider).forEach(key => {
+          if (key !== 'id' && key !== 'createdAt' && key !== 'updatedAt' && key !== '__typename' && key !== 'dynamicFields') {
+            allFields.add(key);
+            const value = (provider as any)[key];
+            // Count data availability
+            if (value !== null && value !== undefined && value !== '') {
+              dataCount.set(key, (dataCount.get(key) || 0) + 1);
+            }
+          }
+        });
+        
+        // Add dynamicFields (handle both string and object formats)
+        if (provider.dynamicFields) {
+          try {
+            // Parse dynamicFields if it's a JSON string, otherwise use as-is
+            const dynamicFieldsObj = typeof provider.dynamicFields === 'string' 
+              ? JSON.parse(provider.dynamicFields) 
+              : provider.dynamicFields;
+            
+            if (dynamicFieldsObj && typeof dynamicFieldsObj === 'object') {
+              const dynamicKeys = Object.keys(dynamicFieldsObj);
+              if (index < 3) {
+                console.log(`Provider ${index} dynamicFields keys:`, dynamicKeys.slice(0, 10), '... (showing first 10)');
+              }
+              
+              dynamicKeys.forEach(key => {
+                allFields.add(key);
+                const value = dynamicFieldsObj[key];
+                // Count data availability
+                if (value !== null && value !== undefined && value !== '') {
+                  dataCount.set(key, (dataCount.get(key) || 0) + 1);
+                }
+              });
+            }
+          } catch (e) {
+            if (index < 3) {
+              console.warn(`Provider ${index} dynamicFields parsing failed:`, e);
+            }
+          }
+        }
+      });
+      
+      // Convert to sorted array for consistent ordering
+      const sortedFields = Array.from(allFields).sort((a, b) => {
+        // Priority order for important fields
+        const priorityOrder = ['name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 'fte', 'baseSalary', 'startDate'];
+        const aPriority = priorityOrder.indexOf(a);
+        const bPriority = priorityOrder.indexOf(b);
+        
+        if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
+        if (aPriority !== -1) return -1;
+        if (bPriority !== -1) return 1;
+        
+        // Sort by data availability (fields with more data first)
+        const aCount = dataCount.get(a) || 0;
+        const bCount = dataCount.get(b) || 0;
+        if (aCount !== bCount) return bCount - aCount;
+        
+        // Alphabetical as fallback
+        return a.localeCompare(b);
+      });
+      
+      setColumns(sortedFields);
+      setFieldDataCount(dataCount);
+      console.log('Available columns for mapping:', sortedFields);
+      console.log('Total columns detected:', sortedFields.length);
+      console.log('All fields before sorting:', Array.from(allFields));
+      console.log('FTE fields found:', Array.from(allFields).filter(f => f.toLowerCase().includes('fte')));
+      console.log('Columns with data counts:', Object.fromEntries(Array.from(dataCount.entries()).sort((a, b) => b[1] - a[1])));
     }
   }, [providers]);
 
@@ -359,14 +664,7 @@ export default function FieldMapperPage() {
             </Button>
             <Button
               variant="default"
-              onClick={async () => {
-                await handleSave();
-                if (!hasUnmapped && !isSaving && !error) {
-                  toast.success('Mappings saved successfully!');
-                } else if (error) {
-                  toast.error('Failed to save mappings.');
-                }
-              }}
+              onClick={handleSave}
               className="gap-2"
               disabled={isSaving || hasUnmapped}
             >
@@ -385,8 +683,10 @@ export default function FieldMapperPage() {
       <div className="grid grid-cols-12 gap-6 min-h-[600px] items-stretch">
         {/* Left: Placeholders */}
         <Card className="col-span-3 p-4 bg-white flex flex-col h-full min-w-[220px]">
-          <h2 className="text-lg font-semibold mb-2">Placeholders</h2>
-          <span className="text-xs text-gray-500 mb-2">{filteredPlaceholders.length} of {template.placeholders.length} placeholders</span>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold mb-1">Template Placeholders</h2>
+            <p className="text-xs text-gray-500">{filteredPlaceholders.length} of {template.placeholders.length} placeholders</p>
+          </div>
           <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-1">
               {filteredPlaceholders.length === 0 ? (
@@ -418,8 +718,8 @@ export default function FieldMapperPage() {
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <h2 className="text-lg font-semibold">Mapping Progress</h2>
-                <p className="text-sm text-gray-500">
-                  {mappedCount} of {totalCount} fields mapped ({percent}%)
+                <p className="text-sm text-gray-600">
+                  {mappedCount} of {totalCount} template fields mapped ({percent}%) • {columns.length} database fields available
                 </p>
               </div>
               {hasUnmapped && (
@@ -431,7 +731,7 @@ export default function FieldMapperPage() {
             </div>
             {/* Filter tabs and search on the same row */}
             <div className="flex items-center justify-between mb-2">
-              <Tabs value={filter} onValueChange={setFilter} className="">
+              <Tabs value={filter} onValueChange={(value) => setFilter(value as 'all' | 'mapped' | 'unmapped')} className="">
                 <TabsList className="flex gap-2 border-b border-blue-200 bg-transparent justify-start">
                   <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
                     data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
@@ -500,10 +800,32 @@ export default function FieldMapperPage() {
                                   )
                                 );
                               }}
+                              fieldDataCount={fieldDataCount}
                             />
                           </TableCell>
                           <TableCell className="font-mono text-gray-500 truncate max-w-xs">
-                            {m.mappedColumn && provider && provider[m.mappedColumn] ? String(provider[m.mappedColumn]) : <i className="text-gray-400">No preview</i>}
+                            {m.mappedColumn && provider ? (() => {
+                              // First try flat field
+                              let value = (provider as any)[m.mappedColumn];
+                              
+                              // If not found, try dynamicFields
+                              if (value === null || value === undefined) {
+                                if (provider.dynamicFields) {
+                                  try {
+                                    const dynamicFieldsObj = typeof provider.dynamicFields === 'string' 
+                                      ? JSON.parse(provider.dynamicFields) 
+                                      : provider.dynamicFields;
+                                    if (dynamicFieldsObj && typeof dynamicFieldsObj === 'object') {
+                                      value = dynamicFieldsObj[m.mappedColumn];
+                                    }
+                                  } catch (e) {
+                                    // Ignore parsing errors for preview
+                                  }
+                                }
+                              }
+                              
+                              return value !== null && value !== undefined ? String(value) : <i className="text-gray-400">No preview</i>;
+                            })() : <i className="text-gray-400">No preview</i>}
                           </TableCell>
                           <TableCell>
                             <Input

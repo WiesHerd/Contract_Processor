@@ -287,6 +287,63 @@ export const deleteTemplateMapping = /* GraphQL */ `mutation DeleteTemplateMappi
   APITypes.DeleteTemplateMappingMutationVariables,
   APITypes.DeleteTemplateMappingMutation
 >;
+export const createUserPreferences = /* GraphQL */ `mutation CreateUserPreferences(
+  $input: CreateUserPreferencesInput!
+  $condition: ModelUserPreferencesConditionInput
+) {
+  createUserPreferences(input: $input, condition: $condition) {
+    id
+    userId
+    screen
+    preferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateUserPreferencesMutationVariables,
+  APITypes.CreateUserPreferencesMutation
+>;
+export const updateUserPreferences = /* GraphQL */ `mutation UpdateUserPreferences(
+  $input: UpdateUserPreferencesInput!
+  $condition: ModelUserPreferencesConditionInput
+) {
+  updateUserPreferences(input: $input, condition: $condition) {
+    id
+    userId
+    screen
+    preferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateUserPreferencesMutationVariables,
+  APITypes.UpdateUserPreferencesMutation
+>;
+export const deleteUserPreferences = /* GraphQL */ `mutation DeleteUserPreferences(
+  $input: DeleteUserPreferencesInput!
+  $condition: ModelUserPreferencesConditionInput
+) {
+  deleteUserPreferences(input: $input, condition: $condition) {
+    id
+    userId
+    screen
+    preferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteUserPreferencesMutationVariables,
+  APITypes.DeleteUserPreferencesMutation
+>;
 export const createMapping = /* GraphQL */ `mutation CreateMapping(
   $input: CreateMappingInput!
   $condition: ModelMappingConditionInput

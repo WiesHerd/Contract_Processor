@@ -8,6 +8,7 @@ import { selectProviders, selectProvidersLoading, selectProvidersError } from '@
 import ProviderManager from './ProviderManager';
 import Papa from 'papaparse';
 import { mapCsvRowToProviderFields } from './ProviderManager';
+import { mapCsvHeader, parseFieldValue, isSchemaField } from '../../config/providerSchema';
 import { toast } from 'sonner';
 import type { Provider } from '@/types/provider';
 import type { CreateProviderInput } from '@/API';
@@ -28,9 +29,7 @@ import type { LoadingAction } from '@/types/provider';
 
 // Enterprise-grade field mapping configuration
 const REQUIRED_FIELDS = [
-  'name', 'providerType', 'specialty', 'fte', 'baseSalary', 'startDate', 'contractTerm',
-  'ptoDays', 'holidayDays', 'cmeDays', 'cmeAmount', 'signingBonus', 'relocationBonus', 'qualityBonus',
-  'organizationName'
+  'name', 'specialty'  // Only require the truly essential fields
 ];
 
 const FIELD_DISPLAY_NAMES: Record<string, string> = {
@@ -416,17 +415,21 @@ export default function ProviderDataManager() {
               }
             }
           });
-          // Add any additional unmapped columns as dynamic fields
-          const mappedKeys = Object.keys(provider);
-          const unmappedColumns = headers.filter(header => !mappedKeys.includes(header));
-          if (unmappedColumns.length > 0) {
-            const dynamicFieldsObj: Record<string, any> = {};
-            unmappedColumns.forEach(column => {
-              const value = data[i][column];
+          // Add any additional unmapped columns as dynamic fields (only truly unknown columns)
+          const dynamicFieldsObj: Record<string, any> = {};
+          headers.forEach(header => {
+            const schemaField = mapCsvHeader(header);
+            if (!schemaField) {
+              // This is a truly unknown column, store in dynamicFields
+              const value = data[i][header];
               if (value !== undefined && value !== '') {
-                dynamicFieldsObj[column] = value;
+                dynamicFieldsObj[header] = value;
+                console.log(`Unknown column detected: "${header}" - storing in dynamicFields`);
               }
-            });
+            }
+          });
+          
+          if (Object.keys(dynamicFieldsObj).length > 0) {
             provider.dynamicFields = JSON.stringify(dynamicFieldsObj);
           }
           // Robust validation: check all required fields
@@ -482,19 +485,151 @@ export default function ProviderDataManager() {
     });
   }, [dispatch]);
 
-  // Download template with current required fields
   const downloadTemplate = () => {
-    const templateHeaders = REQUIRED_FIELDS.map(field => FIELD_DISPLAY_NAMES[field]);
-    const template = templateHeaders.join(',') + '\n';
-    const blob = new Blob([template], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'provider-template.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    const headers = [
+      'Provider Name',
+      'Employee ID',
+      'Provider Type',
+      'Specialty',
+      'Subspecialty',
+      'FTE',
+      'Administrative FTE',
+      'Administrative Role',
+      'Years of Experience',
+      'Hourly Wage',
+      'Base Salary',
+      'Original Agreement Date',
+      'Organization Name',
+      'Start Date',
+      'Contract Term',
+      'PTO Days',
+      'Holiday Days',
+      'CME Days',
+      'CME Amount',
+      'Signing Bonus',
+      'Relocation Bonus',
+      'Education Bonus',
+      'Quality Bonus',
+      'Compensation Type',
+      'Conversion Factor',
+      'wRVU Target',
+      'Compensation Year',
+      'Credentials'
+    ];
+    
+    const csv = Papa.unparse([headers]);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'provider_template.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const downloadFullCSV = () => {
+    if (providers.length === 0) {
+      toast.error('No provider data to export');
+      return;
+    }
+
+    // Get only field names that have actual data in at least one provider
+    const allFieldNames = new Set<string>();
+    const fieldDataCount = new Map<string, number>();
+    
+    providers.forEach(provider => {
+      Object.keys(provider).forEach(key => {
+        if (key !== '__typename' && key !== 'id' && key !== 'createdAt' && key !== 'updatedAt' && key !== 'dynamicFields') {
+          const value = provider[key as keyof typeof provider];
+          // Only include fields with actual data (not empty strings, null, undefined)
+          if (value !== null && value !== undefined && value !== '' && typeof value === 'string' ? value.trim() !== '' : true) {
+            allFieldNames.add(key);
+            fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
+          }
+        }
+      });
+      
+      // Also include dynamic fields that have data
+      if (provider.dynamicFields) {
+        try {
+          const dynamicData = JSON.parse(provider.dynamicFields);
+          Object.keys(dynamicData).forEach(key => {
+            const value = dynamicData[key];
+            // Only include fields with actual data (not empty strings, null, undefined)
+            if (value !== null && value !== undefined && value !== '' && String(value).trim() !== '') {
+              allFieldNames.add(key);
+              fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
+            }
+          });
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+    });
+
+    // Filter out fields that have data in less than 1% of providers (to remove truly orphaned fields)
+    const minDataThreshold = Math.max(1, Math.floor(providers.length * 0.01));
+    const fieldsWithSufficientData = Array.from(allFieldNames).filter(field => {
+      const dataCount = fieldDataCount.get(field) || 0;
+      return dataCount >= minDataThreshold;
+    });
+
+    const sortedFieldNames = fieldsWithSufficientData.sort();
+    
+    // Convert providers to CSV format
+    const csvData = providers.map(provider => {
+      const row: Record<string, any> = {};
+      
+      sortedFieldNames.forEach(fieldName => {
+        if (fieldName === 'dynamicFields') {
+          // Skip the dynamicFields JSON field itself
+          return;
+        }
+        
+        let value = provider[fieldName as keyof typeof provider];
+        
+        // If field not found in main provider object, check dynamic fields
+        if (value === undefined && provider.dynamicFields) {
+          try {
+            const dynamicData = JSON.parse(provider.dynamicFields);
+            value = dynamicData[fieldName];
+          } catch (e) {
+            // Ignore parsing errors
+          }
+        }
+        
+        // Format the value
+        if (value === null || value === undefined) {
+          row[fieldName] = '';
+        } else if (typeof value === 'object') {
+          row[fieldName] = JSON.stringify(value);
+        } else {
+          row[fieldName] = String(value);
+        }
+      });
+      
+      return row;
+    });
+
+    // Generate CSV
+    const csv = Papa.unparse(csvData, { header: true });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `provider_data_full_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast.success(`Exported ${providers.length} providers to CSV`);
+    }
   };
 
   return (
@@ -561,6 +696,15 @@ export default function ProviderDataManager() {
               >
                 <Download className="w-4 h-4 mr-2" />
                 Download CSV Template
+              </Button>
+              <Button
+                variant="outline"
+                className="bg-white"
+                onClick={downloadFullCSV}
+                disabled={loading || providers.length === 0}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download Full CSV
               </Button>
             </div>
             {/* Right group: Sticky toggle, Clear Table */}

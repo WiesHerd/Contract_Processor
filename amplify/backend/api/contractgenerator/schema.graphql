@@ -66,6 +66,17 @@ type TemplateMapping @model @auth(rules: [{ allow: owner, ownerField: "owner", o
   owner: String
 }
 
+# User preferences for enterprise-grade personalization
+type UserPreferences @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+  id: ID!
+  userId: String! @index(name: "byUser", queryField: "userPreferencesByUserId")
+  screen: String! # 'providers', 'templates', 'generator', etc.
+  preferences: AWSJSON! # JSON object containing all preferences
+  createdAt: AWSDateTime
+  updatedAt: AWSDateTime
+  owner: String
+}
+
 # Provider-specific field mappings (for custom overrides)
 type Mapping @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!

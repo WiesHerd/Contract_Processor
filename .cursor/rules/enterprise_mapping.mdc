@@ -1,0 +1,213 @@
+# Enterprise-Grade Template Mapping System
+
+## 🔒 **Critical Isolation Principles**
+
+### **Template Mapping Isolation**
+- **NEVER** allow mappings from one template to be visible, loaded, or saved under another template
+- Each mapping record must be uniquely associated with a specific template ID
+- Template mappings are **completely isolated** by template ID in the database
+- All mapping operations must include template ID validation
+
+### **Database Constraints**
+- **Primary Key**: `(templateID, placeholder)` - ensures unique mapping per template
+- **Active Flag**: `isActive: true` - allows soft deletion and versioning
+- **Audit Trail**: All mapping changes are logged with user, timestamp, and action
+- **Version Control**: Each mapping includes version metadata for rollback capability
+
+## 🛡️ **Enterprise Safeguards**
+
+### **1. Atomic Save Operations**
+```typescript
+// ✅ DO: Use atomic save that deletes all old mappings before creating new ones
+const result = await awsTemplateMappings.saveTemplateMappingsAtomic(
+  templateId,
+  mappings,
+  userId
+);
+
+// ❌ DON'T: Mix old and new mappings without proper cleanup
+```
+
+### **2. Template ID Validation**
+```typescript
+// ✅ DO: Always validate template ID exists before mapping operations
+const template = await awsTemplates.get(templateId);
+if (!template) {
+  throw new Error(`Template ${templateId} not found`);
+}
+
+// ❌ DON'T: Assume template exists or reuse template IDs
+```
+
+### **3. Hydration Requirements**
+```typescript
+// ✅ DO: Always hydrate mapping state to include ALL placeholders
+const hydrated = template.placeholders.map(ph => {
+  const found = existingMappings.find(m => m.placeholder === ph);
+  return found || { placeholder: ph, mappedColumn: undefined };
+});
+
+// ❌ DON'T: Show partial mappings or skip unmapped placeholders
+```
+
+### **4. Unique Template IDs**
+```typescript
+// ✅ DO: Generate new unique ID for each template upload
+const templateId = uuidv4(); // Never reuse IDs
+
+// ❌ DON'T: Reuse template IDs for different files
+```
+
+## 📊 **Validation & Integrity Checks**
+
+### **Real-Time Validation**
+- **Orphaned Mappings**: Detect mappings for placeholders that no longer exist in template
+- **Unmapped Placeholders**: Identify placeholders without corresponding mappings
+- **Template Integrity**: Verify template exists and is accessible
+- **Mapping Completeness**: Ensure all required placeholders are mapped
+
+### **Validation Functions**
+```typescript
+// Enterprise validation with detailed reporting
+const validation = await awsTemplateMappings.validateTemplateMappings(templateId);
+if (!validation.isValid) {
+  console.error('Mapping validation failed:', validation.issues);
+}
+```
+
+## 🔄 **State Management Rules**
+
+### **Redux State Isolation**
+- Each template's mappings are stored separately in Redux
+- Template switching clears mapping state to prevent cross-contamination
+- All mapping operations include template ID for proper isolation
+
+### **Loading & Saving Patterns**
+```typescript
+// ✅ DO: Load mappings for specific template only
+const mappings = await awsTemplateMappings.getMappingsByTemplateId(templateId);
+
+// ✅ DO: Save with atomic operation
+await awsTemplateMappings.saveTemplateMappingsAtomic(templateId, mappings, userId);
+
+// ❌ DON'T: Load all mappings or save without template ID
+```
+
+## 🧪 **Testing Requirements**
+
+### **Isolation Tests**
+- Test with 30+ templates to ensure no cross-contamination
+- Verify mappings for Template A never appear under Template B
+- Test template deletion removes all associated mappings
+- Test concurrent mapping operations on different templates
+
+### **Integrity Tests**
+- Test orphaned mapping detection
+- Test unmapped placeholder identification
+- Test validation with corrupted data
+- Test audit trail completeness
+
+## 📋 **UI/UX Requirements**
+
+### **Template Context**
+- Always display current template name/ID in mapping UI
+- Clear indication when switching between templates
+- Prevent mapping operations without valid template context
+
+### **Validation Feedback**
+- Real-time validation status indicators
+- Clear error messages for mapping issues
+- Progress indicators for mapping completion
+- Integrity warnings for orphaned mappings
+
+## 🔍 **Audit & Compliance**
+
+### **Audit Logging**
+- All mapping changes logged with timestamp, user, and action
+- Template ID included in all audit entries
+- Mapping count and validation status tracked
+- Rollback capability for mapping changes
+
+### **Compliance Features**
+- Mapping version history
+- User attribution for all changes
+- Integrity validation reports
+- Export capabilities for compliance audits
+
+## 🚨 **Error Handling**
+
+### **Critical Errors**
+- Template not found
+- Orphaned mappings detected
+- Unmapped placeholders present
+- Database constraint violations
+
+### **Recovery Procedures**
+- Automatic validation on template load
+- Manual validation triggers
+- Mapping reset capabilities
+- Integrity repair functions
+
+## 📈 **Performance Considerations**
+
+### **Large Template Sets**
+- Efficient querying for 30+ templates
+- Pagination for mapping lists
+- Caching strategies for frequently accessed mappings
+- Background validation for large template sets
+
+### **Bulk Operations**
+- Atomic bulk save operations
+- Batch validation processes
+- Progress indicators for large operations
+- Error recovery for partial failures
+
+## 🔧 **Implementation Checklist**
+
+### **Database Level**
+- [ ] Unique constraint on (templateID, placeholder)
+- [ ] Active flag for soft deletion
+- [ ] Audit fields (createdBy, lastModifiedBy, timestamp)
+- [ ] Version field for rollback capability
+
+### **Application Level**
+- [ ] Template ID validation in all operations
+- [ ] Atomic save operations
+- [ ] Complete state hydration
+- [ ] Real-time validation
+- [ ] Audit logging
+
+### **UI Level**
+- [ ] Template context display
+- [ ] Validation status indicators
+- [ ] Error handling and user feedback
+- [ ] Progress tracking
+- [ ] Integrity warnings
+
+## 🎯 **Success Metrics**
+
+### **Reliability**
+- Zero cross-template mapping contamination
+- 100% mapping validation accuracy
+- Complete audit trail coverage
+- Successful recovery from all error states
+
+### **Performance**
+- Sub-second mapping load times
+- Efficient validation for 30+ templates
+- Smooth UI interactions
+- Responsive error handling
+
+### **User Experience**
+- Clear mapping status indicators
+- Intuitive error messages
+- Helpful validation feedback
+- Seamless template switching
+
+---
+
+**Remember**: The mapping system must be **bulletproof** against cross-template contamination. Every operation must validate template isolation, and all state management must respect template boundaries. This is critical for enterprise reliability with 30+ templates.
+description:
+globs:
+alwaysApply: false
+---

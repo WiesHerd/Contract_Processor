@@ -362,6 +362,53 @@ export type DeleteTemplateMappingInput = {
   id: string,
 };
 
+export type CreateUserPreferencesInput = {
+  id?: string | null,
+  userId: string,
+  screen: string,
+  preferences: string,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type ModelUserPreferencesConditionInput = {
+  userId?: ModelStringInput | null,
+  screen?: ModelStringInput | null,
+  preferences?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  and?: Array< ModelUserPreferencesConditionInput | null > | null,
+  or?: Array< ModelUserPreferencesConditionInput | null > | null,
+  not?: ModelUserPreferencesConditionInput | null,
+};
+
+export type UserPreferences = {
+  __typename: "UserPreferences",
+  id: string,
+  userId: string,
+  screen: string,
+  preferences: string,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type UpdateUserPreferencesInput = {
+  id: string,
+  userId?: string | null,
+  screen?: string | null,
+  preferences?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type DeleteUserPreferencesInput = {
+  id: string,
+};
+
 export type CreateMappingInput = {
   id?: string | null,
   templateID: string,
@@ -651,6 +698,25 @@ export type ModelTemplateMappingConnection = {
   nextToken?: string | null,
 };
 
+export type ModelUserPreferencesFilterInput = {
+  id?: ModelIDInput | null,
+  userId?: ModelStringInput | null,
+  screen?: ModelStringInput | null,
+  preferences?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  and?: Array< ModelUserPreferencesFilterInput | null > | null,
+  or?: Array< ModelUserPreferencesFilterInput | null > | null,
+  not?: ModelUserPreferencesFilterInput | null,
+};
+
+export type ModelUserPreferencesConnection = {
+  __typename: "ModelUserPreferencesConnection",
+  items:  Array<UserPreferences | null >,
+  nextToken?: string | null,
+};
+
 export type ModelMappingFilterInput = {
   id?: ModelIDInput | null,
   templateID?: ModelIDInput | null,
@@ -869,6 +935,18 @@ export type ModelSubscriptionTemplateMappingFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionTemplateMappingFilterInput | null > | null,
   or?: Array< ModelSubscriptionTemplateMappingFilterInput | null > | null,
+  owner?: ModelStringInput | null,
+};
+
+export type ModelSubscriptionUserPreferencesFilterInput = {
+  id?: ModelSubscriptionIDInput | null,
+  userId?: ModelSubscriptionStringInput | null,
+  screen?: ModelSubscriptionStringInput | null,
+  preferences?: ModelSubscriptionStringInput | null,
+  createdAt?: ModelSubscriptionStringInput | null,
+  updatedAt?: ModelSubscriptionStringInput | null,
+  and?: Array< ModelSubscriptionUserPreferencesFilterInput | null > | null,
+  or?: Array< ModelSubscriptionUserPreferencesFilterInput | null > | null,
   owner?: ModelStringInput | null,
 };
 
@@ -1192,6 +1270,60 @@ export type DeleteTemplateMappingMutation = {
     field: string,
     value?: string | null,
     notes?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type CreateUserPreferencesMutationVariables = {
+  input: CreateUserPreferencesInput,
+  condition?: ModelUserPreferencesConditionInput | null,
+};
+
+export type CreateUserPreferencesMutation = {
+  createUserPreferences?:  {
+    __typename: "UserPreferences",
+    id: string,
+    userId: string,
+    screen: string,
+    preferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type UpdateUserPreferencesMutationVariables = {
+  input: UpdateUserPreferencesInput,
+  condition?: ModelUserPreferencesConditionInput | null,
+};
+
+export type UpdateUserPreferencesMutation = {
+  updateUserPreferences?:  {
+    __typename: "UserPreferences",
+    id: string,
+    userId: string,
+    screen: string,
+    preferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type DeleteUserPreferencesMutationVariables = {
+  input: DeleteUserPreferencesInput,
+  condition?: ModelUserPreferencesConditionInput | null,
+};
+
+export type DeleteUserPreferencesMutation = {
+  deleteUserPreferences?:  {
+    __typename: "UserPreferences",
+    id: string,
+    userId: string,
+    screen: string,
+    preferences: string,
     createdAt?: string | null,
     updatedAt?: string | null,
     owner?: string | null,
@@ -1632,6 +1764,46 @@ export type ListTemplateMappingsQuery = {
   } | null,
 };
 
+export type GetUserPreferencesQueryVariables = {
+  id: string,
+};
+
+export type GetUserPreferencesQuery = {
+  getUserPreferences?:  {
+    __typename: "UserPreferences",
+    id: string,
+    userId: string,
+    screen: string,
+    preferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type ListUserPreferencesQueryVariables = {
+  filter?: ModelUserPreferencesFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type ListUserPreferencesQuery = {
+  listUserPreferences?:  {
+    __typename: "ModelUserPreferencesConnection",
+    items:  Array< {
+      __typename: "UserPreferences",
+      id: string,
+      userId: string,
+      screen: string,
+      preferences: string,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+      owner?: string | null,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
 export type GetMappingQueryVariables = {
   id: string,
 };
@@ -1878,6 +2050,31 @@ export type TemplateMappingsByTemplateIDQuery = {
       field: string,
       value?: string | null,
       notes?: string | null,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+      owner?: string | null,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type UserPreferencesByUserIdQueryVariables = {
+  userId: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelUserPreferencesFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type UserPreferencesByUserIdQuery = {
+  userPreferencesByUserId?:  {
+    __typename: "ModelUserPreferencesConnection",
+    items:  Array< {
+      __typename: "UserPreferences",
+      id: string,
+      userId: string,
+      screen: string,
+      preferences: string,
       createdAt?: string | null,
       updatedAt?: string | null,
       owner?: string | null,
@@ -2291,6 +2488,60 @@ export type OnDeleteTemplateMappingSubscription = {
     field: string,
     value?: string | null,
     notes?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnCreateUserPreferencesSubscriptionVariables = {
+  filter?: ModelSubscriptionUserPreferencesFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnCreateUserPreferencesSubscription = {
+  onCreateUserPreferences?:  {
+    __typename: "UserPreferences",
+    id: string,
+    userId: string,
+    screen: string,
+    preferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnUpdateUserPreferencesSubscriptionVariables = {
+  filter?: ModelSubscriptionUserPreferencesFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnUpdateUserPreferencesSubscription = {
+  onUpdateUserPreferences?:  {
+    __typename: "UserPreferences",
+    id: string,
+    userId: string,
+    screen: string,
+    preferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnDeleteUserPreferencesSubscriptionVariables = {
+  filter?: ModelSubscriptionUserPreferencesFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnDeleteUserPreferencesSubscription = {
+  onDeleteUserPreferences?:  {
+    __typename: "UserPreferences",
+    id: string,
+    userId: string,
+    screen: string,
+    preferences: string,
     createdAt?: string | null,
     updatedAt?: string | null,
     owner?: string | null,

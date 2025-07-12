@@ -4,6 +4,13 @@ import { createProvider } from '../../../graphql/mutations';
 import { performHealthCheck, validateHealthCheck } from '../../../utils/aws-health-check';
 import Papa from 'papaparse';
 import type { CreateProviderInput } from '../../../API';
+import { 
+  PROVIDER_SCHEMA, 
+  createFieldLookup, 
+  mapCsvHeader, 
+  parseFieldValue, 
+  isSchemaField 
+} from '../../../config/providerSchema';
 
 type CompensationModel = 'BASE' | 'PRODUCTIVITY' | 'HYBRID' | 'HOSPITALIST' | 'LEADERSHIP';
 
@@ -35,6 +42,7 @@ const DEFAULT_OPTIONS: Required<UploadOptions> = {
 
 export class ProviderUploadService {
   private client = generateClient();
+  private fieldLookup = createFieldLookup();
 
   constructor(private options: UploadOptions = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -104,86 +112,52 @@ export class ProviderUploadService {
         skipEmptyLines: true,
         complete: (results) => {
           try {
-            // Explicit header mapping for robust CSV parsing
-            const headerMap: Record<string, string> = {
-              'Employee ID': 'employeeId',
-              'Provider Name': 'providerName',
-              'Provider Type': 'providerType',
-              'Specialty': 'specialty',
-              'Subspecialty': 'subspecialty',
-              'FTE': 'fte',
-              'Administrative FTE': 'administrativeFte',
-              'Position Title': 'administrativeRole',
-              'Years of Experience': 'yearsExperience',
-              'Hourly Wage': 'hourlyWage',
-              'BaseSalary': 'baseSalary',
-              'OriginalAgreementDate': 'originalAgreementDate',
-              'OrganizationName': 'organizationName',
-              'StartDate': 'startDate',
-              'ContractTerm': 'contractTerm',
-              'PTODays': 'ptoDays',
-              'HolidayDays': 'holidayDays',
-              'CMEDays': 'cmeDays',
-              'CMEAmount': 'cmeAmount',
-              'SigningBonus': 'signingBonus',
-              'RelocationBonus': 'relocationBonus',
-              'QualityBonus': 'qualityBonus',
-              'Compensation Type': 'compensationModel',
-              'ConversionFactor': 'conversionFactor',
-              'wRVUTarget': 'wRVUTarget',
-              'Compensation Year': 'compensationYear',
-              'Credentials': 'credentials',
-              // Add more as needed
-            };
-
-            const normalizeKey = (key: string) =>
-              headerMap[key.trim()] ||
-              key.replace(/[_\s]+(.)?/g, (_, c) => c ? c.toUpperCase() : '').replace(/^[A-Z]/, c => c.toLowerCase());
-
             const providers = results.data.map((row) => {
-              // Build a new row with normalized keys
-              const normalizedRow: Record<string, string> = {};
-              Object.keys(row).forEach((key) => {
-                normalizedRow[normalizeKey(key)] = row[key];
+              // Initialize provider with required fields
+              const provider: any = {
+                id: crypto.randomUUID(),
+                name: '',
+                compensationModel: 'BASE' as CompensationModel,
+              };
+
+              // Separate flat fields from dynamic fields
+              const dynamicFields: Record<string, any> = {};
+              
+              // Process each CSV column
+              Object.entries(row).forEach(([csvHeader, value]) => {
+                if (!value || value.trim() === '') return;
+
+                // Try to map CSV header to schema field
+                const schemaField = mapCsvHeader(csvHeader);
+                
+                if (schemaField) {
+                  // Store as flat field in DynamoDB
+                  const parsedValue = parseFieldValue(schemaField, value);
+                  if (parsedValue !== null) {
+                    provider[schemaField] = parsedValue;
+                  }
+                } else {
+                  // Store as dynamic field only if truly unknown
+                  console.log(`Unknown column detected: "${csvHeader}" - storing in dynamicFields`);
+                  dynamicFields[csvHeader] = value.trim();
+                }
               });
 
-              const compensationModel = (normalizedRow.compensationModel || 'BASE').toUpperCase() as CompensationModel;
-              return {
-                id: normalizedRow.id || crypto.randomUUID(),
-                name: normalizedRow.name || '',
-                startDate: normalizedRow.startDate || '', // Take as-is, do not parse
-                fte: parseFloat(normalizedRow.fte) || 1.0,
-                baseSalary: parseFloat(normalizedRow.baseSalary) || 0,
-                compensationModel: compensationModel,
-                employeeId: normalizedRow.employeeId || undefined,
-                providerType: normalizedRow.providertype || normalizedRow.providerType || undefined,
-                specialty: normalizedRow.specialty || undefined,
-                subspecialty: normalizedRow.subspecialty || undefined,
-                administrativeFte: normalizedRow.administrativefte ? parseFloat(normalizedRow.administrativefte) : undefined,
-                administrativeRole: normalizedRow.administrativerole || undefined,
-                yearsExperience: normalizedRow.yearsofexperience ? parseInt(normalizedRow.yearsofexperience) : undefined,
-                hourlyWage: normalizedRow.hourlywage ? parseFloat(normalizedRow.hourlywage) : undefined,
-                originalAgreementDate: normalizedRow.originalagreementdate || undefined, // Take as-is, do not parse
-                organizationName: normalizedRow.organizationname || undefined,
-                contractTerm: normalizedRow.contractterm || undefined,
-                ptoDays: normalizedRow.ptodays ? parseInt(normalizedRow.ptodays) : undefined,
-                holidayDays: normalizedRow.holidaydays ? parseInt(normalizedRow.holidaydays) : undefined,
-                cmeDays: normalizedRow.cmedays ? parseInt(normalizedRow.cmedays) : undefined,
-                cmeAmount: normalizedRow.cmeamount ? parseFloat(normalizedRow.cmeamount) : undefined,
-                signingBonus: normalizedRow.signingbonus ? parseFloat(normalizedRow.signingbonus) : undefined,
-                educationBonus: normalizedRow.educationbonus ? parseFloat(normalizedRow.educationbonus) : undefined,
-                qualityBonus: normalizedRow.qualitybonus ? parseFloat(normalizedRow.qualitybonus) : undefined,
-                conversionFactor: normalizedRow.conversionfactor ? parseFloat(normalizedRow.conversionfactor) : undefined,
-                wRVUTarget: normalizedRow.wrvutarget ? parseFloat(normalizedRow.wrvutarget) : undefined,
-                compensationYear: normalizedRow.compensationyear || undefined,
-                credentials: normalizedRow.credentials || undefined,
-                fteBreakdown: normalizedRow.ftebreakdown ? JSON.parse(normalizedRow.ftebreakdown) : [{
-                  activity: 'Clinical',
-                  percentage: 100,
-                }],
-                templateTag: normalizedRow.templatetag || undefined,
-              } as Provider;
+              // Only add dynamicFields if there are truly unknown columns
+              if (Object.keys(dynamicFields).length > 0) {
+                provider.dynamicFields = JSON.stringify(dynamicFields);
+                console.log(`Provider ${provider.name} has ${Object.keys(dynamicFields).length} dynamic fields:`, Object.keys(dynamicFields));
+              }
+
+              // Ensure required fields have defaults
+              if (!provider.name) provider.name = 'Unknown Provider';
+              if (!provider.fte) provider.fte = 1.0;
+              if (!provider.compensationModel) provider.compensationModel = 'BASE';
+
+              return provider as Provider;
             });
+
+            console.log(`Parsed ${providers.length} providers from CSV`);
             resolve(providers);
           } catch (error) {
             reject(new Error('Failed to parse provider data: ' + (error instanceof Error ? error.message : 'Unknown error')));
@@ -197,16 +171,24 @@ export class ProviderUploadService {
   }
 
   private async validateProviders(providers: Provider[]): Promise<{ success: boolean; errors: string[] }> {
-    const result = ProviderUploadSchema.safeParse({ providers });
+    const errors: string[] = [];
     
-    if (!result.success) {
-      return {
-        success: false,
-        errors: result.error.errors.map(err => `${err.path.join('.')}: ${err.message}`),
-      };
-    }
+    providers.forEach((provider, index) => {
+      // Basic validation
+      if (!provider.name || provider.name.trim() === '') {
+        errors.push(`Row ${index + 1}: Provider name is required`);
+      }
+      
+      // Add more validation as needed
+      if (provider.fte && (provider.fte < 0 || provider.fte > 2)) {
+        errors.push(`Row ${index + 1}: FTE must be between 0 and 2`);
+      }
+    });
 
-    return { success: true, errors: [] };
+    return {
+      success: errors.length === 0,
+      errors
+    };
   }
 
   private async uploadProviders(providers: Provider[]): Promise<{ uploaded: number; failed: number; errors: string[] }> {
@@ -263,6 +245,8 @@ export class ProviderUploadService {
         wRVUTarget: provider.wRVUTarget,
         compensationYear: provider.compensationYear,
         credentials: provider.credentials,
+        // Only include dynamicFields if it exists and has content
+        dynamicFields: typeof provider.dynamicFields === 'string' ? provider.dynamicFields : null,
       };
 
       console.log('Uploading provider to DynamoDB:', JSON.stringify(input, null, 2));
@@ -275,38 +259,20 @@ export class ProviderUploadService {
 
       console.log('Successfully uploaded provider:', provider.name);
     } catch (error) {
-      console.error('Error uploading provider:', error);
-      if (attempt < (this.options.retries ?? DEFAULT_OPTIONS.retries) && this.isRetryableError(error)) {
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      if (attempt < (this.options.retries || DEFAULT_OPTIONS.retries)) {
+        console.log(`Retrying upload for ${provider.name} (attempt ${attempt + 1})`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
         return this.uploadWithRetry(provider, attempt + 1);
       }
       throw error;
     }
   }
 
-  private isRetryableError(error: any): boolean {
-    const retryableErrors = [
-      'NetworkError',
-      'TimeoutError',
-      'ConnectionError',
-      'ThrottlingException',
-      'ProvisionedThroughputExceededException',
-    ];
-
-    return retryableErrors.some(errType => 
-      error.name?.includes(errType) || 
-      error.message?.includes(errType)
-    );
-  }
-
   private chunkArray<T>(array: T[], size: number): T[][] {
-    return array.reduce((chunks, item, index) => {
-      const chunkIndex = Math.floor(index / size);
-      if (!chunks[chunkIndex]) {
-        chunks[chunkIndex] = [];
-      }
-      chunks[chunkIndex].push(item);
-      return chunks;
-    }, [] as T[][]);
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
   }
 } 

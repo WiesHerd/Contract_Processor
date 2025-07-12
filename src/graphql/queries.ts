@@ -202,6 +202,46 @@ export const listTemplateMappings = /* GraphQL */ `query ListTemplateMappings(
   APITypes.ListTemplateMappingsQueryVariables,
   APITypes.ListTemplateMappingsQuery
 >;
+export const getUserPreferences = /* GraphQL */ `query GetUserPreferences($id: ID!) {
+  getUserPreferences(id: $id) {
+    id
+    userId
+    screen
+    preferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetUserPreferencesQueryVariables,
+  APITypes.GetUserPreferencesQuery
+>;
+export const listUserPreferences = /* GraphQL */ `query ListUserPreferences(
+  $filter: ModelUserPreferencesFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listUserPreferences(filter: $filter, limit: $limit, nextToken: $nextToken) {
+    items {
+      id
+      userId
+      screen
+      preferences
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListUserPreferencesQueryVariables,
+  APITypes.ListUserPreferencesQuery
+>;
 export const getMapping = /* GraphQL */ `query GetMapping($id: ID!) {
   getMapping(id: $id) {
     id
@@ -470,6 +510,38 @@ export const templateMappingsByTemplateID = /* GraphQL */ `query TemplateMapping
 ` as GeneratedQuery<
   APITypes.TemplateMappingsByTemplateIDQueryVariables,
   APITypes.TemplateMappingsByTemplateIDQuery
+>;
+export const userPreferencesByUserId = /* GraphQL */ `query UserPreferencesByUserId(
+  $userId: String!
+  $sortDirection: ModelSortDirection
+  $filter: ModelUserPreferencesFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  userPreferencesByUserId(
+    userId: $userId
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      userId
+      screen
+      preferences
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.UserPreferencesByUserIdQueryVariables,
+  APITypes.UserPreferencesByUserIdQuery
 >;
 export const mappingsByTemplateID = /* GraphQL */ `query MappingsByTemplateID(
   $templateID: ID!

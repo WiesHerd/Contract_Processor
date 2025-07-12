@@ -287,6 +287,63 @@ export const onDeleteTemplateMapping = /* GraphQL */ `subscription OnDeleteTempl
   APITypes.OnDeleteTemplateMappingSubscriptionVariables,
   APITypes.OnDeleteTemplateMappingSubscription
 >;
+export const onCreateUserPreferences = /* GraphQL */ `subscription OnCreateUserPreferences(
+  $filter: ModelSubscriptionUserPreferencesFilterInput
+  $owner: String
+) {
+  onCreateUserPreferences(filter: $filter, owner: $owner) {
+    id
+    userId
+    screen
+    preferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnCreateUserPreferencesSubscriptionVariables,
+  APITypes.OnCreateUserPreferencesSubscription
+>;
+export const onUpdateUserPreferences = /* GraphQL */ `subscription OnUpdateUserPreferences(
+  $filter: ModelSubscriptionUserPreferencesFilterInput
+  $owner: String
+) {
+  onUpdateUserPreferences(filter: $filter, owner: $owner) {
+    id
+    userId
+    screen
+    preferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnUpdateUserPreferencesSubscriptionVariables,
+  APITypes.OnUpdateUserPreferencesSubscription
+>;
+export const onDeleteUserPreferences = /* GraphQL */ `subscription OnDeleteUserPreferences(
+  $filter: ModelSubscriptionUserPreferencesFilterInput
+  $owner: String
+) {
+  onDeleteUserPreferences(filter: $filter, owner: $owner) {
+    id
+    userId
+    screen
+    preferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnDeleteUserPreferencesSubscriptionVariables,
+  APITypes.OnDeleteUserPreferencesSubscription
+>;
 export const onCreateMapping = /* GraphQL */ `subscription OnCreateMapping(
   $filter: ModelSubscriptionMappingFilterInput
   $owner: String

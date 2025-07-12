@@ -21,7 +21,7 @@ import {
   VisibilityState,
 } from '@tanstack/react-table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { RootState } from '@/store';
+import { RootState, AppDispatch } from '@/store';
 import { updateProvider, setUploadedColumns, addProvidersFromCSV } from '@/store/slices/providerSlice';
 import { Provider } from '@/types/provider';
 import localforage from 'localforage';
@@ -36,6 +36,8 @@ import type { LucideProps } from 'lucide-react';
 import { parseDynamicFields, getAllProviderFieldNames, getProviderFieldValue } from '@/utils/dynamicFields';
 import { clsx } from 'clsx';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useProviderPreferences } from '@/hooks/useUserPreferences';
+import { toast } from 'sonner';
 import { AgGridReact } from 'ag-grid-react';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
@@ -241,39 +243,83 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
   selectedYear,
   onYearChange
 }) => {
-  // Move all hooks to the top
-  const dispatch = useDispatch();
-  const { uploadedColumns = [], error } = useSelector((state: RootState) => state.provider);
-  const providers = useMemo(() => allProviders as ExtendedProvider[], [allProviders]);
-  const [search, setSearch] = useState('');
+  const dispatch = useDispatch<AppDispatch>();
+  const uploadedColumns = useSelector((state: RootState) => state.provider.uploadedColumns);
+  
+  // Enterprise-grade user preferences
+  const {
+    preferences,
+    loading: preferencesLoading,
+    updateColumnVisibility,
+    updateColumnOrder,
+    updateColumnPinning,
+    createSavedView,
+    setActiveView,
+    deleteSavedView,
+    updateDisplaySettings
+  } = useProviderPreferences();
+
+  // Local state for UI interactions
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editRow, setEditRow] = useState<ExtendedProvider | null>(null);
-  const [sorting, setSorting] = useState<SortingState>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showBulkGenerationModal, setShowBulkGenerationModal] = useState(false);
-  const [bulkGenerationResults, setBulkGenerationResults] = useState<BulkGenerationResult[]>([]);
-  const [fteRange, setFteRange] = useState<[number, number]>([0, 1]);
-  const [credential, setCredential] = useState('__all__');
-  const [specialty, setSpecialty] = useState('__all__');
-  const [pageSize, setPageSize] = useState(25);
-  const [pageIndex, setPageIndex] = useState(0);
-  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({ left: [] });
+  const [customFields, setCustomFields] = useState<[string, string][]>([]);
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({});
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState({});
-  const [customFields, setCustomFields] = useState<Array<[string, string]>>([]);
-  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [selectedProviders, setSelectedProviders] = useState<Provider[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationResults, setGenerationResults] = useState<BulkGenerationResult[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const [yearFilter, setYearFilter] = useState<string>('all');
   const gridRef = useRef<any>(null);
-  const topScrollRef = useRef<HTMLDivElement>(null);
   const [gridScrollWidth, setGridScrollWidth] = useState(0);
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<ExtendedProvider | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
   const [gridClientWidth, setGridClientWidth] = useState(0);
-  const [adminRole, setAdminRole] = useState('__all__');
+  const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
+
+  // Get preferences (non-filter data)
+  const hiddenColumns = new Set(Object.entries(preferences?.columnVisibility || {})
+    .filter(([_, visible]) => !visible)
+    .map(([col]) => col));
+  const columnOrder = preferences?.columnOrder || [];
+  const savedViews = preferences?.savedViews || {};
+  const activeView = preferences?.activeView || 'default';
+
+  // Update column visibility when preferences change
+  useEffect(() => {
+    if (preferences?.columnVisibility) {
+      setColumnVisibility(preferences.columnVisibility);
+    }
+  }, [preferences?.columnVisibility]);
+
+  // Update column pinning when preferences change
+  useEffect(() => {
+    if (preferences?.columnPinning) {
+      setColumnPinning(preferences.columnPinning);
+    }
+  }, [preferences?.columnPinning]);
+
+  const providers = useMemo(() => allProviders as ExtendedProvider[], [allProviders]);
+  
+  // Additional local state for filtering and pagination (filters are NOT saved to preferences)
+  const [search, setSearch] = useState('');
+  const [fteRange, setFteRange] = useState<[number, number]>([0, 1]);
+  const [credential, setCredential] = useState('__all__');
+  const [specialty, setSpecialty] = useState('__all__');
   const [subspecialty, setSubspecialty] = useState('__all__');
+  const [adminRole, setAdminRole] = useState('__all__');
   const [agreementDateFrom, setAgreementDateFrom] = useState('');
   const [agreementDateTo, setAgreementDateTo] = useState('');
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(true);
 
   // Find provider name column
   const providerNameCol = useMemo(() => 
@@ -281,14 +327,23 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
     [uploadedColumns]
   );
 
-  // Update column pinning when sticky state changes
+  // Initialize default pinning if no preferences exist
   useEffect(() => {
-    if (providerNameCol) {
-      setColumnPinning({ left: [providerNameCol] });
-    } else {
-      setColumnPinning({ left: [] });
+    if (preferences && (!preferences.columnPinning || Object.keys(preferences.columnPinning).length === 0)) {
+      // Set default pinning for Provider Name if no pinning preferences exist
+      if (providerNameCol) {
+        const newPinning = { left: [providerNameCol] };
+        updateColumnPinning(newPinning);
+      } else if (columnOrder.length > 0) {
+        // Pin the first column (usually name) by default
+        const firstCol = columnOrder[0];
+        if (firstCol) {
+          const newPinning = { left: [firstCol] };
+          updateColumnPinning(newPinning);
+        }
+      }
     }
-  }, [providerNameCol]);
+  }, [providerNameCol, preferences, updateColumnPinning, columnOrder]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -377,7 +432,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           }
         }
       }
-      await dispatch(updateProvider(updatePayload as Provider)).unwrap();
+      await dispatch(updateProvider(updatePayload as Provider));
       setEditIndex(null);
       setEditRow(null);
       setEditModalOpen(false);
@@ -460,14 +515,32 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
     return Array.from(roles).sort();
   }, [providers]);
 
-  // Compute unique subspecialties from provider data
+  // Compute unique subspecialties from provider data - CASCADE based on selected specialty
   const subspecialtyOptions = React.useMemo(() => {
     const subs = new Set<string>();
     providers.forEach((p) => {
-      if (p.subspecialty) subs.add(p.subspecialty);
+      // Only include subspecialties for providers that match the selected specialty
+      if (p.subspecialty && (specialty === '__all__' || p.specialty === specialty)) {
+        subs.add(p.subspecialty);
+      }
     });
     return Array.from(subs).sort();
-  }, [providers]);
+  }, [providers, specialty]);
+
+  // Reset subspecialty when specialty changes
+  useEffect(() => {
+    if (specialty !== '__all__') {
+      // Check if current subspecialty is still valid for the selected specialty
+      const validSubspecialties = providers
+        .filter(p => p.specialty === specialty && p.subspecialty)
+        .map(p => p.subspecialty as string)
+        .filter(Boolean);
+      
+      if (subspecialty !== '__all__' && !validSubspecialties.includes(subspecialty)) {
+        setSubspecialty('__all__');
+      }
+    }
+  }, [specialty, subspecialty, providers]);
 
   // Update filteredProviders to include subspecialty and agreement date range
   const filteredProviders = useMemo(() => {
@@ -480,7 +553,26 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
         String(providerNameValue).toLowerCase().includes(String(search).toLowerCase()) ||
         (provider.credentials && String(provider.credentials).toLowerCase().includes(String(search).toLowerCase()));
 
-      const fteValue = provider.fte ?? 0;
+      // Get FTE value from TotalFTE or fte field, checking both flat fields and dynamicFields
+      let fteValue = 0;
+      if (provider.TotalFTE !== undefined && provider.TotalFTE !== null) {
+        fteValue = Number(provider.TotalFTE) || 0;
+      } else if (provider.fte !== undefined && provider.fte !== null) {
+        fteValue = Number(provider.fte) || 0;
+      } else if (provider.dynamicFields) {
+        try {
+          const dynamicFields = typeof provider.dynamicFields === 'string' 
+            ? JSON.parse(provider.dynamicFields) 
+            : provider.dynamicFields;
+          if (dynamicFields.TotalFTE !== undefined && dynamicFields.TotalFTE !== null) {
+            fteValue = Number(dynamicFields.TotalFTE) || 0;
+          } else if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
+            fteValue = Number(dynamicFields.fte) || 0;
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
       const matchesFte = fteValue >= fteRange[0] && fteValue <= fteRange[1];
 
       // Always use normalized provider.credentials for filtering
@@ -501,10 +593,10 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
 
       let matchesAgreementDate = true;
       if (agreementDateFrom) {
-        matchesAgreementDate = provider.originalAgreementDate && provider.originalAgreementDate >= agreementDateFrom;
+        matchesAgreementDate = Boolean(provider.originalAgreementDate && provider.originalAgreementDate >= agreementDateFrom);
       }
       if (matchesAgreementDate && agreementDateTo) {
-        matchesAgreementDate = provider.originalAgreementDate && provider.originalAgreementDate <= agreementDateTo;
+        matchesAgreementDate = Boolean(provider.originalAgreementDate && provider.originalAgreementDate <= agreementDateTo);
       }
 
       return matchesSearch && matchesFte && matchesCredential && matchesSpecialty && matchesAdminRole && matchesSubspecialty && matchesAgreementDate;
@@ -517,104 +609,199 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
     [providers]
   );
 
-  // AG Grid column definitions (converted from TanStack Table format)
+  // Initialize column order from ALL available data (provider fields + uploaded columns)
+  useEffect(() => {
+    if (providers.length > 0 && (columnOrder.length === 0 || (uploadedColumns && uploadedColumns.length > 0 && !columnOrder.some(col => uploadedColumns.includes(col))))) {
+      // Generate unified column order from all available data
+      const allFields = new Set<string>();
+      const fieldDataCount = new Map<string, number>();
+      
+      // Add uploadedColumns if available
+      if (uploadedColumns && uploadedColumns.length > 0) {
+        uploadedColumns.forEach(col => {
+          allFields.add(col);
+          fieldDataCount.set(col, providers.length); // Assume all providers have uploaded column data
+        });
+      }
+      
+      providers.forEach(provider => {
+        // Add flat fields ONLY if they have meaningful data
+        Object.keys(provider).forEach(key => {
+          if (key !== 'id' && key !== 'createdAt' && key !== 'updatedAt' && key !== '__typename' && key !== 'dynamicFields') {
+            const value = provider[key];
+            // Only include fields with actual data (not empty strings, null, undefined, or 0)
+            if (value !== null && value !== undefined && value !== '' && String(value).trim() !== '') {
+              allFields.add(key);
+              fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
+            }
+          }
+        });
+        
+        // Add dynamicFields ONLY if they have meaningful data
+        if (provider.dynamicFields) {
+          try {
+            const dynamicFields = typeof provider.dynamicFields === 'string' 
+              ? JSON.parse(provider.dynamicFields) 
+              : provider.dynamicFields;
+            Object.keys(dynamicFields).forEach(key => {
+              const value = dynamicFields[key];
+              // Only include fields with actual data (not empty strings, null, undefined)
+              if (value !== null && value !== undefined && value !== '' && String(value).trim() !== '') {
+                allFields.add(key);
+                fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
+              }
+            });
+          } catch (e) {
+            console.warn('Failed to parse dynamicFields:', e);
+          }
+        }
+      });
+      
+      // Filter out fields that have data in less than 1% of providers
+      const minDataThreshold = Math.max(1, Math.floor(providers.length * 0.01));
+      const fieldsWithSufficientData = Array.from(allFields).filter(field => {
+        const dataCount = fieldDataCount.get(field) || 0;
+        return dataCount >= minDataThreshold;
+      });
+      
+      // Sort fields by priority
+      const sortedFields = fieldsWithSufficientData.sort((a, b) => {
+        const priorityOrder = ['name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 'credentials', 'fte', 'baseSalary', 'startDate'];
+        const aPriority = priorityOrder.indexOf(a);
+        const bPriority = priorityOrder.indexOf(b);
+        
+        if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
+        if (aPriority !== -1) return -1;
+        if (bPriority !== -1) return 1;
+        
+        // Sort by data availability
+        const aCount = fieldDataCount.get(a) || 0;
+        const bCount = fieldDataCount.get(b) || 0;
+        if (aCount !== bCount) return bCount - aCount;
+        
+        return a.localeCompare(b);
+      });
+      
+      if (preferences && JSON.stringify(sortedFields) !== JSON.stringify(preferences.columnOrder)) {
+        updateColumnOrder(sortedFields);
+      }
+    }
+  }, [providers, uploadedColumns, columnOrder.length, preferences, updateColumnOrder]);
+
+  // AG Grid column definitions (unified system using columnOrder)
   const agGridColumnDefs = React.useMemo(() => {
-    const baseCols = (uploadedColumns && uploadedColumns.length > 0)
-      ? uploadedColumns.map((col, idx) => {
+    const leftPinned = preferences?.columnPinning?.left || [];
+    const rightPinned = preferences?.columnPinning?.right || [];
+    
+    // Use columnOrder as the single source of truth for column definitions
+    const baseCols = columnOrder.map((field, idx) => {
           let valueFormatter: ((params: any) => string) | undefined;
-            if (String(col).toLowerCase().includes('salary') || String(col).toLowerCase().includes('bonus') || String(col).toLowerCase().includes('amount') || String(col).toLowerCase().includes('wage')) {
+          let headerName = field;
+          
+          // Format header name - handle both camelCase provider fields and uploaded column names
+          if (field === 'name') headerName = 'Provider Name';
+          else if (field === 'employeeId') headerName = 'Employee ID';
+          else if (field === 'providerType') headerName = 'Provider Type';
+          else if (field === 'baseSalary') headerName = 'Base Salary';
+          else if (field === 'startDate') headerName = 'Start Date';
+          else if (field === 'originalAgreementDate') headerName = 'Orig Agreement';
+          else if (field === 'administrativeFte') headerName = 'Admin FTE';
+          else if (field === 'administrativeRole') headerName = 'Admin Role';
+          else if (field === 'yearsExperience') headerName = 'Years Exp';
+          else if (field === 'hourlyWage') headerName = 'Hourly Wage';
+          else if (field === 'contractTerm') headerName = 'Contract Term';
+          else if (field === 'ptoDays') headerName = 'PTO Days';
+          else if (field === 'cmeDays') headerName = 'CME Days';
+          else if (field === 'cmeAmount') headerName = 'CME Amount';
+          else if (field === 'signingBonus') headerName = 'Signing Bonus';
+          else if (field === 'qualityBonus') headerName = 'Quality Bonus';
+          else if (field === 'wRVUTarget') headerName = 'wRVU Target';
+          else if (field === 'conversionFactor') headerName = 'CF';
+          else if (field === 'compensationYear') headerName = 'Comp Year';
+          else if (field === 'compensationType') headerName = 'Comp Type';
+          else if (field === 'organizationName') headerName = 'Organization';
+          else if (field.includes('FTE')) headerName = field; // Keep FTE fields as-is
+          else if (field.includes(' ')) headerName = field; // Keep uploaded column names with spaces as-is
+          else headerName = field.charAt(0).toUpperCase() + field.slice(1);
+          
+          // Value formatters
+          if (String(field).toLowerCase().includes('salary') || String(field).toLowerCase().includes('bonus') || String(field).toLowerCase().includes('amount') || String(field).toLowerCase().includes('wage')) {
             valueFormatter = (params: any) => formatCurrency(params.value);
-          } else if (String(col).toLowerCase().includes('date')) {
+          } else if (String(field).toLowerCase().includes('date')) {
             valueFormatter = (params: any) => formatDate(params.value);
-          } else if (String(col).replace(/\s+/g, '').toLowerCase() === 'fte') {
+          } else if (field.toLowerCase().includes('fte') || field === 'fte') {
             valueFormatter = (params: any) => {
               const v = params.value;
               return typeof v === 'number' ? v.toFixed(2) : String(v ?? '');
             };
           }
-          // Always pin the first column (Provider Name)
+          
+          // Custom value getter to handle both provider fields and uploaded columns
+          const valueGetter = (params: any) => {
+            const provider = params.data;
+            
+            // First try flat field (provider properties)
+            if (provider[field] !== undefined && provider[field] !== null) {
+              return provider[field];
+            }
+            
+            // Then try dynamicFields (uploaded CSV columns)
+            if (provider.dynamicFields) {
+              try {
+                const dynamicFields = typeof provider.dynamicFields === 'string' 
+                  ? JSON.parse(provider.dynamicFields) 
+                  : provider.dynamicFields;
+                
+                // Try exact field name match first
+                if (dynamicFields[field] !== undefined && dynamicFields[field] !== null) {
+                  return dynamicFields[field];
+                }
+                
+                // Try case-insensitive match for uploaded columns
+                const fieldLower = field.toLowerCase();
+                const matchingKey = Object.keys(dynamicFields).find(key => 
+                  key.toLowerCase() === fieldLower
+                );
+                if (matchingKey && dynamicFields[matchingKey] !== undefined && dynamicFields[matchingKey] !== null) {
+                  return dynamicFields[matchingKey];
+                }
+              } catch (e) {
+                console.warn('Failed to parse dynamicFields:', e);
+              }
+            }
+            
+            return null;
+          };
+          
+          // Apply pinning from preferences
+          let pinned: 'left' | 'right' | undefined;
+          
+          if (leftPinned.includes(field)) {
+            pinned = 'left';
+          } else if (rightPinned.includes(field)) {
+            pinned = 'right';
+          }
+          
           return {
-            field: col,
-            headerName: col,
+            field,
+            headerName,
             sortable: true,
             resizable: true,
             minWidth: 100,
             valueFormatter,
-            pinned: idx === 0 ? 'left' : undefined,
+            valueGetter,
+            pinned,
+            hide: hiddenColumns.has(field),
           };
-        })
-      : [
-          { field: 'name', headerName: 'Provider Name', minWidth: 180, pinned: 'left' },
-          { field: 'compensationYear', headerName: 'Compensation Year', minWidth: 120, valueFormatter: (params: any) => params.value || '' },
-          { field: 'createdAt', headerName: 'Uploaded At', minWidth: 120, valueFormatter: (params: any) => formatDate(params.value) },
-          { field: 'employeeId', headerName: 'Employee ID' },
-          { field: 'providerType', headerName: 'Provider Type' },
-          { field: 'specialty', headerName: 'Specialty' },
-          { field: 'subspecialty', headerName: 'Subspecialty' },
-          { field: 'fte', headerName: 'FTE', valueFormatter: (params: any) => typeof params.value === 'number' ? params.value.toFixed(2) : String(params.value ?? '') },
-          { field: 'baseSalary', headerName: 'Base Salary', valueFormatter: (params: any) => formatCurrency(params.value) },
-          { field: 'startDate', headerName: 'Start Date', valueFormatter: (params: any) => formatDate(params.value) },
-          { field: 'administrativeFte', headerName: 'Admin FTE' },
-          { field: 'administrativeRole', headerName: 'Admin Role' },
-          { field: 'yearsExperience', headerName: 'Years Exp' },
-          { field: 'hourlyWage', headerName: 'Hourly Wage', valueFormatter: (params: any) => formatCurrency(params.value) },
-          { field: 'originalAgreementDate', headerName: 'Orig Agreement', valueFormatter: (params: any) => formatDate(params.value) },
-          { field: 'contractTerm', headerName: 'Contract Term' },
-          { field: 'ptoDays', headerName: 'PTO Days' },
-          { field: 'cmeDays', headerName: 'CME Days' },
-          { field: 'cmeAmount', headerName: 'CME Amount', valueFormatter: (params: any) => formatCurrency(params.value) },
-          { field: 'signingBonus', headerName: 'Signing Bonus', valueFormatter: (params: any) => formatCurrency(params.value) },
-          { field: 'qualityBonus', headerName: 'Quality Bonus', valueFormatter: (params: any) => formatCurrency(params.value) },
-          { field: 'wRVUTarget', headerName: 'wRVU Target' },
-          { field: 'conversionFactor', headerName: 'CF' },
-        ];
-    baseCols.push({
-      field: 'actions',
-      headerName: '',
-      minWidth: 60,
-      cellRenderer: (params: any) => (
-        <Button size="icon" variant="ghost" onClick={() => handleEdit(params.rowIndex)} aria-label="Edit Provider" tabIndex={0} title="Edit Provider">
-          <Pencil width={16} height={16} />
-        </Button>
-      ) as any,
-      sortable: false,
-      filter: false,
-      resizable: false,
-      pinned: undefined,
-    } as any);
+        });
+        
     return baseCols;
-  }, [uploadedColumns, handleEdit]);
+  }, [uploadedColumns, providers, hiddenColumns, columnOrder, preferences?.columnPinning]);
 
   const totalPages = Math.ceil(filteredProviders.length / pageSize);
 
   // Compute pagedProviders for custom pagination
   const pagedProviders = filteredProviders.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-
-  // Sync top scrollbar with AG Grid (move this useEffect after pagedProviders is defined)
-  useEffect(() => {
-    const gridEl = document.querySelector('.ag-center-cols-viewport') as HTMLElement;
-    if (!gridEl || !topScrollRef.current) return;
-    const handleGridScroll = () => {
-      if (topScrollRef.current) {
-        topScrollRef.current.scrollLeft = gridEl.scrollLeft;
-      }
-    };
-    const handleTopScroll = () => {
-      if (gridEl && topScrollRef.current) {
-        gridEl.scrollLeft = topScrollRef.current.scrollLeft;
-      }
-    };
-    gridEl.addEventListener('scroll', handleGridScroll);
-    topScrollRef.current.addEventListener('scroll', handleTopScroll);
-    // Set widths
-    setGridScrollWidth(gridEl.scrollWidth);
-    setGridClientWidth(gridEl.clientWidth);
-    // Cleanup
-    return () => {
-      gridEl.removeEventListener('scroll', handleGridScroll);
-      topScrollRef.current?.removeEventListener('scroll', handleTopScroll);
-    };
-  }, [pagedProviders, agGridColumnDefs]);
 
   // AG Grid onRowDoubleClicked handler
   const handleRowDoubleClick = useCallback((event: any) => {
@@ -647,14 +834,36 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             {filtersOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             Filter Providers
           </span>
-          <button
-            type="button"
-            aria-label={filtersOpen ? 'Collapse filters' : 'Expand filters'}
-            className="ml-2 p-1 rounded hover:bg-gray-200 focus:outline-none"
-            onClick={e => { e.stopPropagation(); setFiltersOpen(o => !o); }}
-          >
-            {filtersOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e: React.MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Reset all filters to default values
+                setSearch('');
+                setFteRange([0, 1]);
+                setCredential('__all__');
+                setSpecialty('__all__');
+                setSubspecialty('__all__');
+                setAdminRole('__all__');
+                setAgreementDateFrom('');
+                setAgreementDateTo('');
+              }}
+              className="text-xs"
+            >
+              Clear Filters
+            </Button>
+            <button
+              type="button"
+              aria-label={filtersOpen ? 'Collapse filters' : 'Expand filters'}
+              className="ml-2 p-1 rounded hover:bg-gray-200 focus:outline-none"
+              onClick={e => { e.stopPropagation(); setFiltersOpen(o => !o); }}
+            >
+              {filtersOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
         <div
           className={`transition-all duration-300 overflow-hidden ${filtersOpen ? 'max-h-[500px] opacity-100 mt-2' : 'max-h-0 opacity-0 pointer-events-none'}`}
@@ -782,6 +991,49 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             ))}
           </select>
         </div>
+        
+        {/* View Indicator and Column Visibility Toggle */}
+        <div className="flex items-center gap-2 ml-4">
+          {/* Current View Indicator */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium cursor-help ${
+                  activeView && activeView !== 'default' 
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200' 
+                    : 'bg-gray-50 text-gray-600 border border-gray-200'
+                }`}>
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  View: {activeView === 'default' ? 'Default' : activeView}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  {activeView === 'default' 
+                    ? 'Currently viewing default layout' 
+                    : `Currently viewing saved layout: "${activeView}"`
+                  }
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
+            className="flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            Columns
+          </Button>
+        </div>
+
         {/* Year dropdown on the far right */}
         {availableYears && availableYears.length > 0 && (
           <div className="flex items-center gap-1 ml-auto">
@@ -797,21 +1049,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           </div>
         )}
       </div>
-      {/* Top horizontal scrollbar synced with AG Grid */}
-        <div
-        ref={topScrollRef}
-          style={{
-          overflowX: 'auto',
-          overflowY: 'hidden',
-            width: '100%',
-          height: 16,
-          marginBottom: 2,
-          background: 'transparent',
-          }}
-        >
-        <div style={{ width: gridScrollWidth, height: 1 }} />
-        </div>
-        {/* Main table with native horizontal scrollbar at the bottom */}
+      {/* Main table with native horizontal scrollbar at the bottom */}
       <div className="ag-theme-alpine w-full">
         <AgGridReact
           rowData={pagedProviders}
@@ -828,9 +1066,511 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           suppressColumnVirtualisation={false}
           suppressRowVirtualisation={false}
           onRowDoubleClicked={handleRowDoubleClick}
-          defaultColDef={{ tooltipValueGetter: () => 'Double-click to edit provider' }}
+          defaultColDef={{ 
+            menuTabs: ['generalMenuTab', 'filterMenuTab', 'columnsMenuTab'],
+            resizable: true,
+            sortable: true,
+            filter: true
+          }}
+          suppressMenuHide={false}
+          enableRangeSelection={true}
+          enableCharts={false}
         />
       </div>
+      
+      {/* Modern Column Visibility Sidebar */}
+      {isColumnSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setIsColumnSidebarOpen(false);
+            }
+          }}
+          tabIndex={-1}
+        >
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black bg-opacity-25" 
+            onClick={() => setIsColumnSidebarOpen(false)}
+          />
+          
+          {/* Sidebar */}
+          <div className="relative ml-auto w-80 bg-white shadow-xl h-full flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Column Manager</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsColumnSidebarOpen(false)}
+                className="p-1"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </Button>
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-6">
+                {/* View Management */}
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-3">Saved Views</div>
+                  <div className="flex gap-2 mb-3">
+                    <select 
+                      value={activeView} 
+                      onChange={(e) => {
+                        const viewName = e.target.value;
+                        setActiveView(viewName);
+                        if (savedViews[viewName]) {
+                          updateColumnOrder(savedViews[viewName].columnOrder);
+                          updateColumnVisibility(savedViews[viewName].columnVisibility);
+                        }
+                      }}
+                      className="flex-1 text-sm border rounded px-2 py-1"
+                    >
+                      <option value="default">Default View</option>
+                      {Object.keys(savedViews).map(viewName => (
+                        <option key={viewName} value={viewName}>{viewName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const viewName = prompt('Enter view name:');
+                        if (viewName && viewName.trim()) {
+                          createSavedView(
+                            viewName.trim(),
+                            preferences?.columnVisibility || {},
+                            columnOrder,
+                            preferences?.columnPinning || {}
+                          );
+                        }
+                      }}
+                      className="flex-1 text-xs"
+                    >
+                      Save View
+                    </Button>
+                    
+                    {/* Smart Arrangement Dropdown */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="relative flex-1">
+                            <select
+                              onChange={(e) => {
+                                const arrangement = e.target.value;
+                                if (!arrangement) return;
+                                
+                                let newOrder: string[] = [];
+                                let message = '';
+                                
+                                switch (arrangement) {
+                                  case 'smart':
+                                    // Logical grouping
+                                    const identityFields = columnOrder.filter(field => 
+                                      ['name', 'employeeId', 'providerType'].includes(field)
+                                    );
+                                    const clinicalFields = columnOrder.filter(field => 
+                                      ['specialty', 'subspecialty', 'credentials'].includes(field)
+                                    );
+                                    const fteFields = columnOrder.filter(field => 
+                                      field.toLowerCase().includes('fte') || 
+                                      field.toLowerCase().includes('administrative')
+                                    );
+                                    const compensationFields = columnOrder.filter(field => 
+                                      field.toLowerCase().includes('salary') || 
+                                      field.toLowerCase().includes('bonus') || 
+                                      field.toLowerCase().includes('wage') ||
+                                      field.toLowerCase().includes('wrvu') ||
+                                      field.toLowerCase().includes('conversion')
+                                    );
+                                    const dateFields = columnOrder.filter(field => 
+                                      field.toLowerCase().includes('date')
+                                    );
+                                    const otherFields = columnOrder.filter(field => 
+                                      ![...identityFields, ...clinicalFields, ...fteFields, ...compensationFields, ...dateFields].includes(field)
+                                    );
+                                    
+                                    newOrder = [
+                                      ...identityFields,
+                                      ...clinicalFields, 
+                                      ...fteFields,
+                                      ...compensationFields,
+                                      ...dateFields,
+                                      ...otherFields
+                                    ];
+                                    message = 'Columns arranged by logical groups';
+                                    break;
+                                    
+                                  case 'compensation':
+                                    // Compensation-focused
+                                    const compFields = columnOrder.filter(field => 
+                                      field.toLowerCase().includes('salary') || 
+                                      field.toLowerCase().includes('bonus') || 
+                                      field.toLowerCase().includes('wage') ||
+                                      field.toLowerCase().includes('wrvu') ||
+                                      field.toLowerCase().includes('conversion') ||
+                                      field.toLowerCase().includes('fte')
+                                    );
+                                    const nonCompFields = columnOrder.filter(field => !compFields.includes(field));
+                                    newOrder = [...nonCompFields.slice(0, 3), ...compFields, ...nonCompFields.slice(3)];
+                                    message = 'Compensation fields grouped together';
+                                    break;
+                                    
+                                  case 'clinical':
+                                    // Clinical-focused
+                                    const clinFields = columnOrder.filter(field => 
+                                      ['specialty', 'subspecialty', 'credentials', 'providerType'].includes(field)
+                                    );
+                                    const nonClinFields = columnOrder.filter(field => !clinFields.includes(field));
+                                    newOrder = [...nonClinFields.slice(0, 2), ...clinFields, ...nonClinFields.slice(2)];
+                                    message = 'Clinical fields grouped together';
+                                    break;
+                                    
+                                  case 'alphabetical':
+                                    // Alphabetical order
+                                    newOrder = [...columnOrder].sort();
+                                    message = 'Columns arranged alphabetically';
+                                    break;
+                                    
+                                  case 'frequency':
+                                    // Most commonly used fields first
+                                    const commonFields = ['name', 'specialty', 'fte', 'baseSalary', 'startDate', 'providerType'];
+                                    const remainingFields = columnOrder.filter(field => !commonFields.includes(field));
+                                    newOrder = [...commonFields.filter(field => columnOrder.includes(field)), ...remainingFields];
+                                    message = 'Most commonly used fields moved to front';
+                                    break;
+                                }
+                                
+                                if (newOrder.length > 0) {
+                                  updateColumnOrder(newOrder);
+                                  toast.success(message);
+                                }
+                                
+                                // Reset dropdown
+                                e.target.value = '';
+                              }}
+                              className="w-full text-xs border rounded px-2 py-1 bg-white"
+                            >
+                              <option value="">Arrange...</option>
+                              <option value="smart">🧠 Smart Groups</option>
+                              <option value="compensation">💰 Compensation Focus</option>
+                              <option value="clinical">🏥 Clinical Focus</option>
+                              <option value="frequency">⭐ Most Used First</option>
+                              <option value="alphabetical">🔤 Alphabetical</option>
+                            </select>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          <div className="space-y-1 text-xs">
+                            <div><strong>🧠 Smart Groups:</strong> Identity → Clinical → FTE → Compensation → Dates → Other</div>
+                            <div><strong>💰 Compensation:</strong> Groups salary, bonus, wRVU, and FTE fields together</div>
+                            <div><strong>🏥 Clinical:</strong> Groups specialty, subspecialty, credentials, and provider type</div>
+                            <div><strong>⭐ Most Used:</strong> Puts frequently accessed fields (name, specialty, FTE, salary) first</div>
+                            <div><strong>🔤 Alphabetical:</strong> Simple A-Z sorting for easy field finding</div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                </div>
+
+                {/* Column Pinning */}
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-3">Column Pinning</div>
+                  <div className="flex gap-2 pb-3 border-b">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        updateColumnPinning({ left: [], right: [] });
+                      }}
+                      className="flex-1 text-xs"
+                    >
+                      Unpin All
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Pin first 2 columns to left by default
+                        const firstTwoColumns = columnOrder.slice(0, 2);
+                        updateColumnPinning({ left: firstTwoColumns, right: [] });
+                      }}
+                      className="flex-1 text-xs"
+                    >
+                      Pin First 2
+                    </Button>
+                  </div>
+                  
+                  {/* Show pinned columns summary */}
+                  {((preferences?.columnPinning?.left || []).length > 0 || (preferences?.columnPinning?.right || []).length > 0) && (
+                    <div className="text-xs text-gray-600 mb-3">
+                      {(preferences?.columnPinning?.left || []).length > 0 && (
+                        <div>Left: {(preferences?.columnPinning?.left || []).join(', ')}</div>
+                      )}
+                      {(preferences?.columnPinning?.right || []).length > 0 && (
+                        <div>Right: {(preferences?.columnPinning?.right || []).join(', ')}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Column Visibility */}
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                  <div className="flex gap-2 pb-3 border-b">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const allVisible = columnOrder.reduce((acc, field) => {
+                          acc[field] = true;
+                          return acc;
+                        }, {} as Record<string, boolean>);
+                        updateColumnVisibility(allVisible);
+                      }}
+                      className="flex-1 text-xs"
+                    >
+                      Show All
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const allHidden = columnOrder.reduce((acc, field) => {
+                          acc[field] = false; // Hide all columns
+                          return acc;
+                        }, {} as Record<string, boolean>);
+                        updateColumnVisibility(allHidden);
+                      }}
+                      className="flex-1 text-xs"
+                    >
+                      Hide All
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Column Reordering */}
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-3">Column Order</div>
+                  <div className="text-xs text-gray-500 mb-3">Drag to reorder columns. Click eye to show/hide.</div>
+                  <div className="space-y-1">
+                    {columnOrder.map((field, index) => {
+                      const colDef = agGridColumnDefs.find((col: any) => col.field === field);
+                      if (!colDef) return null;
+                      
+                      return (
+                        <div
+                          key={field}
+                          className="flex items-center gap-2 p-2 bg-gray-50 rounded border hover:bg-gray-100 transition-colors"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', index.toString());
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                            const hoverIndex = index;
+                            
+                            if (dragIndex !== hoverIndex) {
+                              const newOrder = [...columnOrder];
+                              const draggedItem = newOrder[dragIndex];
+                              newOrder.splice(dragIndex, 1);
+                              newOrder.splice(hoverIndex, 0, draggedItem);
+                              updateColumnOrder(newOrder);
+                            }
+                          }}
+                        >
+                          {/* Drag Handle */}
+                          <svg className="w-4 h-4 text-gray-400 cursor-move" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                          </svg>
+                          
+                          {/* Visibility Toggle */}
+                          <button
+                            onClick={() => {
+                              const newVisibility = { ...preferences?.columnVisibility };
+                              newVisibility[field] = !newVisibility[field];
+                              updateColumnVisibility(newVisibility);
+                            }}
+                            className="p-1 rounded text-gray-600 hover:text-blue-600"
+                          >
+                            {hiddenColumns.has(field) ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.464 8.464M18.364 18.364l-9.9-9.9" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            )}
+                          </button>
+                          
+                          {/* Pin/Unpin Button */}
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  onClick={(e) => {
+                                    const currentPinning = preferences?.columnPinning || {};
+                                    const leftPinned = currentPinning.left || [];
+                                    const rightPinned = currentPinning.right || [];
+                                    
+                                    const isLeftPinned = leftPinned.includes(field);
+                                    const isRightPinned = rightPinned.includes(field);
+                                    
+                                    let newPinning: { left?: string[]; right?: string[] };
+                                    
+                                    if (e.shiftKey) {
+                                      // Shift+click to pin to right
+                                      if (isRightPinned) {
+                                        // Unpin from right
+                                        newPinning = {
+                                          left: leftPinned,
+                                          right: rightPinned.filter(f => f !== field)
+                                        };
+                                      } else {
+                                        // Pin to right (remove from left if needed)
+                                        newPinning = {
+                                          left: leftPinned.filter(f => f !== field),
+                                          right: [...rightPinned, field]
+                                        };
+                                      }
+                                    } else {
+                                      // Regular click for left pinning
+                                      if (isLeftPinned) {
+                                        // Unpin from left
+                                        newPinning = {
+                                          left: leftPinned.filter(f => f !== field),
+                                          right: rightPinned
+                                        };
+                                      } else {
+                                        // Pin to left (remove from right if needed)
+                                        newPinning = {
+                                          left: [...leftPinned, field],
+                                          right: rightPinned.filter(f => f !== field)
+                                        };
+                                      }
+                                    }
+                                    
+                                    updateColumnPinning(newPinning);
+                                  }}
+                                  className={`p-1 rounded transition-colors ${
+                                    (preferences?.columnPinning?.left || []).includes(field) || 
+                                    (preferences?.columnPinning?.right || []).includes(field)
+                                      ? 'text-blue-600 hover:text-blue-800 bg-blue-50' 
+                                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                                  </svg>
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>
+                                  {(preferences?.columnPinning?.left || []).includes(field) 
+                                    ? 'Click to unpin from left' 
+                                    : (preferences?.columnPinning?.right || []).includes(field)
+                                    ? 'Click to unpin from right'
+                                    : 'Click to pin left • Shift+click to pin right'}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+
+                          {/* Column Name */}
+                          <span className={`flex-1 text-sm ${field === 'name' ? 'text-gray-700' : 'text-gray-700'}`}>
+                            {colDef.headerName}
+                            {(preferences?.columnPinning?.left || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned left)</span>}
+                            {(preferences?.columnPinning?.right || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned right)</span>}
+                            {field.toLowerCase().includes('fte') && <span className="text-xs text-blue-500 ml-1">FTE</span>}
+                          </span>
+                          
+                          {/* Move Buttons */}
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                if (index > 0) {
+                                  const newOrder = [...columnOrder];
+                                  [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
+                                  updateColumnOrder(newOrder);
+                                }
+                              }}
+                              disabled={index === 0}
+                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (index < columnOrder.length - 1) {
+                                  const newOrder = [...columnOrder];
+                                  [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+                                  updateColumnOrder(newOrder);
+                                }
+                              }}
+                              disabled={index === columnOrder.length - 1}
+                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="p-4 border-t bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-gray-500">
+                  {columnOrder.length - hiddenColumns.size} of {columnOrder.length} columns visible
+                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => {
+                          // Close the sidebar and ensure preferences are saved
+                          setIsColumnSidebarOpen(false);
+                          // Show success message
+                          toast.success('Column preferences saved successfully!');
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
+                      >
+                        Done
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Close column manager (Esc)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Pagination Controls below the table (optional, for long tables) */}
       <div className="flex gap-2 items-center mt-2">
         <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
