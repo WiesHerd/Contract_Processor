@@ -461,6 +461,75 @@ export const onDeleteClause = /* GraphQL */ `subscription OnDeleteClause(
   APITypes.OnDeleteClauseSubscriptionVariables,
   APITypes.OnDeleteClauseSubscription
 >;
+export const onCreateDynamicBlock = /* GraphQL */ `subscription OnCreateDynamicBlock(
+  $filter: ModelSubscriptionDynamicBlockFilterInput
+  $owner: String
+) {
+  onCreateDynamicBlock(filter: $filter, owner: $owner) {
+    id
+    name
+    description
+    placeholder
+    outputType
+    format
+    conditions
+    alwaysInclude
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnCreateDynamicBlockSubscriptionVariables,
+  APITypes.OnCreateDynamicBlockSubscription
+>;
+export const onUpdateDynamicBlock = /* GraphQL */ `subscription OnUpdateDynamicBlock(
+  $filter: ModelSubscriptionDynamicBlockFilterInput
+  $owner: String
+) {
+  onUpdateDynamicBlock(filter: $filter, owner: $owner) {
+    id
+    name
+    description
+    placeholder
+    outputType
+    format
+    conditions
+    alwaysInclude
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnUpdateDynamicBlockSubscriptionVariables,
+  APITypes.OnUpdateDynamicBlockSubscription
+>;
+export const onDeleteDynamicBlock = /* GraphQL */ `subscription OnDeleteDynamicBlock(
+  $filter: ModelSubscriptionDynamicBlockFilterInput
+  $owner: String
+) {
+  onDeleteDynamicBlock(filter: $filter, owner: $owner) {
+    id
+    name
+    description
+    placeholder
+    outputType
+    format
+    conditions
+    alwaysInclude
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnDeleteDynamicBlockSubscriptionVariables,
+  APITypes.OnDeleteDynamicBlockSubscription
+>;
 export const onCreateAuditLog = /* GraphQL */ `subscription OnCreateAuditLog(
   $filter: ModelSubscriptionAuditLogFilterInput
   $owner: String

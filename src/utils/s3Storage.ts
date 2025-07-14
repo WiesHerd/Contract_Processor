@@ -214,9 +214,48 @@ export async function saveContractFile(
 
 export async function getContractFile(contractId: string, fileName: string): Promise<{ url: string; metadata: Record<string, string> | null }> {
   const key = `${PATHS.CONTRACTS}${contractId}/${fileName}`;
-  const url = await getSignedDownloadUrl(key);
-  const metadata = await getFileMetadata(key);
-  return { url, metadata };
+  
+  try {
+    // Get signed URL with 7-day expiration for better user experience (604800 seconds)
+    const url = await getSignedDownloadUrl(key, 604800);
+    const metadata = await getFileMetadata(key);
+    
+    return { url, metadata };
+  } catch (error) {
+    console.error('Failed to get contract file:', error);
+    throw new Error('Failed to get contract file');
+  }
+}
+
+/**
+ * Regenerate a signed download URL for a contract file
+ * 
+ * Note: S3 signed URLs have expiration dates for security reasons. This is normal and recommended
+ * to prevent unauthorized access to files. URLs expire after 7 days by default.
+ * 
+ * @param contractId - The contract ID
+ * @param fileName - The file name
+ * @returns Promise with new signed URL and metadata
+ */
+export async function regenerateContractDownloadUrl(contractId: string, fileName: string): Promise<{ url: string; metadata: Record<string, string> | null }> {
+  const key = `${PATHS.CONTRACTS}${contractId}/${fileName}`;
+  
+  try {
+    // Get fresh signed URL with 7-day expiration (604800 seconds)
+    const url = await getSignedDownloadUrl(key, 604800);
+    const metadata = await getFileMetadata(key);
+    
+    return { url, metadata };
+  } catch (error) {
+    console.error('Failed to regenerate download URL:', error);
+    throw new Error('Failed to regenerate download URL');
+  }
+}
+
+export async function listContractFiles(contractId: string): Promise<string[]> {
+  const prefix = `${PATHS.CONTRACTS}${contractId}/`;
+  const files = await listFiles(prefix);
+  return files.map(file => file.replace(prefix, ''));
 }
 
 // Provider operations
@@ -284,7 +323,7 @@ export async function saveAuditLog(entry: AuditLogEntry): Promise<void> {
   const key = `${PATHS.AUDIT}${entry.id}.json`;
   const metadata = {
     auditId: entry.id,
-    action: entry.outputType,
+    action: entry.action || 'unknown',
     user: entry.user || 'system',
     timestamp: entry.timestamp,
   };

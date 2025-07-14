@@ -18,6 +18,7 @@ import type { AppDispatch } from '@/store';
 import { v4 as uuidv4 } from 'uuid';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
 interface PlaceholderMappingUIProps {
   template: Template;
@@ -172,6 +173,7 @@ export function PlaceholderMappingUI({
       if (success) {
         setSavedMappings(mappingRecord);
         setSuccess(true);
+        toast.success('Mappings saved successfully');
         
         // Log audit entry
         dispatch(logSecurityEvent({
@@ -189,6 +191,7 @@ export function PlaceholderMappingUI({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save mappings';
       setError(errorMessage);
+      toast.error('Failed to save mappings');
       
       // Log audit entry for failure
       dispatch(logSecurityEvent({
@@ -377,13 +380,7 @@ export function PlaceholderMappingUI({
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            {/* Success display */}
-            {success && (
-              <Alert>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription>Mappings saved successfully!</AlertDescription>
-              </Alert>
-            )}
+
             {/* Upload state display */}
             {uploadState.isUploading && (
               <div className="space-y-2">

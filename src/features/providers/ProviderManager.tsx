@@ -331,7 +331,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
   useEffect(() => {
     if (preferences && (!preferences.columnPinning || Object.keys(preferences.columnPinning).length === 0)) {
       // Set default pinning for Provider Name if no pinning preferences exist
-      if (providerNameCol) {
+    if (providerNameCol) {
         const newPinning = { left: [providerNameCol] };
         updateColumnPinning(newPinning);
       } else if (columnOrder.length > 0) {
@@ -855,14 +855,14 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             >
               Clear Filters
             </Button>
-            <button
-              type="button"
-              aria-label={filtersOpen ? 'Collapse filters' : 'Expand filters'}
-              className="ml-2 p-1 rounded hover:bg-gray-200 focus:outline-none"
-              onClick={e => { e.stopPropagation(); setFiltersOpen(o => !o); }}
-            >
-              {filtersOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
+          <button
+            type="button"
+            aria-label={filtersOpen ? 'Collapse filters' : 'Expand filters'}
+            className="ml-2 p-1 rounded hover:bg-gray-200 focus:outline-none"
+            onClick={e => { e.stopPropagation(); setFiltersOpen(o => !o); }}
+          >
+            {filtersOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
           </div>
         </div>
         <div
@@ -1048,8 +1048,8 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             </select>
           </div>
         )}
-      </div>
-      {/* Main table with native horizontal scrollbar at the bottom */}
+        </div>
+        {/* Main table with native horizontal scrollbar at the bottom */}
       <div className="ag-theme-alpine w-full">
         <AgGridReact
           rowData={pagedProviders}

@@ -14,6 +14,10 @@ export interface GeneratedContract {
   templateId: string;
   status: 'SUCCESS' | 'FAILED';
   generatedAt: string;
+  fileUrl?: string;
+  fileName?: string;
+  s3Key?: string;
+  error?: string;
 }
 
 interface GeneratorState {

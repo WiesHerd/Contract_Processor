@@ -321,6 +321,54 @@ export const listClauses = /* GraphQL */ `query ListClauses(
   APITypes.ListClausesQueryVariables,
   APITypes.ListClausesQuery
 >;
+export const getDynamicBlock = /* GraphQL */ `query GetDynamicBlock($id: ID!) {
+  getDynamicBlock(id: $id) {
+    id
+    name
+    description
+    placeholder
+    outputType
+    format
+    conditions
+    alwaysInclude
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetDynamicBlockQueryVariables,
+  APITypes.GetDynamicBlockQuery
+>;
+export const listDynamicBlocks = /* GraphQL */ `query ListDynamicBlocks(
+  $filter: ModelDynamicBlockFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listDynamicBlocks(filter: $filter, limit: $limit, nextToken: $nextToken) {
+    items {
+      id
+      name
+      description
+      placeholder
+      outputType
+      format
+      conditions
+      alwaysInclude
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListDynamicBlocksQueryVariables,
+  APITypes.ListDynamicBlocksQuery
+>;
 export const getAuditLog = /* GraphQL */ `query GetAuditLog($id: ID!) {
   getAuditLog(id: $id) {
     id

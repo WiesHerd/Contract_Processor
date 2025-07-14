@@ -9,12 +9,14 @@ import { format } from 'date-fns';
 
 interface TemplateListProps {
   templates: Template[];
-  onEdit: (template: Template) => void;
+  onEdit?: (template: Template) => void;
   onPreview: (template: Template) => void;
-  onDelete: (template: Template) => void;
+  onDelete?: (template: Template) => void;
 }
 
 export function TemplateList({ templates, onEdit, onPreview, onDelete }: TemplateListProps) {
+  const handleEdit = onEdit || (() => {});
+  const handleDelete = onDelete || (() => {});
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {templates.map((template) => (
@@ -81,7 +83,7 @@ export function TemplateList({ templates, onEdit, onPreview, onDelete }: Templat
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onEdit(template)}
+              onClick={() => handleEdit(template)}
             >
               <Edit className="h-4 w-4 mr-1" />
               Edit
@@ -89,7 +91,7 @@ export function TemplateList({ templates, onEdit, onPreview, onDelete }: Templat
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onDelete(template)}
+              onClick={() => handleDelete(template)}
             >
               <Trash2 className="h-4 w-4 mr-1" />
               Delete

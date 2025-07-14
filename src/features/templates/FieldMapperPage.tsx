@@ -5,10 +5,11 @@ import { RootState } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft, Loader2, ChevronDown, Database, Zap } from 'lucide-react';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { CommandDialog } from '@/components/ui/command';
 import localforage from 'localforage';
@@ -30,10 +31,14 @@ import { generateClient } from 'aws-amplify/api';
 import { createTemplateMapping, updateTemplateMapping } from '@/graphql/mutations';
 import { getTemplateMapping, listTemplateMappings } from '@/graphql/queries';
 import { CreateTemplateMappingInput, UpdateTemplateMappingInput } from '@/API';
+// Add dynamic block import and types
+import { DynamicBlockService, DynamicBlockResponse } from '@/services/dynamicBlockService';
 
 interface LocalMapping {
   placeholder: string;
   mappedColumn?: string;
+  mappedDynamicBlock?: string; // New field for dynamic block mapping
+  mappingType?: 'field' | 'dynamic'; // New field to indicate mapping type
   notes?: string;
 }
 
@@ -44,12 +49,22 @@ function FieldSelect({
   onChange,
   placeholder = 'Select field',
   fieldDataCount,
+  mappingType = 'field',
+  dynamicBlocks,
+  onMappingTypeChange,
+  onDynamicBlockChange,
+  selectedDynamicBlock,
 }: {
   value: string | undefined;
   options: string[];
   onChange: (val: string) => void;
   placeholder?: string;
   fieldDataCount?: Map<string, number>;
+  mappingType?: 'field' | 'dynamic';
+  dynamicBlocks?: DynamicBlockResponse[];
+  onMappingTypeChange?: (type: 'field' | 'dynamic') => void;
+  onDynamicBlockChange?: (blockId: string) => void;
+  selectedDynamicBlock?: string;
 }) {
   const NONE_VALUE = '--NONE--';
   const [open, setOpen] = useState(false);
@@ -63,6 +78,12 @@ function FieldSelect({
   const filteredOptions = options.filter(option =>
     option.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Filter dynamic blocks based on search query
+  const filteredDynamicBlocks = dynamicBlocks?.filter(block =>
+    block.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    block.placeholder.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || [];
 
   // Keyboard navigation
   useEffect(() => {
@@ -155,100 +176,143 @@ function FieldSelect({
   };
 
   return (
-    <div className="relative" ref={containerRef}>
-      <Button
-        variant="outline"
-        role="combobox"
-        aria-expanded={open}
-        className="w-[280px] justify-between"
-        onClick={() => setOpen(!open)}
-      >
-        {value && value !== NONE_VALUE ? (
-          <span className="flex items-center">
-            <span className="truncate">{value}</span>
-            {fieldDataCount && (
-              <span className={`ml-2 text-xs ${getDataIndicator(value).color}`}>
-                •
-              </span>
-            )}
-          </span>
-        ) : (
-          placeholder
-        )}
-        <span className="ml-2 h-4 w-4 shrink-0 opacity-50">⌄</span>
-      </Button>
-      
-      {open && (
-        <div className="absolute z-50 w-[400px] mt-1 bg-white border rounded-md shadow-lg">
-          <div className="p-3 border-b">
-            <Input
-              placeholder="Search fields..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8"
-              autoFocus
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              {filteredOptions.length} of {options.length} fields
-            </div>
-          </div>
+    <div ref={containerRef} className="space-y-2">
+      {/* Modern Toggle Switch */}
+      <div className="flex items-center gap-3 py-1">
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4 text-gray-500" />
+          <span className="text-sm text-gray-600">Field</span>
+        </div>
+        <Switch
+          checked={mappingType === 'dynamic'}
+          onCheckedChange={(checked) => onMappingTypeChange?.(checked ? 'dynamic' : 'field')}
+        />
+        <div className="flex items-center gap-2">
+          <Zap className="h-4 w-4 text-blue-500" />
+          <span className="text-sm text-gray-600">Dynamic</span>
+        </div>
+      </div>
+
+      {/* Field or Dynamic Block Selector */}
+      {mappingType === 'field' ? (
+        <div className="relative">
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between"
+            onClick={() => setOpen(!open)}
+          >
+            {value ? value : placeholder}
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
           
-          <ScrollArea className="max-h-96">
-            <div className="p-2">
-              {/* None option */}
-              <div
-                className="flex items-center px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-gray-100"
-                onClick={() => {
-                  onChange('');
-                  setOpen(false);
-                  setSearchQuery('');
-                }}
-              >
-                <span className="text-gray-500">-- None --</span>
+          {open && (
+            <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+              <div className="p-2 border-b">
+                <Input
+                  placeholder="Search fields..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8"
+                />
               </div>
               
-              {/* Categorized fields */}
-              {Object.entries(categorizedFields).map(([category, fields]) => {
-                if (fields.length === 0) return null;
-                
-                return (
-                  <div key={category} className="mt-3">
-                    <div className="px-2 py-1 text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                      {category} ({fields.length})
-                    </div>
-                    {fields.map((field) => {
-                      const indicator = getDataIndicator(field);
-                      return (
-                        <div
-                          key={field}
-                          className="flex items-center justify-between px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-gray-100"
-                          onClick={() => {
-                            onChange(field);
-                            setOpen(false);
-                            setSearchQuery('');
-                          }}
-                        >
-                          <span className="truncate flex-1">{field}</span>
-                          {fieldDataCount && (
-                            <span className={`ml-2 text-xs ${indicator.color} flex items-center`}>
-                              <span className="w-2 h-2 rounded-full bg-current mr-1"></span>
-                              <span className="hidden sm:inline">{indicator.text}</span>
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-              
-              {filteredOptions.length === 0 && (
-                <div className="px-2 py-4 text-sm text-gray-500 text-center">
-                  No fields found matching "{searchQuery}"
+              <div className="p-1">
+                <div
+                  className="px-2 py-1 text-sm cursor-pointer hover:bg-gray-100 rounded"
+                  onClick={() => {
+                    onChange(NONE_VALUE);
+                    setOpen(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  -- None --
                 </div>
-              )}
+                
+                {filteredOptions.map((option) => (
+                  <div
+                    key={option}
+                    className="px-2 py-1 text-sm cursor-pointer hover:bg-gray-100 rounded flex items-center justify-between"
+                    onClick={() => {
+                      onChange(option);
+                      setOpen(false);
+                      setSearchQuery('');
+                    }}
+                  >
+                    <span>{option}</span>
+                    {fieldDataCount && (
+                      <span className="text-xs text-gray-500">
+                        {fieldDataCount.get(option) || 0} records
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </ScrollArea>
+          )}
+        </div>
+      ) : (
+        <div className="relative">
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between"
+            onClick={() => setOpen(!open)}
+          >
+            {selectedDynamicBlock ? 
+              dynamicBlocks?.find(b => b.id === selectedDynamicBlock)?.name || 'Select dynamic block...' : 
+              'Select dynamic block...'
+            }
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+          
+          {open && (
+            <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+              <div className="p-2 border-b">
+                <Input
+                  placeholder="Search dynamic blocks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8"
+                />
+              </div>
+              
+              <div className="p-1">
+                <div
+                  className="px-2 py-1 text-sm cursor-pointer hover:bg-gray-100 rounded"
+                  onClick={() => {
+                    onDynamicBlockChange?.('');
+                    setOpen(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  -- None --
+                </div>
+                
+                {filteredDynamicBlocks.map((block) => (
+                  <div
+                    key={block.id}
+                    className="px-2 py-1 text-sm cursor-pointer hover:bg-gray-100 rounded"
+                    onClick={() => {
+                      onDynamicBlockChange?.(block.id);
+                      setOpen(false);
+                      setSearchQuery('');
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-3 w-3 text-blue-500" />
+                      <div className="font-medium">{block.name}</div>
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                        {`{{${block.placeholder}}}`}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -273,7 +337,7 @@ function useClickOutside(ref: React.RefObject<HTMLElement>, handler: () => void)
 const client = generateClient();
 
 // Fetch all TemplateMapping records for a templateId
-async function fetchTemplateMappingsByTemplateId(templateId: string) {
+export async function fetchTemplateMappingsByTemplateId(templateId: string) {
   const result = await client.graphql({
     query: listTemplateMappings,
     variables: { filter: { templateID: { eq: templateId } }, limit: 1000 },
@@ -282,7 +346,7 @@ async function fetchTemplateMappingsByTemplateId(templateId: string) {
 }
 
 // Upsert (create or update) TemplateMapping records for each placeholder
-async function saveTemplateMappings(mapping: FieldMapping[], templateId: string) {
+async function saveTemplateMappings(mapping: LocalMapping[], templateId: string) {
   const results = [];
   
   // First, fetch existing mappings to see what exists
@@ -291,10 +355,18 @@ async function saveTemplateMappings(mapping: FieldMapping[], templateId: string)
   for (const m of mapping) {
     if (!m.placeholder) continue;
     
+    // Determine the value to save based on mapping type
+    let value = '';
+    if (m.mappingType === 'dynamic' && m.mappedDynamicBlock) {
+      value = `dynamic:${m.mappedDynamicBlock}`;
+    } else if (m.mappingType === 'field' && m.mappedColumn) {
+      value = m.mappedColumn;
+    }
+    
     const input = {
       templateID: templateId,
       field: m.placeholder,
-      value: m.mappedColumn || '',
+      value,
       notes: m.notes || '',
     };
     
@@ -352,6 +424,27 @@ export default function FieldMapperPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasTriedFetch, setHasTriedFetch] = useState(false);
+
+  // Add dynamic blocks state
+  const [dynamicBlocks, setDynamicBlocks] = useState<DynamicBlockResponse[]>([]);
+  const [loadingDynamicBlocks, setLoadingDynamicBlocks] = useState(false);
+
+  // Load dynamic blocks
+  useEffect(() => {
+    const loadDynamicBlocks = async () => {
+      setLoadingDynamicBlocks(true);
+      try {
+        const blocks = await DynamicBlockService.listDynamicBlocks();
+        setDynamicBlocks(blocks);
+        console.log('Loaded dynamic blocks:', blocks);
+      } catch (error) {
+        console.error('Error loading dynamic blocks:', error);
+      } finally {
+        setLoadingDynamicBlocks(false);
+      }
+    };
+    loadDynamicBlocks();
+  }, []);
 
   // Fetch providers if missing on mount
   useEffect(() => {
@@ -458,9 +551,12 @@ export default function FieldMapperPage() {
   const provider = providers[0] as { [key: string]: any } | undefined;
   const existingMapping = useSelector((state: RootState) => state.mappings.mappings[templateId || '']);
 
-  // Initialize mapping state from Redux or create new
-  const [mapping, setMappingState] = useState<FieldMapping[]>(() => {
-    return template?.placeholders.map((ph: string) => ({ placeholder: ph })) || [];
+  // Update mapping state type
+  const [mapping, setMappingState] = useState<LocalMapping[]>(() => {
+    return template?.placeholders.map((ph: string) => ({ 
+      placeholder: ph, 
+      mappingType: 'field' as const 
+    })) || [];
   });
 
   const [search, setSearch] = useState('');
@@ -480,9 +576,28 @@ export default function FieldMapperPage() {
         if (mappingRecords && mappingRecords.length > 0) {
           const hydrated = template?.placeholders.map((ph: string) => {
             const found = mappingRecords.find((rec: any) => rec.field === ph);
-            return found
-              ? { placeholder: ph, mappedColumn: found.value ?? undefined, notes: found.notes ?? undefined }
-              : { placeholder: ph };
+            if (found) {
+              // Parse the value to determine if it's a field or dynamic block
+              let mappedColumn = found.value ?? undefined;
+              let mappedDynamicBlock = undefined;
+              let mappingType: 'field' | 'dynamic' = 'field';
+              
+              // Check if the value is a dynamic block ID (starts with 'dynamic:')
+              if (found.value?.startsWith('dynamic:')) {
+                mappedDynamicBlock = found.value.substring(8); // Remove 'dynamic:' prefix
+                mappedColumn = undefined;
+                mappingType = 'dynamic';
+              }
+              
+              return {
+                placeholder: ph,
+                mappedColumn,
+                mappedDynamicBlock,
+                mappingType,
+                notes: found.notes ?? undefined
+              };
+            }
+            return { placeholder: ph, mappingType: 'field' as const };
           }) || [];
           console.log('Hydrated mappings:', hydrated);
           setMappingState(hydrated);
@@ -496,7 +611,10 @@ export default function FieldMapperPage() {
           }));
         } else {
           console.log('No existing mappings found');
-          setMappingState(template?.placeholders.map((ph: string) => ({ placeholder: ph })) || []);
+          setMappingState(template?.placeholders.map((ph: string) => ({ 
+            placeholder: ph, 
+            mappingType: 'field' as const 
+          })) || []);
         }
       } catch (err) {
         console.error('Error loading template mappings:', err);
@@ -520,7 +638,7 @@ export default function FieldMapperPage() {
   }, []);
   */
 
-  const mappedCount = mapping.filter(m => m.mappedColumn).length;
+  const mappedCount = mapping.filter(m => m.mappedColumn || m.mappedDynamicBlock).length;
   const totalCount = mapping.length;
   const percent = totalCount > 0 ? Math.round((mappedCount / totalCount) * 100) : 0;
 
@@ -545,7 +663,8 @@ export default function FieldMapperPage() {
   const handleAutoMap = () => {
     setMappingState((prev) =>
       prev.map((m) => {
-        if (m.mappedColumn) return m;
+        // Skip if already mapped to either field or dynamic block
+        if (m.mappedColumn || m.mappedDynamicBlock) return m;
 
         const normalize = (str: string) => str.replace(/[\s_{}-]/g, '').toLowerCase();
         
@@ -558,6 +677,22 @@ export default function FieldMapperPage() {
         const cleanPh = normalize(m.placeholder);
         const targetColumnName = aliasMap[cleanPh] || cleanPh;
 
+        // First, try to match with dynamic blocks for certain placeholders
+        const dynamicBlockMatch = dynamicBlocks.find(block => 
+          normalize(block.placeholder) === cleanPh || 
+          normalize(block.name) === cleanPh ||
+          (cleanPh.includes('breakdown') && normalize(block.placeholder).includes('breakdown')) ||
+          (cleanPh.includes('fte') && normalize(block.placeholder).includes('fte'))
+        );
+
+        if (dynamicBlockMatch) {
+          return { 
+            ...m, 
+            mappingType: 'dynamic' as const, 
+            mappedDynamicBlock: dynamicBlockMatch.id 
+          };
+        }
+
         // Pass 1: Find an exact match using the (potentially aliased) target name.
         let found = columns.find((col) => normalize(col) === targetColumnName);
 
@@ -567,7 +702,7 @@ export default function FieldMapperPage() {
           found = columns.find((col) => normalize(col).includes(targetColumnName));
         }
 
-        return found ? { ...m, mappedColumn: found } : m;
+        return found ? { ...m, mappingType: 'field' as const, mappedColumn: found } : m;
       })
     );
     setAutoMapActive(true);
@@ -593,13 +728,20 @@ export default function FieldMapperPage() {
 
   // Update mapping in Redux when it changes
   useEffect(() => {
+    // Convert LocalMapping to FieldMapping for Redux store
+    const fieldMappings = mapping.map(m => ({
+      placeholder: m.placeholder,
+      mappedColumn: m.mappingType === 'field' ? m.mappedColumn : undefined,
+      notes: m.notes
+    }));
+    
     dispatch(updateMapping({
       templateId: templateId as string,
-      mappings: mapping,
+      mappings: fieldMappings,
     }));
   }, [mapping, templateId, dispatch]);
 
-  const hasUnmapped = mapping.some(m => !m.mappedColumn);
+  const hasUnmapped = mapping.some(m => !m.mappedColumn && !m.mappedDynamicBlock);
 
   if (!template || !templateId) {
     return (
@@ -696,7 +838,8 @@ export default function FieldMapperPage() {
                 </div>
               ) : (
                 filteredPlaceholders.map((ph: string) => {
-                  const isMapped = mapping.find(m => m.placeholder === ph)?.mappedColumn;
+                  const mappingItem = mapping.find(m => m.placeholder === ph);
+                  const isMapped = !!(mappingItem?.mappedColumn || mappingItem?.mappedDynamicBlock);
                   return (
                     <button
                       key={ph}
@@ -774,14 +917,15 @@ export default function FieldMapperPage() {
                       <TableHead>Placeholder</TableHead>
                       <TableHead>Mapped Column</TableHead>
                       <TableHead>Preview</TableHead>
-                      <TableHead>Notes</TableHead>
                       <TableHead className="w-[100px]">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredMapping.map((m, idx) => {
                       const col = m.mappedColumn && provider ? provider[m.mappedColumn] : undefined;
-                      const isMapped = !!m.mappedColumn;
+                      const isMapped = !!(m.mappedColumn || m.mappedDynamicBlock);
+                      const dynamicBlock = m.mappedDynamicBlock ? dynamicBlocks.find(b => b.id === m.mappedDynamicBlock) : undefined;
+                      
                       return (
                         <TableRow
                           key={m.placeholder}
@@ -796,50 +940,80 @@ export default function FieldMapperPage() {
                               onChange={val => {
                                 setMappingState(current =>
                                   current.map(item =>
-                                    item.placeholder === m.placeholder ? { ...item, mappedColumn: val } : item
+                                    item.placeholder === m.placeholder ? { 
+                                      ...item, 
+                                      mappedColumn: val === 'none' ? undefined : val,
+                                      mappedDynamicBlock: undefined // Clear dynamic block when selecting field
+                                    } : item
                                   )
                                 );
                               }}
                               fieldDataCount={fieldDataCount}
+                              mappingType={m.mappingType || 'field'}
+                              dynamicBlocks={dynamicBlocks}
+                              selectedDynamicBlock={m.mappedDynamicBlock}
+                              onMappingTypeChange={(type) => {
+                                setMappingState(current =>
+                                  current.map(item =>
+                                    item.placeholder === m.placeholder ? { 
+                                      ...item, 
+                                      mappingType: type,
+                                      mappedColumn: type === 'dynamic' ? undefined : item.mappedColumn,
+                                      mappedDynamicBlock: type === 'field' ? undefined : item.mappedDynamicBlock
+                                    } : item
+                                  )
+                                );
+                              }}
+                              onDynamicBlockChange={(blockId) => {
+                                setMappingState(current =>
+                                  current.map(item =>
+                                    item.placeholder === m.placeholder ? { 
+                                      ...item, 
+                                      mappedDynamicBlock: blockId || undefined
+                                    } : item
+                                  )
+                                );
+                              }}
                             />
                           </TableCell>
                           <TableCell className="font-mono text-gray-500 truncate max-w-xs">
-                            {m.mappedColumn && provider ? (() => {
-                              // First try flat field
-                              let value = (provider as any)[m.mappedColumn];
-                              
-                              // If not found, try dynamicFields
-                              if (value === null || value === undefined) {
-                                if (provider.dynamicFields) {
-                                  try {
-                                    const dynamicFieldsObj = typeof provider.dynamicFields === 'string' 
-                                      ? JSON.parse(provider.dynamicFields) 
-                                      : provider.dynamicFields;
-                                    if (dynamicFieldsObj && typeof dynamicFieldsObj === 'object') {
-                                      value = dynamicFieldsObj[m.mappedColumn];
+                            {m.mappingType === 'dynamic' && dynamicBlock ? (
+                              <div className="text-blue-600 flex items-center gap-2">
+                                <Zap className="h-4 w-4" />
+                                <div>
+                                  <div className="font-medium">{dynamicBlock.name}</div>
+                                  <div className="text-xs">Dynamic Block</div>
+                                </div>
+                              </div>
+                            ) : (
+                              m.mappedColumn && provider ? (() => {
+                                // First try flat field
+                                let value = (provider as any)[m.mappedColumn];
+                                
+                                // If not found, try dynamicFields
+                                if (value === null || value === undefined) {
+                                  if (provider.dynamicFields) {
+                                    try {
+                                      const dynamicFieldsObj = typeof provider.dynamicFields === 'string' 
+                                        ? JSON.parse(provider.dynamicFields) 
+                                        : provider.dynamicFields;
+                                      if (dynamicFieldsObj && typeof dynamicFieldsObj === 'object') {
+                                        value = dynamicFieldsObj[m.mappedColumn];
+                                      }
+                                    } catch (e) {
+                                      // Ignore parsing errors for preview
                                     }
-                                  } catch (e) {
-                                    // Ignore parsing errors for preview
                                   }
                                 }
-                              }
-                              
-                              return value !== null && value !== undefined ? String(value) : <i className="text-gray-400">No preview</i>;
-                            })() : <i className="text-gray-400">No preview</i>}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={m.notes || ''}
-                              onChange={e =>
-                                setMappingState((prev: FieldMapping[]) =>
-                                  prev.map((mm: FieldMapping, i: number) =>
-                                    i === idx ? { ...mm, notes: e.target.value } : mm
-                                  )
-                                )
-                              }
-                              placeholder="Notes or logic (optional)"
-                              className="w-full"
-                            />
+                                
+                                return value !== null && value !== undefined ? (
+                                  <div className="flex items-center gap-2 text-gray-700">
+                                    <Database className="h-3 w-3 text-gray-500" />
+                                    <span>{String(value)}</span>
+                                  </div>
+                                ) : <i className="text-gray-400">No preview</i>;
+                              })() : <i className="text-gray-400">No preview</i>
+                            )}
                           </TableCell>
                           <TableCell>
                             {isMapped ? (

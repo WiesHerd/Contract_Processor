@@ -4,7 +4,7 @@ import { RootState } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search } from 'lucide-react';
+import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search, Eye } from 'lucide-react';
 import {
   setSelectedTemplate,
   setSelectedProvider,
@@ -15,6 +15,7 @@ import {
   addGenerationLog,
   addGeneratedContract,
   setGenerationLogs,
+  clearGeneratedContracts,
 } from './generatorSlice';
 import { generateDocument, downloadDocument } from './utils/documentGenerator';
 import type { GeneratedFile } from './generatorSlice';
@@ -36,6 +37,7 @@ import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import type { AppDispatch } from '@/store';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
 import { ContractGenerationLogService, ContractGenerationLog } from '@/services/contractGenerationLogService';
 import { AgGridReact } from 'ag-grid-react';
 import 'ag-grid-community/styles/ag-grid.css';
@@ -51,6 +53,7 @@ import { Progress } from '@/components/ui/progress';
 import { Clause } from '@/types/clause';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import ContractPreviewModal from './components/ContractPreviewModal';
 
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
@@ -127,7 +130,6 @@ export default function ContractGenerator() {
   const [gridClientWidth, setGridClientWidth] = useState(0);
   const [activeView, setActiveView] = useState<'generator' | 'logs'>('generator');
 
-  const [bulkClauseModalOpen, setBulkClauseModalOpen] = useState(false);
   const [selectedClauseId, setSelectedClauseId] = useState<string>('');
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<string>('');
   const [customPlaceholder, setCustomPlaceholder] = useState<string>('');
@@ -138,7 +140,8 @@ export default function ContractGenerator() {
   const [bulkOpen, setBulkOpen] = useState(true);
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
   const [alertError, setAlertError] = useState<string | null>(null);
-  const [statusTab, setStatusTab] = useState<'notGenerated' | 'pending' | 'processed' | 'all'>('notGenerated');
+  const [statusTab, setStatusTab] = useState<'notGenerated' | 'processed' | 'all'>('notGenerated');
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
 
   // Load clauses with caching
   useEffect(() => {
@@ -171,18 +174,61 @@ export default function ContractGenerator() {
     }
   }, [selectedTemplateId, templates, dispatch]);
 
+  // Add AG Grid ref for selection management
+  const gridRef = useRef<AgGridReact>(null);
+  const isUpdatingSelection = useRef(false);
+
+
+
   // Multi-select handlers
   const allProviderIds = providers.map((p: Provider) => p.id);
   const allSelected = selectedProviderIds.length === allProviderIds.length && allProviderIds.length > 0;
+  const someSelected = selectedProviderIds.length > 0;
 
   const toggleSelectAll = () => {
-    setSelectedProviderIds(allSelected ? [] : allProviderIds);
+    if (allSelected) {
+      setSelectedProviderIds([]);
+      gridRef.current?.api.deselectAll();
+    } else {
+      setSelectedProviderIds(allProviderIds);
+      gridRef.current?.api.selectAll();
+    }
   };
 
   const toggleSelectProvider = (id: string) => {
-    setSelectedProviderIds(prev =>
-      prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]
+    setSelectedProviderIds(prev => 
+      prev.includes(id) 
+        ? prev.filter(pid => pid !== id)
+        : [...prev, id]
     );
+  };
+
+  // Helper function to download a contract with error handling
+  const downloadContract = async (provider: Provider, templateId: string) => {
+    try {
+      const contractYear = selectedTemplate?.contractYear || new Date().getFullYear().toString();
+      const contractId = provider.id + '-' + templateId + '-' + contractYear;
+      const fileName = getContractFileName(
+        contractYear,
+        provider.name,
+        new Date().toISOString().split('T')[0]
+      );
+      
+      // Try to get the contract file from S3
+      const { url: downloadUrl } = await getContractFile(contractId, fileName);
+      
+      // Open download URL in new tab
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      
+    } catch (error) {
+      console.error('Failed to download contract:', error);
+      setUserError(`Failed to download contract for ${provider.name}. The file may no longer be available or there was an error accessing S3.`);
+      
+      // Try to regenerate the contract if download fails
+      if (confirm(`Failed to download the contract. Would you like to regenerate it for ${provider.name}?`)) {
+        await generateAndDownloadDocx(provider);
+      }
+    }
   };
 
   // Helper to generate and download DOCX for a provider
@@ -190,11 +236,29 @@ export default function ContractGenerator() {
     if (!selectedTemplate) return;
     
     try {
-    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
-    const mapping = mappings[selectedTemplate.id]?.mappings;
-    const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
-    const htmlClean = normalizeSmartQuotes(mergedHtml);
-    const aptosStyle = `<style>
+      const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
+      const mapping = mappings[selectedTemplate.id]?.mappings;
+      
+      // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
+      const enhancedMapping = mapping?.map(m => {
+        // Check if this mapping has a dynamic block (stored in value field with dynamic: prefix)
+        if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
+          return {
+            ...m,
+            mappingType: 'dynamic' as const,
+            mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
+            mappedColumn: undefined, // Clear the mappedColumn since it's a dynamic block
+          };
+        }
+        return {
+          ...m,
+          mappingType: 'field' as const,
+        };
+      });
+      
+      const { content: mergedHtml } = await mergeTemplateWithData(selectedTemplate, provider, html, enhancedMapping);
+      const htmlClean = normalizeSmartQuotes(mergedHtml);
+      const aptosStyle = `<style>
 body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
   font-family: Aptos, Arial, sans-serif !important;
   font-size: 11pt !important;
@@ -203,48 +267,63 @@ h1 { font-size: 16pt !important; font-weight: bold !important; }
 h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
 b, strong { font-weight: bold !important; }
 </style>`;
-    const htmlWithFont = aptosStyle + htmlClean;
-    // @ts-ignore
-    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-      setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
-      return;
-    }
-    // @ts-ignore
-    const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-    const contractYear = selectedTemplate.contractYear || new Date().getFullYear().toString();
-    const runDate = new Date().toISOString().split('T')[0];
-    const fileName = getContractFileName(contractYear, provider.name, runDate);
-      // 1. Save to S3
+      const htmlWithFont = aptosStyle + htmlClean;
+
+      // @ts-ignore
+      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+        setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
+        return;
+      }
+      // @ts-ignore
+      const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+      const contractYear = selectedTemplate.contractYear || new Date().getFullYear().toString();
+      const runDate = new Date().toISOString().split('T')[0];
+      const fileName = getContractFileName(contractYear, provider.name, runDate);
+      
+      // 1. Save to S3 with improved error handling
       let s3Url = '';
+      let s3Key = '';
       try {
         // Convert Blob to File for saveContractFile
-        const docxFile = new File([docxBlob], fileName, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        const docxFile = new File([docxBlob], fileName, { 
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+        });
         const contractId = provider.id + '-' + selectedTemplate.id + '-' + contractYear;
-        await saveContractFile(docxFile, contractId, {
+        
+        // Save to S3
+        s3Key = await saveContractFile(docxFile, contractId, {
           providerId: provider.id,
           providerName: provider.name,
           templateId: selectedTemplate.id,
           templateName: selectedTemplate.name,
           contractYear,
+          fileName: fileName,
+          fileSize: docxFile.size.toString(),
+          generatedAt: new Date().toISOString(),
+          generatedBy: 'user', // TODO: Get actual user ID
         });
-        // Get signed S3 download URL
+        
+        // Get signed S3 download URL (valid for 1 hour)
         const { url: signedUrl } = await getContractFile(contractId, fileName);
         s3Url = signedUrl;
+        
+        console.log('Contract saved to S3:', { s3Key, contractId, fileName });
       } catch (s3err) {
         console.error('Failed to upload contract to S3:', s3err);
         setUserError('Contract generated but failed to upload to S3. You can still download locally.');
       }
+      
       // 2. Download locally for immediate access
-    const url = URL.createObjectURL(docxBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      const url = URL.createObjectURL(docxBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
-      // Log the generation event
+      // 3. Log the generation event with comprehensive details
       const logInput = {
         providerId: provider.id,
         contractYear: contractYear,
@@ -254,7 +333,7 @@ b, strong { font-weight: bold !important; }
         outputType: 'DOCX',
         status: 'SUCCESS',
         fileUrl: s3Url || fileName, // Prefer S3 URL if available
-        notes: `Generated contract for ${provider.name} using template ${selectedTemplate.name}`
+        notes: `Generated contract for ${provider.name} using template ${selectedTemplate.name}${s3Key ? ` (S3 Key: ${s3Key})` : ''}`
       };
 
       try {
@@ -265,12 +344,18 @@ b, strong { font-weight: bold !important; }
           templateId: selectedTemplate.id,
           status: 'SUCCESS',
           generatedAt: new Date().toISOString(),
+          fileUrl: s3Url, // Store the S3 URL for later access
+          fileName: fileName,
+          s3Key: s3Key,
         }));
+        
+        console.log('Contract generation logged successfully:', logEntry);
       } catch (logError) {
         console.error('Failed to log contract generation:', logError);
-        // Don't return here! Continue to audit log
+        // Continue to audit log even if contract generation log fails
       }
-      // Always attempt to log to the main audit log, even if contractGenerationLogService fails
+      
+      // 4. Always attempt to log to the main audit log
       console.log('Dispatching logSecurityEvent for contract generation', {provider, selectedTemplate, fileName, contractYear});
       try {
         const auditDetails = JSON.stringify({
@@ -280,6 +365,8 @@ b, strong { font-weight: bold !important; }
           templateName: selectedTemplate.name,
           contractYear,
           fileUrl: s3Url || fileName,
+          fileName: fileName,
+          s3Key: s3Key,
           status: 'SUCCESS',
           outputType: 'DOCX',
           generatedAt: new Date().toISOString(),
@@ -290,11 +377,14 @@ b, strong { font-weight: bold !important; }
             templateName: selectedTemplate.name,
             contractYear,
             fileUrl: s3Url || fileName,
+            fileName: fileName,
+            s3Key: s3Key,
             status: 'SUCCESS',
             outputType: 'DOCX',
             generatedAt: new Date().toISOString(),
           }
         });
+        
         const result = await dispatch(logSecurityEvent({
           action: 'CONTRACT_GENERATED',
           details: auditDetails,
@@ -309,23 +399,30 @@ b, strong { font-weight: bold !important; }
             templateName: selectedTemplate.name,
             contractYear,
             fileUrl: s3Url || fileName,
+            fileName: fileName,
+            s3Key: s3Key,
             status: 'SUCCESS',
             outputType: 'DOCX',
             generatedAt: new Date().toISOString(),
           },
         }));
-        console.log('logSecurityEvent dispatched, result:', result);
+        
+        console.log('logSecurityEvent dispatched successfully:', result);
       } catch (auditLogError) {
         console.error('Error dispatching logSecurityEvent:', auditLogError);
       }
+      
     } catch (error) {
       console.error('Error generating document:', error);
       setUserError('Failed to generate document. Please try again.');
+      
+      // Log the failure
       dispatch(addGeneratedContract({
         providerId: provider.id,
         templateId: selectedTemplate.id,
         status: 'FAILED',
         generatedAt: new Date().toISOString(),
+        error: error instanceof Error ? error.message : 'Unknown error',
       }));
     }
   };
@@ -408,6 +505,25 @@ b, strong { font-weight: bold !important; }
     }
   };
 
+  const handlePreview = () => {
+    if (!selectedTemplate) {
+      setUserError("Please select a template before previewing.");
+      return;
+    }
+    if (selectedProviderIds.length === 0) {
+      setUserError("Please select at least one provider to preview.");
+      return;
+    }
+    setPreviewModalOpen(true);
+  };
+
+  const handlePreviewGenerate = (providerId: string) => {
+    const provider = providers.find(p => p.id === providerId);
+    if (provider) {
+      generateAndDownloadDocx(provider);
+    }
+  };
+
   const handleRetryFailed = async () => {
     setIsBulkGenerating(true);
     const failedProviders = providers.filter(p => {
@@ -441,7 +557,25 @@ b, strong { font-weight: bold !important; }
       return;
     }
     const mapping = mappings[selectedTemplate.id]?.mappings;
-    const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
+    
+    // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
+    const enhancedMapping = mapping?.map(m => {
+      // Check if this mapping has a dynamic block (stored in value field with dynamic: prefix)
+      if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
+        return {
+          ...m,
+          mappingType: 'dynamic' as const,
+          mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
+          mappedColumn: undefined, // Clear the mappedColumn since it's a dynamic block
+        };
+      }
+      return {
+        ...m,
+        mappingType: 'field' as const,
+      };
+    });
+    
+    const { content: mergedHtml } = await mergeTemplateWithData(selectedTemplate, provider, html, enhancedMapping);
     if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
       setUserError("No contract content available to export after merging. Please check your template and provider data.");
       return;
@@ -573,199 +707,272 @@ b, strong { font-weight: bold !important; }
     return Array.from(new Set(matches.map(m => m.replace(/{{|}}/g, ''))));
   };
 
-  // AG Grid column definitions (with filtering and tooltip)
-  const agGridColumnDefs = useMemo(() => [
+  // Function to clear generated contracts for selected providers
+  const handleClearGenerated = async () => {
+    if (selectedProviderIds.length === 0) {
+      setAlertError('Please select providers to clear generated contracts.');
+      return;
+    }
+
+    try {
+      // Clear generated contracts from state for selected providers
+      // We need to clear the generatedContracts array, not generatedFiles
+      dispatch(clearGeneratedContracts());
+
+      // Clear the selection
+      setSelectedProviderIds([]);
+      
+      // Show success message
+      setAlertError(null);
+      
+    } catch (error) {
+      console.error('Error clearing generated contracts:', error);
+      setAlertError('Failed to clear generated contracts. Please try again.');
+    }
+  };
+
+  // Base columns that appear in all tabs
+  const baseColumns = [
     {
       headerName: '',
-      field: 'checkbox',
-      width: 48,
+      field: 'selected',
+      width: 50,
+      checkboxSelection: true,
+      headerCheckboxSelection: true,
       pinned: 'left',
       suppressMenu: true,
-      suppressMovable: true,
-      suppressSizeToFit: true,
-      lockPosition: true,
-      lockPinned: true,
-      resizable: false,
       sortable: false,
       filter: false,
-      cellRenderer: (params: any) => (
-        <div className="flex items-center h-full pl-2">
-          <Checkbox
-            checked={selectedProviderIds.includes(params.data.id)}
-            onCheckedChange={() => {
-              const id = params.data.id;
-              setSelectedProviderIds(prev =>
-                prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]
-              );
-            }}
-            aria-label={`Select ${params.data.name}`}
-            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-          />
-        </div>
-      ),
-      headerComponent: (params: any) => {
-        const headerCheckboxDivRef = useRef<HTMLDivElement>(null);
-        const allChecked = paginatedProviders.length > 0 && paginatedProviders.every(p => selectedProviderIds.includes(p.id));
-        const someChecked = paginatedProviders.some(p => selectedProviderIds.includes(p.id)) && !allChecked;
-        useLayoutEffect(() => {
-          if (headerCheckboxDivRef.current) {
-            const input = headerCheckboxDivRef.current.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
-            if (input) input.indeterminate = someChecked;
-          }
-        }, [someChecked]);
-        return (
-          <div ref={headerCheckboxDivRef} className="flex items-center h-full pl-2">
-            <Checkbox
-              checked={allChecked}
-              onCheckedChange={() => {
-                const ids = paginatedProviders.map(p => p.id);
-                if (allChecked) {
-                  setSelectedProviderIds(selectedProviderIds.filter(id => !ids.includes(id)));
-                } else {
-                  setSelectedProviderIds([...new Set([...selectedProviderIds, ...ids])]);
-                }
-              }}
-              aria-label="Select all providers"
-              className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-            />
-          </div>
-        );
-      },
-      cellClass: 'ag-checkbox-cell',
-      headerClass: 'ag-checkbox-header',
+      resizable: false,
     },
     {
-      field: 'name',
       headerName: 'Provider Name',
-      minWidth: 180,
+      field: 'name',
+      width: 200,
       pinned: 'left',
-      valueFormatter: (params: any) => params.value || '',
-      cellStyle: { fontWeight: 'bold', color: '#1f2937' },
+      cellRenderer: (params: any) => (
+        <div className="font-medium text-gray-900">{params.value}</div>
+      ),
       filter: 'agTextColumnFilter',
       tooltipField: 'name',
     },
     {
-      field: 'employeeId',
       headerName: 'Employee ID',
-      minWidth: 120,
+      field: 'employeeId',
+      width: 120,
       filter: 'agTextColumnFilter',
       tooltipField: 'employeeId',
     },
     {
-      field: 'specialty',
       headerName: 'Specialty',
-      minWidth: 120,
-      valueFormatter: (params: any) => params.value || 'N/A',
+      field: 'specialty',
+      width: 150,
       filter: 'agTextColumnFilter',
       tooltipField: 'specialty',
     },
     {
-      field: 'startDate',
-      headerName: 'Start Date',
-      minWidth: 120,
-      valueFormatter: (params: any) => formatDate(params.value),
+      headerName: 'Subspecialty',
+      field: 'subspecialty',
+      width: 150,
       filter: 'agTextColumnFilter',
-      tooltipField: 'startDate',
+      tooltipField: 'subspecialty',
     },
     {
-      field: 'baseSalary',
+      headerName: 'Provider Type',
+      field: 'providerType',
+      width: 120,
+      filter: 'agTextColumnFilter',
+      tooltipField: 'providerType',
+    },
+    {
+      headerName: 'Administrative Role',
+      field: 'administrativeRole',
+      width: 150,
+      filter: 'agTextColumnFilter',
+      tooltipField: 'administrativeRole',
+    },
+    {
       headerName: 'Base Salary',
-      minWidth: 120,
-      valueFormatter: (params: any) => {
-        if (!params.value) return '';
-        return formatCurrency(params.value);
-      },
-      filter: 'agTextColumnFilter',
-      tooltipField: 'baseSalary',
+      field: 'baseSalary',
+      width: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: 'agNumberColumnFilter',
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
     },
     {
-      field: 'fte',
       headerName: 'FTE',
-      minWidth: 80,
-      valueFormatter: (params: any) => {
-        if (params.value === undefined || params.value === null) return '';
-        return Number(params.value).toFixed(2);
-      },
+      field: 'fte',
+      width: 80,
+      valueFormatter: (params: any) => formatNumber(params.value),
       filter: 'agNumberColumnFilter',
-      tooltipField: 'fte',
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
     },
-    { headerName: 'Provider Type', field: 'providerType', minWidth: 140, filter: true, sortable: true },
-    { headerName: 'Subspecialty', field: 'subspecialty', minWidth: 140, filter: true, sortable: true },
-    { headerName: 'Status', field: 'generationStatus', minWidth: 140, cellRenderer: (params: any) => {
+    {
+      headerName: 'Start Date',
+      field: 'startDate',
+      width: 130,
+      valueFormatter: (params: any) => formatDate(params.value),
+      filter: 'agDateColumnFilter',
+      tooltipValueGetter: (params: any) => formatDate(params.value),
+    },
+    {
+      field: 'compensationModel',
+      headerName: 'Compensation Model',
+      width: 160,
+      valueGetter: (params: any) => {
+        const provider = params.data;
+        return provider.compensationModel || provider.compensationType || provider.CompensationModel || '';
+      },
+      filter: 'agTextColumnFilter',
+      tooltipField: 'compensationModel',
+    },
+  ];
+
+  // Generation Status column (only for All tab)
+  const generationStatusColumn = {
+    headerName: 'Generation Status',
+    field: 'generationStatus',
+    width: 150,
+    cellRenderer: (params: any) => {
       const status = params.value;
-      const generationDate = getGenerationDate(params.data.id, selectedTemplate?.id || '');
       if (status === 'Success') {
         return (
-          <div className="flex flex-col gap-1">
-            <span className="text-green-600 font-medium flex items-center gap-1">
-              <CheckCircle className="w-4 h-4" /> Success
-            </span>
-            {generationDate && (
-              <span className="text-xs text-gray-500">
-                {formatDate(generationDate.toISOString())}
-              </span>
-            )}
-          </div>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle className="w-3 h-3" /> Generated
+          </span>
         );
       }
       if (status === 'Failed') {
         return (
-          <div className="flex flex-col gap-1">
-            <span className="text-red-600 font-medium flex items-center gap-1">
-              <XCircle className="w-4 h-4" /> Failed
-            </span>
-            {generationDate && (
-              <span className="text-xs text-gray-500">
-                {formatDate(generationDate.toISOString())}
-              </span>
-            )}
-          </div>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <XCircle className="w-3 h-3" /> Failed
+          </span>
         );
       }
       if (status === 'Needs Review') {
         return (
-          <div className="flex flex-col gap-1">
-            <span className="text-yellow-600 font-medium flex items-center gap-1">
-              <AlertTriangle className="w-4 h-4" /> Needs Review
-            </span>
-            {generationDate && (
-              <span className="text-xs text-gray-500">
-                {formatDate(generationDate.toISOString())}
-              </span>
-            )}
-          </div>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            <AlertTriangle className="w-3 h-3" /> Review
+          </span>
         );
       }
       if (status === 'Not Generated') {
-        return <span className="text-gray-400 font-medium flex items-center gap-1"><span className="w-4 h-4">—</span> Ready to Generate</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+            <span className="w-3 h-3 text-center">—</span> Ready
+          </span>
+        );
       }
-      return <span className="text-gray-500 font-medium flex items-center gap-1"><Loader2 className="w-4 h-4 animate-spin" /> Pending</span>;
-    }, sortable: true },
-    // --- Template Used column (only one)
-    { headerName: 'Template Used', field: 'templateUsed', minWidth: 200, cellRenderer: (params: any) => (
-      <span>{params.value || '—'}</span>
-    ), sortable: true },
-  ], [paginatedProviders, selectedProviderIds, setSelectedProviderIds]);
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+          <Loader2 className="w-3 h-3 animate-spin" /> Processing
+        </span>
+      );
+    },
+    sortable: true,
+    filter: 'agTextColumnFilter',
+    tooltipValueGetter: (params: any) => {
+      const generationDate = getGenerationDate(params.data.id, selectedTemplate?.id || '');
+      return generationDate ? `Last generated: ${formatDate(generationDate.toISOString())}` : 'Not generated yet';
+    },
+  };
 
-  // Prepare row data for AG Grid, including only templateUsed and generationStatus
+  // Contract Actions column (only for Processed tab)
+  const contractActionsColumn = {
+    headerName: 'Contract Actions',
+    field: 'actions',
+    width: 140,
+    cellRenderer: (params: any) => {
+      const provider = params.data;
+      // Find any successful contract for this provider, regardless of template selection
+      const contract = generatedContracts.find(
+        c => c.providerId === provider.id && c.status === 'SUCCESS'
+      );
+      
+      if (contract) {
+        return (
+          <div className="flex items-center gap-1">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => downloadContract(provider, contract.templateId)}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
+                  >
+                    <FileDown className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Download Contract
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedProviderIds([provider.id]);
+                      setPreviewModalOpen(true);
+                    }}
+                    className="text-gray-600 hover:text-gray-700 hover:bg-gray-50 px-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Preview Contract
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        );
+      }
+      
+      return (
+        <span className="text-gray-400 text-sm">Not Generated</span>
+      );
+    },
+    sortable: false,
+    filter: false,
+    resizable: false,
+    pinned: 'right',
+  };
+
+  // Contextual column definitions based on current tab
+  const agGridColumnDefs = useMemo(() => {
+    if (statusTab === 'notGenerated') {
+      // Not Generated tab: Base columns only (no status, no actions)
+      return baseColumns;
+    } else if (statusTab === 'processed') {
+      // Processed tab: Base columns + Contract Actions (no status since all are processed)
+      return [...baseColumns, contractActionsColumn];
+    } else {
+      // All tab: Base columns + Generation Status + Contract Actions
+      return [...baseColumns, generationStatusColumn, contractActionsColumn];
+    }
+  }, [statusTab, selectedTemplate, generatedContracts, downloadContract, setPreviewModalOpen]);
+
+  // Prepare row data for AG Grid
   const agGridRows = paginatedProviders.map((provider: Provider) => {
     // Find the latest successful generated contract for this provider
     const latestSuccessContract = generatedContracts
       .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
       .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
-    let templateUsed = '—';
+    
     let generationStatus = 'Not Generated';
     if (latestSuccessContract) {
-      const t = templates.find(t => t.id === latestSuccessContract.templateId);
-      if (t) templateUsed = `${t.name} (v${t.version})`;
-      else templateUsed = latestSuccessContract.templateId;
       generationStatus = 'Success';
     } else {
       generationStatus = 'Not Generated';
     }
+    
     return {
       ...provider,
-      templateUsed,
       generationStatus,
     };
   });
@@ -774,7 +981,7 @@ b, strong { font-weight: bold !important; }
   const completedCount = agGridRows.filter(row => row.generationStatus === 'Success').length;
   const failedCount = agGridRows.filter(row => row.generationStatus === 'Failed').length;
   const notGeneratedCount = agGridRows.filter(row => row.generationStatus === 'Not Generated').length;
-  const pendingCount = agGridRows.filter(row => row.generationStatus === 'Pending' || row.generationStatus === 'Needs Review').length;
+
   const totalCount = agGridRows.length;
 
   // CSV Export
@@ -785,43 +992,63 @@ b, strong { font-weight: bold !important; }
       const latestSuccessContract = generatedContracts
         .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
         .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
-      let templateUsed = '—';
+      
       let generationStatus = 'Not Generated';
       if (latestSuccessContract) {
-        const t = templates.find(t => t.id === latestSuccessContract.templateId);
-        if (t) templateUsed = `${t.name} (v${t.version})`;
-        else templateUsed = latestSuccessContract.templateId;
         generationStatus = 'Success';
       } else {
         generationStatus = 'Not Generated';
       }
+      
       return {
         ...provider,
-        templateUsed,
         generationStatus,
       };
     });
-    // Use all columns, including Template Used
+    
+    // Export with current column structure
     const headers = agGridColumnDefs.filter(col => col.field && col.field !== 'checkbox').map(col => col.headerName);
     const rows = allRows.map(row =>
       agGridColumnDefs.filter(col => col.field && col.field !== 'checkbox').map(col => (row as any)[col.field] ?? '')
     );
     const csv = [headers, ...rows].map(r => r.map(String).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    saveAs(blob, 'providers.csv');
+    saveAs(blob, 'contract-generation-providers.csv');
   };
 
   // After provider and template are selected and merged, set editorContent
   useEffect(() => {
-    if (selectedTemplate && selectedProviderIds.length === 1) {
-      const provider = providers.find(p => p.id === selectedProviderIds[0]);
-      if (provider) {
-        const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
-        const mapping = mappings[selectedTemplate.id]?.mappings;
-        const { content: mergedHtml } = mergeTemplateWithData(selectedTemplate, provider, html, mapping);
-        setEditorContent(mergedHtml);
+    const updateEditorContent = async () => {
+      if (selectedTemplate && selectedProviderIds.length === 1) {
+        const provider = providers.find(p => p.id === selectedProviderIds[0]);
+        if (provider) {
+          const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
+          const mapping = mappings[selectedTemplate.id]?.mappings;
+          
+          // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
+          const enhancedMapping = mapping?.map(m => {
+            // Check if this mapping has a dynamic block (stored in value field with dynamic: prefix)
+            if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
+              return {
+                ...m,
+                mappingType: 'dynamic' as const,
+                mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
+                mappedColumn: undefined, // Clear the mappedColumn since it's a dynamic block
+              };
+            }
+            return {
+              ...m,
+              mappingType: 'field' as const,
+            };
+          });
+          
+          const { content: mergedHtml } = await mergeTemplateWithData(selectedTemplate, provider, html, enhancedMapping);
+          setEditorContent(mergedHtml);
+        }
       }
-    }
+    };
+    
+    updateEditorContent();
   }, [selectedTemplate, selectedProviderIds, providers, mappings]);
 
   useEffect(() => {
@@ -860,8 +1087,6 @@ b, strong { font-weight: bold !important; }
     const content = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
     return scanPlaceholders(content);
   }, [selectedTemplate]);
-  const clauseLibrary = clauses; // Use your clause library from Redux
-  const selectedClause = clauseLibrary.find(c => c.id === selectedClauseId);
 
   // Add state and memo for filter values and unique lists at the top of the component
   // Compute unique options for cascading filters
@@ -903,17 +1128,51 @@ b, strong { font-weight: bold !important; }
   }, [selectedSpecialty, subspecialtyOptions, providerTypeOptions]);
 
   // Compute filtered rows for each tab
-  const pendingRows = agGridRows.filter(row => row.generationStatus === 'Pending' || row.generationStatus === 'Needs Review');
   const processedRows = agGridRows.filter(row => row.generationStatus === 'Success');
   const notGeneratedRows = agGridRows.filter(row => row.generationStatus === 'Not Generated');
   const allRows = agGridRows;
   const tabCounts = {
     notGenerated: notGeneratedRows.length,
-    pending: pendingRows.length,
     processed: processedRows.length,
     all: allRows.length,
   };
-  const visibleRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'pending' ? pendingRows : statusTab === 'processed' ? processedRows : allRows;
+  const visibleRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
+
+  // Sync AG Grid selection with selectedProviderIds state
+  useEffect(() => {
+    if (gridRef.current?.api) {
+      const api = gridRef.current.api;
+      
+      // Get currently selected nodes
+      const currentlySelected = api.getSelectedNodes().map(node => node.data.id);
+      
+      // Only update if there's actually a difference
+      const shouldUpdate = selectedProviderIds.length !== currentlySelected.length ||
+        selectedProviderIds.some(id => !currentlySelected.includes(id)) ||
+        currentlySelected.some(id => !selectedProviderIds.includes(id));
+      
+      if (shouldUpdate) {
+        // Set flag to prevent onSelectionChanged from firing
+        isUpdatingSelection.current = true;
+        
+        // Clear all selections first
+        api.deselectAll();
+        
+        // Select rows that should be selected
+        selectedProviderIds.forEach(id => {
+          const rowNode = api.getRowNode(id);
+          if (rowNode) {
+            rowNode.setSelected(true);
+          }
+        });
+        
+        // Reset flag after a short delay
+        setTimeout(() => {
+          isUpdatingSelection.current = false;
+        }, 50);
+      }
+    }
+  }, [selectedProviderIds, visibleRows]);
 
   return (
     <div className="min-h-screen bg-gray-50/50 pt-0 pb-4 px-2 sm:px-4">
@@ -1104,6 +1363,8 @@ b, strong { font-weight: bold !important; }
                         <TooltipContent>Select all providers currently visible in the table</TooltipContent>
                       </Tooltip>
 
+
+
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -1127,7 +1388,7 @@ b, strong { font-weight: bold !important; }
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setBulkClauseModalOpen(true)}
+                            onClick={() => setSelectedClauseId(selectedClauseId)}
                             disabled={selectedProviderIds.length === 0 || isBulkGenerating}
                           >
                             Bulk Edit Clauses
@@ -1148,6 +1409,22 @@ b, strong { font-weight: bold !important; }
                         </TooltipTrigger>
                         <TooltipContent>Export the current filtered provider list to CSV</TooltipContent>
                       </Tooltip>
+                      {statusTab === 'processed' && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleClearGenerated}
+                              disabled={selectedProviderIds.length === 0 || isBulkGenerating}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                            >
+                              Clear Generated
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Clear generated contracts for selected providers</TooltipContent>
+                        </Tooltip>
+                      )}
                     </TooltipProvider>
                     {isBulkGenerating && (
                       <span className="ml-4 flex items-center gap-2 text-blue-700 animate-pulse">
@@ -1160,7 +1437,7 @@ b, strong { font-weight: bold !important; }
                   <div className="flex flex-1 sm:justify-end items-center gap-4 min-w-0 mt-2">
                     <Progress value={completedCount / totalCount * 100} className="w-48 h-2" />
                     <span className="text-sm text-gray-600">{`${completedCount} of ${totalCount} generated (${totalCount ? Math.round(completedCount / totalCount * 100) : 0}%)`}</span>
-                    <span className="text-xs text-gray-500">{`${failedCount} failed, ${pendingCount} pending`}</span>
+                    <span className="text-xs text-gray-500">{`${failedCount} failed`}</span>
                   </div>
                 </div>
               </div>
@@ -1169,18 +1446,14 @@ b, strong { font-weight: bold !important; }
 
           {/* Tabs for Pending / Processed / All */}
           <div className="mb-2 flex justify-between items-center">
-            <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'pending' | 'processed' | 'all')} className="w-full">
+            <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'processed' | 'all')} className="w-full">
               <TabsList className="flex gap-2 border-b-0 bg-transparent justify-start relative after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-[1.5px] after:bg-gray-200 after:z-10 overflow-visible">
                 <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
                   data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
                   data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
                   Not Generated <span className="ml-1 text-xs">({tabCounts.notGenerated})</span>
                 </TabsTrigger>
-                <TabsTrigger value="pending" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                  Pending <span className="ml-1 text-xs">({tabCounts.pending})</span>
-                </TabsTrigger>
+
                 <TabsTrigger value="processed" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
                   data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
                   data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
@@ -1234,7 +1507,11 @@ b, strong { font-weight: bold !important; }
                 </Select>
                 
                 <Button
-                  onClick={() => setSearch('')}
+                  onClick={() => {
+                    setSearch('');
+                    setSelectedProviderType("__ALL__");
+                    setPageIndex(0);
+                  }}
                   variant="outline"
                   size="sm"
                   className="px-3"
@@ -1246,160 +1523,110 @@ b, strong { font-weight: bold !important; }
           </div>
 
           {/* AG Grid Table */}
-          <div className="ag-theme-alpine w-full" style={{ height: '600px' }}>
+          <div className="ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-hidden" style={{ 
+            height: '600px',
+            '--ag-header-background-color': '#f8fafc',
+            '--ag-header-foreground-color': '#374151',
+            '--ag-border-color': '#e5e7eb',
+            '--ag-row-hover-color': '#f8fafc',
+            '--ag-selected-row-background-color': '#f1f5f9',
+            '--ag-font-family': 'var(--font-sans, sans-serif)',
+            '--ag-font-size': '14px',
+            '--ag-header-height': '44px',
+            '--ag-row-height': '40px'
+          } as React.CSSProperties}>
             <AgGridReact
+              ref={gridRef}
               rowData={visibleRows}
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
-              domLayout="autoHeight"
+              domLayout="normal"
               suppressRowClickSelection={true}
               rowSelection="multiple"
               pagination={false}
               enableCellTextSelection={true}
-              headerHeight={40}
-              rowHeight={36}
+              headerHeight={44}
+              rowHeight={40}
               suppressDragLeaveHidesColumns={true}
               suppressScrollOnNewData={true}
               suppressColumnVirtualisation={false}
               suppressRowVirtualisation={false}
-              defaultColDef={{ tooltipValueGetter: params => params.value, resizable: true, sortable: true, filter: true, cellStyle: { fontSize: '14px', fontFamily: 'var(--font-sans, sans-serif)', fontWeight: 400, color: '#111827', display: 'flex', alignItems: 'center', height: '100%' } }}
+              suppressHorizontalScroll={false}
+              maintainColumnOrder={true}
+              getRowId={(params) => params.data.id}
+              onSelectionChanged={(event) => {
+                if (!isUpdatingSelection.current) {
+                  const selectedNodes = event.api.getSelectedNodes();
+                  const selectedIds = selectedNodes.map(node => node.data.id);
+                  setSelectedProviderIds(selectedIds);
+                }
+              }}
+              onGridReady={(params) => {
+                // Store grid API reference for later use
+                setTimeout(() => {
+                  // Sync initial selection state when grid is ready (with small delay)
+                  const rowsToSelect = visibleRows.filter(row => selectedProviderIds.includes(row.id));
+                  rowsToSelect.forEach(row => {
+                    const rowNode = params.api.getRowNode(row.id);
+                    if (rowNode) {
+                      rowNode.setSelected(true);
+                    }
+                  });
+                }, 100);
+              }}
+              defaultColDef={{ 
+                tooltipValueGetter: params => params.value, 
+                resizable: true, 
+                sortable: true, 
+                filter: true, 
+                cellStyle: { 
+                  fontSize: '14px', 
+                  fontFamily: 'var(--font-sans, sans-serif)', 
+                  fontWeight: 400, 
+                  color: '#111827', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  height: '100%',
+                  paddingLeft: '12px',
+                  paddingRight: '12px'
+                } 
+              }}
               isRowSelectable={(rowNode) => {
                 return Boolean(rowNode.data && rowNode.data.id);
               }}
               enableBrowserTooltips={true}
               enableRangeSelection={true}
-              singleClickEdit={true}
+              singleClickEdit={false}
               suppressClipboardPaste={false}
               suppressCopyRowsToClipboard={false}
             />
           </div>
-          <div className="text-sm text-gray-600 mt-2">
-            Showing {pageIndex * pageSize + 1}–{Math.min((pageIndex + 1) * pageSize, filteredProviders.length)} of {filteredProviders.length} providers
-          </div>
-          
-          {/* Bottom Pagination Controls */}
-          <div className="flex gap-2 items-center mt-2">
-            <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
-            <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
-            <span className="text-sm px-4">Page {pageIndex + 1} of {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
-            <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)}>&raquo;</Button>
-            <select
-              className="ml-4 border rounded px-2 py-1 text-sm"
-              value={pageSize}
-              onChange={e => {
-                setPageSize(Number(e.target.value));
-                setPageIndex(0);
-              }}
-            >
-              {[10, 20, 40, 50, 100].map(size => (
-                <option key={size} value={size}>{size} / page</option>
-              ))}
-            </select>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4 border-t border-gray-200">
+            <div className="text-sm text-gray-600">
+              Showing {Math.min(visibleRows.length, pageSize * (pageIndex + 1) - pageSize + 1)}–{Math.min(visibleRows.length, pageSize * (pageIndex + 1))} of {visibleRows.length} providers
+            </div>
+            
+            {/* Bottom Pagination Controls - Left aligned */}
+            <div className="flex gap-2 items-center">
+              <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
+              <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
+              <span className="text-sm px-4">Page {pageIndex + 1} of {Math.max(1, Math.ceil(visibleRows.length / pageSize))}</span>
+              <Button variant="outline" size="sm" disabled={pageIndex >= Math.ceil(visibleRows.length / pageSize) - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
+              <Button variant="outline" size="sm" disabled={pageIndex >= Math.ceil(visibleRows.length / pageSize) - 1} onClick={() => setPageIndex(Math.ceil(visibleRows.length / pageSize) - 1)}>&raquo;</Button>
+              <select
+                className="ml-4 border rounded px-2 py-1 text-sm"
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setPageIndex(0);
+                }}
+              >
+                {[10, 20, 40, 50, 100].map(size => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
-        {/* Modal for TinyMCE editor */}
-        <Dialog open={editorModalOpen} onOpenChange={setEditorModalOpen}>
-          <DialogContent className="max-w-6xl w-full flex flex-col md:flex-row gap-6">
-            <div className="flex-1 min-w-0">
-              <DialogHeader>
-                <DialogTitle>Edit Contract</DialogTitle>
-              </DialogHeader>
-              <Editor
-                apiKey="hwuyiukhovfmwo28b4d5ktsw78kc9fu31gwdlqx9b4h2uv9b"
-                value={editorContent}
-                onEditorChange={setEditorContent}
-                onInit={(_evt, editor) => (editorRef.current = editor)}
-                init={{
-                  height: 400,
-                  menubar: false,
-                  plugins: [
-                    'lists link paste',
-                  ],
-                  toolbar:
-                    'undo redo | bold italic underline | bullist numlist | link | removeformat',
-                  branding: false,
-                }}
-              />
-              <DialogFooter className="flex justify-end gap-2 mt-4">
-                <Button variant="outline" onClick={() => setEditorModalOpen(false)}>Cancel</Button>
-                <Button
-                  variant="default"
-                  onClick={async () => {
-                    // Download as Word logic using html-docx-js
-                    const html = editorContent;
-                    const provider = providers.find(p => p.id === selectedProviderIds[0]);
-                    if (!provider) return;
-                    // @ts-ignore
-                    if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-                      alert('DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
-                      return;
-                    }
-                    // Prepend Aptos font style
-                    const aptosStyle = `<style>
-body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
-  font-family: Aptos, Arial, sans-serif !important;
-  font-size: 11pt !important;
-}
-h1 { font-size: 16pt !important; font-weight: bold !important; }
-h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
-b, strong { font-weight: bold !important; }
-</style>`;
-                    const htmlWithFont = aptosStyle + html;
-                    // Get provider and template info for filename
-                    const contractYear = selectedTemplate ? selectedTemplate.contractYear || new Date().getFullYear().toString() : new Date().getFullYear().toString();
-                    const fileName = getContractFileName(contractYear, provider?.name || 'Provider', new Date().toISOString().split('T')[0]);
-                    // @ts-ignore
-                    const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-                    const url = URL.createObjectURL(docxBlob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = fileName;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  }}
-                >
-                  Download as Word
-                </Button>
-              </DialogFooter>
-            </div>
-            {/* Clause Library Sidebar */}
-            <aside className="w-full md:w-80 bg-gray-50 border-l p-4 rounded-lg flex flex-col">
-              <h3 className="font-bold mb-2">Clause Library</h3>
-              <input
-                type="text"
-                placeholder="Search clauses..."
-                value={clauseSearch}
-                onChange={e => setClauseSearch(e.target.value)}
-                className="mb-3 px-2 py-1 border rounded"
-              />
-              {/* Scrollable clause list with fixed max height */}
-              <div className="flex-1 overflow-y-auto space-y-2 max-h-[400px]">
-                {filteredClauses.map((clause: { id: string; title: string; content: string }) => (
-                  <div key={clause.id} className="bg-white rounded shadow p-2 flex flex-col gap-1">
-                    <div className="font-semibold text-sm">{clause.title}</div>
-                    <div className="text-xs text-gray-600 line-clamp-2">{clause.content}</div>
-                    <Button
-                      size="sm"
-                      className="mt-1 self-end"
-                      onClick={() => {
-                        if (editorRef.current) {
-                          editorRef.current.insertContent(clause.content);
-                        }
-                      }}
-                    >
-                      Insert
-                    </Button>
-                  </div>
-                ))}
-                {filteredClauses.length === 0 && (
-                  <div className="text-xs text-gray-400">No clauses found.</div>
-                )}
-              </div>
-            </aside>
-          </DialogContent>
-        </Dialog>
         {/* Error Message */}
         {(userError || error) && (
           <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mt-4">
@@ -1429,6 +1656,19 @@ b, strong { font-weight: bold !important; }
                   Clear Selection
                 </Button>
               </div>
+              
+              {/* Preview Button */}
+              <Button
+                onClick={handlePreview}
+                disabled={!selectedTemplate || selectedProviderIds.length === 0 || isGenerating}
+                variant="outline"
+                className="h-10 px-6 text-base font-semibold flex items-center gap-2"
+                aria-label="Preview Contract"
+              >
+                <Eye className="w-4 h-4" />
+                Preview
+              </Button>
+              
               <Button
                 onClick={handleGenerate}
                 disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
@@ -1453,15 +1693,6 @@ b, strong { font-weight: bold !important; }
                 ) : null}
                 Generate All
               </Button>
-              <Button
-                onClick={() => setEditorModalOpen(true)}
-                disabled={!selectedTemplate || selectedProviderIds.length !== 1}
-                variant="outline"
-                className="h-10 px-6 text-base font-semibold"
-                aria-label="Edit Contract"
-              >
-                Edit Contract
-              </Button>
             </div>
           </div>
         )}
@@ -1476,12 +1707,44 @@ b, strong { font-weight: bold !important; }
           .ag-theme-alpine .ag-header-cell-label .ag-header-cell-text {
             font-weight: 600 !important;
           }
-          .ag-theme-alpine .ag-checkbox-input, .ag-theme-alpine input[type="checkbox"] {
-            display: none !important;
-          }
           .ag-checkbox-cell, .ag-checkbox-header {
             display: flex !important;
             align-items: center !important;
+            justify-content: center !important;
+          }
+          /* Native checkbox styling with subtle modern enhancements */
+          .ag-theme-alpine .ag-checkbox-input {
+            width: 16px !important;
+            height: 16px !important;
+            cursor: pointer !important;
+            accent-color: #3b82f6 !important;
+            transform: scale(1.1) !important;
+            transition: all 0.15s ease !important;
+          }
+          .ag-theme-alpine .ag-checkbox-input:hover {
+            transform: scale(1.15) !important;
+          }
+          .ag-theme-alpine .ag-checkbox-input:focus {
+            outline: 2px solid #3b82f6 !important;
+            outline-offset: 2px !important;
+          }
+          /* Modern, subtle row selection styling - exclude checkbox column */
+          .ag-theme-alpine .ag-row-selected .ag-cell:not(.ag-cell-range-selected):not([col-id="selected"]) {
+            background-color: #f8fafc !important;
+          }
+          .ag-theme-alpine .ag-row-selected:hover .ag-cell:not(.ag-cell-range-selected):not([col-id="selected"]) {
+            background-color: #f1f5f9 !important;
+          }
+          .ag-theme-alpine .ag-row:hover .ag-cell:not([col-id="selected"]) {
+            background-color: #fafbfc !important;
+          }
+          /* Keep checkbox column unaffected by row selection */
+          .ag-theme-alpine .ag-row-selected .ag-cell[col-id="selected"] {
+            background-color: transparent !important;
+          }
+          /* Ensure text remains readable in selected rows */
+          .ag-theme-alpine .ag-row-selected .ag-cell {
+            color: #111827 !important;
           }
           /* Vertically center all cell and header content */
           .ag-theme-alpine .ag-cell, .ag-theme-alpine .ag-header-cell {
@@ -1503,24 +1766,11 @@ b, strong { font-weight: bold !important; }
           }
         `}</style>
         {/* Bulk Edit Clauses modal */}
-        <Dialog open={bulkClauseModalOpen} onOpenChange={setBulkClauseModalOpen}>
+        <Dialog open={selectedClauseId !== ""} onOpenChange={() => setSelectedClauseId("")}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Bulk Edit Clauses</DialogTitle>
             </DialogHeader>
-            <div className="mb-4">
-              <label className="block font-medium mb-1">Select Clause</label>
-              <select
-                className="w-full border rounded px-2 py-1"
-                value={selectedClauseId}
-                onChange={e => setSelectedClauseId(e.target.value)}
-              >
-                <option value="">-- Select a clause --</option>
-                {clauseLibrary.map(clause => (
-                  <option key={clause.id} value={clause.id}>{clause.title}</option>
-                ))}
-              </select>
-            </div>
             <div className="mb-4">
               <label className="block font-medium mb-1">Select Insertion Point</label>
               <select
@@ -1543,10 +1793,10 @@ b, strong { font-weight: bold !important; }
                 />
               )}
             </div>
-            {selectedClause && (
+            {selectedClauseId !== "" && (
               <div className="mb-4">
                 <label className="block font-medium mb-1">Clause Preview</label>
-                <div className="border rounded p-2 bg-gray-50 text-sm whitespace-pre-wrap">{selectedClause.content}</div>
+                <div className="border rounded p-2 bg-gray-50 text-sm whitespace-pre-wrap">{selectedClauseId}</div>
               </div>
             )}
             <DialogFooter>
@@ -1554,18 +1804,31 @@ b, strong { font-weight: bold !important; }
                 variant="default"
                 onClick={() => {
                   // Save clause/placeholder selection for bulk generation
-                  setBulkClauseModalOpen(false);
-                  setBulkClausePreview(selectedClause?.content || '');
+                  setSelectedClauseId(selectedClauseId);
+                  setBulkClausePreview(selectedClauseId);
                   // Store selectedClauseId and selectedPlaceholder/customPlaceholder for use in bulk generation
                 }}
-                disabled={!selectedClauseId || (!selectedPlaceholder && !customPlaceholder)}
+                disabled={!selectedPlaceholder && !customPlaceholder}
               >
                 Apply to Selected
               </Button>
-              <Button variant="outline" onClick={() => setBulkClauseModalOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setSelectedClauseId("")}>Cancel</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Contract Preview Modal */}
+        <ContractPreviewModal
+          open={previewModalOpen}
+          onClose={() => setPreviewModalOpen(false)}
+          template={selectedTemplate}
+          providers={providers}
+          selectedProviderIds={selectedProviderIds}
+          onGenerate={handlePreviewGenerate}
+          onBulkGenerate={handleBulkGenerate}
+        />
+        
+
       </div>
     </div>
   );

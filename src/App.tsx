@@ -44,6 +44,8 @@ import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { fetchTemplatesIfNeeded } from '@/features/templates/templatesSlice';
 import { fetchClausesIfNeeded } from '@/store/slices/clauseSlice';
 import { useAppDispatch } from './store';
+import DynamicBlocksPage from './features/dynamic-blocks/DynamicBlocksPage';
+import { WelcomeScreenDemo } from './components/ui/WelcomeScreenDemo';
 
 function AppInitializer() {
   const dispatch = useAppDispatch();
@@ -204,6 +206,11 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
       group: 'setup'
     },
     {
+      title: 'Dynamic Blocks',
+      path: '/dynamic-blocks',
+      group: 'setup'
+    },
+    {
       title: 'Providers',
       path: '/providers',
       group: 'setup'
@@ -337,6 +344,8 @@ function App() {
               <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
               <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+                              <Route path="/dynamic-blocks" element={<ProtectedRoute><DynamicBlocksPage /></ProtectedRoute>} />
+                <Route path="/welcome-demo" element={<ProtectedRoute><WelcomeScreenDemo /></ProtectedRoute>} />
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             </Route>
           </Routes>

@@ -95,6 +95,20 @@ type Clause @model @auth(rules: [{ allow: owner, ownerField: "owner", operations
   owner: String
 }
 
+type DynamicBlock @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+  id: ID!
+  name: String!
+  description: String
+  placeholder: String!
+  outputType: String!
+  format: String!
+  conditions: AWSJSON
+  alwaysInclude: AWSJSON
+  createdAt: AWSDateTime
+  updatedAt: AWSDateTime
+  owner: String
+}
+
 type AuditLog @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
   action: String!

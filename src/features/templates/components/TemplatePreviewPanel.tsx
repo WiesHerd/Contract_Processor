@@ -13,6 +13,7 @@ import { logSecurityEvent } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
 import { Provider } from '@/types/provider';
 import { getContractFileName } from '@/utils/filename';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 // IMPORTANT: Add this to your public/index.html
 // <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
@@ -79,6 +80,9 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
   const dispatch = useDispatch<AppDispatch>();
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<Provider>(sampleData);
+  const [mergedHtml, setMergedHtml] = useState<string>('');
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const template = useSelector((state: any) =>
     state.templates.templates.find((t: Template) => t.id === templateId)
@@ -90,11 +94,52 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
   );
   const mappings = useSelector((state: any) => state.mappings.mappings);
   const mapping: FieldMapping[] | undefined = template ? mappings?.[template.id]?.mappings : undefined;
-  
-  const { content: mergedHtml, warnings } = useMemo(() => {
-    if (!template) return { content: '', warnings: [] };
-    const html = template.editedHtmlContent || template.htmlPreviewContent || '';
-    return mergeTemplateWithData(template, selectedProvider, html, mapping);
+
+  // Update mergedHtml when template, selectedProvider, or mapping changes
+  React.useEffect(() => {
+    let cancelled = false;
+    const doMerge = async () => {
+      if (!template) {
+        setMergedHtml('');
+        setWarnings([]);
+        return;
+      }
+      setLoading(true);
+      const html = template.editedHtmlContent || template.htmlPreviewContent || '';
+      // --- PATCH: Transform mapping to include mappingType ---
+      let enhancedMapping = mapping;
+      if (mapping && Array.isArray(mapping)) {
+        enhancedMapping = mapping.map(m => {
+          if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
+            return {
+              ...m,
+              mappingType: 'dynamic',
+              mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
+              mappedColumn: undefined,
+            };
+          }
+          return {
+            ...m,
+            mappingType: 'field',
+          };
+        });
+      }
+      try {
+        const result = await mergeTemplateWithData(template, selectedProvider, html, enhancedMapping);
+        if (!cancelled) {
+          setMergedHtml(result.content);
+          setWarnings(result.warnings || []);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setMergedHtml('<div class="text-red-500">Failed to merge template and provider data.</div>');
+          setWarnings(['Error merging template: ' + (e instanceof Error ? e.message : String(e))]);
+        }
+      }
+      setLoading(false);
+    };
+    doMerge();
+    return () => { cancelled = true; };
   }, [template, selectedProvider, mapping]);
 
   const handleProviderChange = (option: ProviderOption | null) => {
@@ -160,13 +205,24 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
       </div>
       <div className="bg-white rounded shadow p-6 overflow-auto font-serif leading-relaxed text-gray-900 max-h-[70vh] border relative">
         {/* Render merged HTML */}
-        <div dangerouslySetInnerHTML={{ __html: mergedHtml }} />
+        {loading ? (
+          <div className="flex items-center justify-center h-32"><LoadingSpinner size="md" message="Merging template..." color="gray" /></div>
+        ) : (
+          <div dangerouslySetInnerHTML={{ __html: mergedHtml }} />
+        )}
+        
+        {/* Show warnings if any */}
+        {warnings.length > 0 && (
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+            <h4 className="font-semibold text-yellow-800 mb-2">Warnings:</h4>
+            <ul className="text-sm text-yellow-700 space-y-1">
+              {warnings.map((warning, index) => (
+                <li key={index}>• {warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
-      {warnings && warnings.length > 0 && (
-        <div className="mt-4 text-sm text-red-600">
-          {warnings.join(', ')}
-        </div>
-      )}
       {/* HTML Editor Modal */}
       {isEditorOpen && (
         <TemplateHtmlEditorModal

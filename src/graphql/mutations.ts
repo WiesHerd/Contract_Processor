@@ -461,6 +461,75 @@ export const deleteClause = /* GraphQL */ `mutation DeleteClause(
   APITypes.DeleteClauseMutationVariables,
   APITypes.DeleteClauseMutation
 >;
+export const createDynamicBlock = /* GraphQL */ `mutation CreateDynamicBlock(
+  $input: CreateDynamicBlockInput!
+  $condition: ModelDynamicBlockConditionInput
+) {
+  createDynamicBlock(input: $input, condition: $condition) {
+    id
+    name
+    description
+    placeholder
+    outputType
+    format
+    conditions
+    alwaysInclude
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateDynamicBlockMutationVariables,
+  APITypes.CreateDynamicBlockMutation
+>;
+export const updateDynamicBlock = /* GraphQL */ `mutation UpdateDynamicBlock(
+  $input: UpdateDynamicBlockInput!
+  $condition: ModelDynamicBlockConditionInput
+) {
+  updateDynamicBlock(input: $input, condition: $condition) {
+    id
+    name
+    description
+    placeholder
+    outputType
+    format
+    conditions
+    alwaysInclude
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateDynamicBlockMutationVariables,
+  APITypes.UpdateDynamicBlockMutation
+>;
+export const deleteDynamicBlock = /* GraphQL */ `mutation DeleteDynamicBlock(
+  $input: DeleteDynamicBlockInput!
+  $condition: ModelDynamicBlockConditionInput
+) {
+  deleteDynamicBlock(input: $input, condition: $condition) {
+    id
+    name
+    description
+    placeholder
+    outputType
+    format
+    conditions
+    alwaysInclude
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteDynamicBlockMutationVariables,
+  APITypes.DeleteDynamicBlockMutation
+>;
 export const createAuditLog = /* GraphQL */ `mutation CreateAuditLog(
   $input: CreateAuditLogInput!
   $condition: ModelAuditLogConditionInput

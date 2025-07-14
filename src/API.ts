@@ -499,6 +499,69 @@ export type DeleteClauseInput = {
   id: string,
 };
 
+export type CreateDynamicBlockInput = {
+  id?: string | null,
+  name: string,
+  description?: string | null,
+  placeholder: string,
+  outputType: string,
+  format: string,
+  conditions?: string | null,
+  alwaysInclude?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type ModelDynamicBlockConditionInput = {
+  name?: ModelStringInput | null,
+  description?: ModelStringInput | null,
+  placeholder?: ModelStringInput | null,
+  outputType?: ModelStringInput | null,
+  format?: ModelStringInput | null,
+  conditions?: ModelStringInput | null,
+  alwaysInclude?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  and?: Array< ModelDynamicBlockConditionInput | null > | null,
+  or?: Array< ModelDynamicBlockConditionInput | null > | null,
+  not?: ModelDynamicBlockConditionInput | null,
+};
+
+export type DynamicBlock = {
+  __typename: "DynamicBlock",
+  id: string,
+  name: string,
+  description?: string | null,
+  placeholder: string,
+  outputType: string,
+  format: string,
+  conditions?: string | null,
+  alwaysInclude?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type UpdateDynamicBlockInput = {
+  id: string,
+  name?: string | null,
+  description?: string | null,
+  placeholder?: string | null,
+  outputType?: string | null,
+  format?: string | null,
+  conditions?: string | null,
+  alwaysInclude?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type DeleteDynamicBlockInput = {
+  id: string,
+};
+
 export type CreateAuditLogInput = {
   id?: string | null,
   action: string,
@@ -756,6 +819,29 @@ export type ModelClauseConnection = {
   nextToken?: string | null,
 };
 
+export type ModelDynamicBlockFilterInput = {
+  id?: ModelIDInput | null,
+  name?: ModelStringInput | null,
+  description?: ModelStringInput | null,
+  placeholder?: ModelStringInput | null,
+  outputType?: ModelStringInput | null,
+  format?: ModelStringInput | null,
+  conditions?: ModelStringInput | null,
+  alwaysInclude?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  and?: Array< ModelDynamicBlockFilterInput | null > | null,
+  or?: Array< ModelDynamicBlockFilterInput | null > | null,
+  not?: ModelDynamicBlockFilterInput | null,
+};
+
+export type ModelDynamicBlockConnection = {
+  __typename: "ModelDynamicBlockConnection",
+  items:  Array<DynamicBlock | null >,
+  nextToken?: string | null,
+};
+
 export type ModelAuditLogFilterInput = {
   id?: ModelIDInput | null,
   action?: ModelStringInput | null,
@@ -972,6 +1058,22 @@ export type ModelSubscriptionClauseFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionClauseFilterInput | null > | null,
   or?: Array< ModelSubscriptionClauseFilterInput | null > | null,
+  owner?: ModelStringInput | null,
+};
+
+export type ModelSubscriptionDynamicBlockFilterInput = {
+  id?: ModelSubscriptionIDInput | null,
+  name?: ModelSubscriptionStringInput | null,
+  description?: ModelSubscriptionStringInput | null,
+  placeholder?: ModelSubscriptionStringInput | null,
+  outputType?: ModelSubscriptionStringInput | null,
+  format?: ModelSubscriptionStringInput | null,
+  conditions?: ModelSubscriptionStringInput | null,
+  alwaysInclude?: ModelSubscriptionStringInput | null,
+  createdAt?: ModelSubscriptionStringInput | null,
+  updatedAt?: ModelSubscriptionStringInput | null,
+  and?: Array< ModelSubscriptionDynamicBlockFilterInput | null > | null,
+  or?: Array< ModelSubscriptionDynamicBlockFilterInput | null > | null,
   owner?: ModelStringInput | null,
 };
 
@@ -1441,6 +1543,72 @@ export type DeleteClauseMutation = {
   } | null,
 };
 
+export type CreateDynamicBlockMutationVariables = {
+  input: CreateDynamicBlockInput,
+  condition?: ModelDynamicBlockConditionInput | null,
+};
+
+export type CreateDynamicBlockMutation = {
+  createDynamicBlock?:  {
+    __typename: "DynamicBlock",
+    id: string,
+    name: string,
+    description?: string | null,
+    placeholder: string,
+    outputType: string,
+    format: string,
+    conditions?: string | null,
+    alwaysInclude?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type UpdateDynamicBlockMutationVariables = {
+  input: UpdateDynamicBlockInput,
+  condition?: ModelDynamicBlockConditionInput | null,
+};
+
+export type UpdateDynamicBlockMutation = {
+  updateDynamicBlock?:  {
+    __typename: "DynamicBlock",
+    id: string,
+    name: string,
+    description?: string | null,
+    placeholder: string,
+    outputType: string,
+    format: string,
+    conditions?: string | null,
+    alwaysInclude?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type DeleteDynamicBlockMutationVariables = {
+  input: DeleteDynamicBlockInput,
+  condition?: ModelDynamicBlockConditionInput | null,
+};
+
+export type DeleteDynamicBlockMutation = {
+  deleteDynamicBlock?:  {
+    __typename: "DynamicBlock",
+    id: string,
+    name: string,
+    description?: string | null,
+    placeholder: string,
+    outputType: string,
+    format: string,
+    conditions?: string | null,
+    alwaysInclude?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
 export type CreateAuditLogMutationVariables = {
   input: CreateAuditLogInput,
   condition?: ModelAuditLogConditionInput | null,
@@ -1881,6 +2049,54 @@ export type ListClausesQuery = {
       owner?: string | null,
       createdAt: string,
       updatedAt: string,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type GetDynamicBlockQueryVariables = {
+  id: string,
+};
+
+export type GetDynamicBlockQuery = {
+  getDynamicBlock?:  {
+    __typename: "DynamicBlock",
+    id: string,
+    name: string,
+    description?: string | null,
+    placeholder: string,
+    outputType: string,
+    format: string,
+    conditions?: string | null,
+    alwaysInclude?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type ListDynamicBlocksQueryVariables = {
+  filter?: ModelDynamicBlockFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type ListDynamicBlocksQuery = {
+  listDynamicBlocks?:  {
+    __typename: "ModelDynamicBlockConnection",
+    items:  Array< {
+      __typename: "DynamicBlock",
+      id: string,
+      name: string,
+      description?: string | null,
+      placeholder: string,
+      outputType: string,
+      format: string,
+      conditions?: string | null,
+      alwaysInclude?: string | null,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+      owner?: string | null,
     } | null >,
     nextToken?: string | null,
   } | null,
@@ -2656,6 +2872,72 @@ export type OnDeleteClauseSubscription = {
     owner?: string | null,
     createdAt: string,
     updatedAt: string,
+  } | null,
+};
+
+export type OnCreateDynamicBlockSubscriptionVariables = {
+  filter?: ModelSubscriptionDynamicBlockFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnCreateDynamicBlockSubscription = {
+  onCreateDynamicBlock?:  {
+    __typename: "DynamicBlock",
+    id: string,
+    name: string,
+    description?: string | null,
+    placeholder: string,
+    outputType: string,
+    format: string,
+    conditions?: string | null,
+    alwaysInclude?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnUpdateDynamicBlockSubscriptionVariables = {
+  filter?: ModelSubscriptionDynamicBlockFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnUpdateDynamicBlockSubscription = {
+  onUpdateDynamicBlock?:  {
+    __typename: "DynamicBlock",
+    id: string,
+    name: string,
+    description?: string | null,
+    placeholder: string,
+    outputType: string,
+    format: string,
+    conditions?: string | null,
+    alwaysInclude?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnDeleteDynamicBlockSubscriptionVariables = {
+  filter?: ModelSubscriptionDynamicBlockFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnDeleteDynamicBlockSubscription = {
+  onDeleteDynamicBlock?:  {
+    __typename: "DynamicBlock",
+    id: string,
+    name: string,
+    description?: string | null,
+    placeholder: string,
+    outputType: string,
+    format: string,
+    conditions?: string | null,
+    alwaysInclude?: string | null,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
   } | null,
 };
 

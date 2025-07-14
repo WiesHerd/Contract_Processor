@@ -11,10 +11,17 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from '../../../components/ui/tooltip';
+import TemplatePreviewPanel from '../components/TemplatePreviewPanel';
+import { Dialog, DialogContent } from '../../../components/ui/dialog';
 
 export const TemplatesPage: React.FC = () => {
   const [showUploadForm, setShowUploadForm] = React.useState(false);
   const { templates } = useSelector((state: RootState) => state.templates);
+  const [previewTemplateId, setPreviewTemplateId] = React.useState<string | null>(null);
+
+  const handlePreview = (template: any) => {
+    setPreviewTemplateId(template.id);
+  };
 
   return (
     <div className={`min-h-screen bg-gray-50/50 pt-0 pb-4 px-2 sm:px-4`}>
@@ -66,9 +73,16 @@ export const TemplatesPage: React.FC = () => {
             <h2 className="text-xl font-semibold mb-4">
               Templates ({templates.length})
             </h2>
-            <TemplateList />
+            <TemplateList templates={templates} onPreview={handlePreview} onEdit={() => {}} onDelete={() => {}} />
           </section>
         </div>
+        {previewTemplateId && (
+          <Dialog open={!!previewTemplateId} onOpenChange={() => setPreviewTemplateId(null)}>
+            <DialogContent className="max-w-4xl">
+              <TemplatePreviewPanel templateId={previewTemplateId} />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   );

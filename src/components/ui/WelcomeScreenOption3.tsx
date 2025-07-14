@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Logo from './Logo';
+import Logo from '../Logo';
 import { 
   FileText, Users, FilePlus2, ClipboardList, LogOut, Zap, 
   ArrowUpRight, Moon, Sun, Grid3X3, Layers, Sparkles,
@@ -68,7 +68,7 @@ const utilityFeatures = [
   }
 ];
 
-export const WelcomeScreen = () => {
+export const WelcomeScreenOption3 = () => {
   const navigate = useNavigate();
   const { signOut, isAuthenticated } = useAuth();
   const [isDark, setIsDark] = useState(false);
@@ -108,7 +108,10 @@ export const WelcomeScreen = () => {
                 </div>
               </div>
               
-
+              <div className={`hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs ${isDark ? 'bg-gray-900 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span>System operational</span>
+              </div>
             </div>
             
             <div className="flex items-center gap-2">
@@ -142,7 +145,27 @@ export const WelcomeScreen = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-12">
-
+        {/* Hero */}
+        <div className="text-center mb-16">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Sparkles className={`w-5 h-5 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} />
+            <span className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              Enterprise Contract Automation
+            </span>
+          </div>
+          
+          <h2 className={`text-5xl font-bold mb-6 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            Build contracts at
+            <span className="block bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
+              enterprise scale
+            </span>
+          </h2>
+          
+          <p className={`text-xl max-w-2xl mx-auto ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+            Automate physician contract generation with intelligent templates, 
+            dynamic content blocks, and seamless data integration.
+          </p>
+        </div>
 
         {/* Main Features Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">

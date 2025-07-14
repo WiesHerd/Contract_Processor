@@ -21,6 +21,7 @@ import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
 import { ColDef } from 'ag-grid-community';
 import Papa from 'papaparse';
+import { regenerateContractDownloadUrl } from '@/utils/s3Storage';
 
 export default function AuditPage() {
   const { logs, isLoading, error } = useSelector((state: RootState) => state.audit);
@@ -44,7 +45,7 @@ export default function AuditPage() {
 
   // Load audit logs and templates
   useEffect(() => {
-    dispatch(fetchAuditLogs());
+    dispatch(fetchAuditLogs(undefined));
     dispatch(fetchTemplatesIfNeeded());
   }, [dispatch]);
 
@@ -113,7 +114,7 @@ export default function AuditPage() {
       }
       setClearResult(total);
       dispatch(clearLogs());
-      await dispatch(fetchAuditLogs());
+      await dispatch(fetchAuditLogs(undefined));
     } catch (err) {
       console.error('Failed to clear logs:', err);
       alert('Failed to clear logs. See console for details.');
@@ -253,9 +254,35 @@ export default function AuditPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  // Open the S3 fileUrl in a new tab for download/view
-                  window.open(params.value, '_blank', 'noopener,noreferrer');
+                onClick={async () => {
+                  try {
+                    // If the URL starts with https://, it's likely an S3 signed URL
+                    if (params.value.startsWith('https://')) {
+                      // Try to open the URL directly first
+                      window.open(params.value, '_blank', 'noopener,noreferrer');
+                    } else {
+                      // If it's just a filename, try to regenerate the download URL
+                      const parsed = params.data.id ? (() => { 
+                        try { 
+                          return JSON.parse(params.data.details || '{}'); 
+                        } catch { 
+                          return {}; 
+                        } 
+                      })() : {};
+                      
+                      if (parsed.providerId && parsed.templateId) {
+                        const contractYear = parsed.contractYear || new Date().getFullYear().toString();
+                        const contractId = parsed.providerId + '-' + parsed.templateId + '-' + contractYear;
+                        const downloadUrl = await regenerateContractDownloadUrl(contractId, params.value);
+                        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+                      } else {
+                        throw new Error('Unable to regenerate download URL - missing contract information');
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Failed to download file:', error);
+                    alert('Failed to download file. The file may no longer be available or there was an error accessing the storage.');
+                  }
                 }}
                 className="text-blue-600 hover:text-blue-700"
               >
@@ -287,7 +314,7 @@ export default function AuditPage() {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen text-red-500">
         <p className="mt-4 text-lg text-center">{error}</p>
-        <Button onClick={() => dispatch(fetchAuditLogs())} className="mt-4">
+        <Button onClick={() => dispatch(fetchAuditLogs(undefined))} className="mt-4">
           Retry
         </Button>
       </div>
