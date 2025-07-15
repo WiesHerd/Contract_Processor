@@ -42,7 +42,14 @@ const outputTypes = [
   { value: 'table', label: 'Table Format' },
   { value: 'table-no-borders', label: 'Table (No Borders)' },
   { value: 'paragraph', label: 'Paragraph Text' },
-  { value: 'list', label: 'Simple List' }
+  { value: 'list', label: 'Simple List' },
+  { value: 'compensation-summary', label: 'Compensation Summary Card' },
+  { value: 'call-schedule', label: 'Call Schedule Grid' },
+  { value: 'performance-metrics', label: 'Performance Metrics Dashboard' },
+  { value: 'department-summary', label: 'Department Summary' },
+  { value: 'compliance-checklist', label: 'Compliance Checklist' },
+  { value: 'timeline-tracker', label: 'Timeline/Milestone Tracker' },
+  { value: 'comparative-analysis', label: 'Comparative Analysis' }
 ];
 
 interface TestProvider {
@@ -469,9 +476,9 @@ const ContractPreviewSection = React.memo<ContractPreviewSectionProps>(({
                     </Badge>
                   </div>
                 </div>
-                <ScrollArea className="h-[400px]">
+                <ScrollArea className="h-[600px]">
                   <div 
-                    className="p-8 bg-white"
+                    className="p-4 bg-white max-w-none"
                 dangerouslySetInnerHTML={{ __html: fullPreviewHtml }}
               />
             </ScrollArea>
@@ -887,6 +894,104 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
       case 'list':
         const listItems = items.map(item => `<li style="margin: 2px 0; font-size: 11pt;"><strong>${item.label}</strong>: ${item.value}</li>`).join('');
         return `<ul style="margin: 10px 0; padding-left: 20px; font-size: 11pt;">${listItems}</ul>`;
+        
+      case 'compensation-summary':
+        const totalComp = items.reduce((sum, item) => {
+          const value = parseFloat(item.value.replace(/[$,]/g, '')) || 0;
+          return sum + value;
+        }, 0);
+        const summaryCards = items.map(item => 
+          `<div style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 8px 12px; margin: 4px 0; font-size: 11pt;">
+            <div style="font-weight: bold; color: #495057;">${item.label}</div>
+            <div style="font-size: 12pt; color: #212529; font-weight: 600;">${item.value}</div>
+          </div>`
+        ).join('');
+        return `<div style="margin: 10px 0;">
+          ${summaryCards}
+          <div style="background: #e3f2fd; border: 2px solid #2196f3; border-radius: 6px; padding: 12px; margin-top: 8px; font-size: 11pt;">
+            <div style="font-weight: bold; color: #1976d2;">Total Compensation</div>
+            <div style="font-size: 14pt; color: #1565c0; font-weight: 700;">$${totalComp.toLocaleString()}</div>
+          </div>
+        </div>`;
+        
+      case 'call-schedule':
+        const scheduleGrid = items.map(item => 
+          `<div style="display: inline-block; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 6px 10px; margin: 2px; font-size: 10pt; text-align: center; min-width: 80px;">
+            <div style="font-weight: bold; color: #495057;">${item.label}</div>
+            <div style="color: #6c757d;">${item.value}</div>
+          </div>`
+        ).join('');
+        return `<div style="margin: 10px 0; text-align: center;">
+          <div style="font-weight: bold; margin-bottom: 8px; font-size: 11pt;">Call Schedule</div>
+          ${scheduleGrid}
+        </div>`;
+        
+      case 'performance-metrics':
+        const metricsCards = items.map(item => {
+          const value = parseFloat(item.value.replace(/[%,]/g, '')) || 0;
+          const isPercentage = item.value.includes('%');
+          const color = value >= 90 ? '#28a745' : value >= 75 ? '#ffc107' : '#dc3545';
+          return `<div style="display: inline-block; background: white; border: 2px solid ${color}; border-radius: 8px; padding: 8px 12px; margin: 4px; font-size: 10pt; text-align: center; min-width: 100px;">
+            <div style="font-weight: bold; color: #495057; margin-bottom: 4px;">${item.label}</div>
+            <div style="font-size: 12pt; font-weight: 700; color: ${color};">${item.value}</div>
+          </div>`;
+        }).join('');
+        return `<div style="margin: 10px 0;">
+          <div style="font-weight: bold; margin-bottom: 8px; font-size: 11pt;">Performance Metrics</div>
+          ${metricsCards}
+        </div>`;
+        
+      case 'department-summary':
+        const deptCards = items.map(item => 
+          `<div style="background: #f8f9fa; border-left: 4px solid #007bff; padding: 8px 12px; margin: 4px 0; font-size: 11pt;">
+            <div style="font-weight: bold; color: #495057;">${item.label}</div>
+            <div style="color: #212529; font-weight: 600;">${item.value}</div>
+          </div>`
+        ).join('');
+        return `<div style="margin: 10px 0; background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 12px;">
+          <div style="font-weight: bold; margin-bottom: 8px; font-size: 12pt; color: #495057;">Department Summary</div>
+          ${deptCards}
+        </div>`;
+        
+      case 'compliance-checklist':
+        const checklistItems = items.map(item => 
+          `<div style="display: flex; align-items: center; margin: 4px 0; font-size: 11pt;">
+            <span style="color: #28a745; font-size: 14pt; margin-right: 8px;">☑</span>
+            <span style="font-weight: 500;">${item.label}</span>
+            <span style="margin-left: auto; color: #6c757d; font-size: 10pt;">${item.value}</span>
+          </div>`
+        ).join('');
+        return `<div style="margin: 10px 0; background: #f8fff9; border: 1px solid #d4edda; border-radius: 6px; padding: 12px;">
+          <div style="font-weight: bold; margin-bottom: 8px; font-size: 11pt; color: #155724;">Compliance Checklist</div>
+          ${checklistItems}
+        </div>`;
+        
+      case 'timeline-tracker':
+        const timelineItems = items.map(item => 
+          `<div style="display: flex; align-items: center; margin: 6px 0; font-size: 11pt;">
+            <div style="width: 12px; height: 12px; background: #007bff; border-radius: 50%; margin-right: 12px;"></div>
+            <div style="flex: 1;">
+              <div style="font-weight: bold; color: #495057;">${item.label}</div>
+              <div style="color: #6c757d; font-size: 10pt;">${item.value}</div>
+            </div>
+          </div>`
+        ).join('');
+        return `<div style="margin: 10px 0; background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 12px;">
+          <div style="font-weight: bold; margin-bottom: 8px; font-size: 11pt; color: #495057;">Timeline & Milestones</div>
+          ${timelineItems}
+        </div>`;
+        
+      case 'comparative-analysis':
+        const analysisItems = items.map(item => 
+          `<div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px 12px; margin: 4px 0; font-size: 11pt;">
+            <div style="font-weight: bold; color: #495057; margin-bottom: 4px;">${item.label}</div>
+            <div style="color: #212529;">${item.value}</div>
+          </div>`
+        ).join('');
+        return `<div style="margin: 10px 0; background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 12px;">
+          <div style="font-weight: bold; margin-bottom: 8px; font-size: 11pt; color: #495057;">Market Comparison</div>
+          ${analysisItems}
+        </div>`;
         
       default:
         const defaultItems = items.map(item => 

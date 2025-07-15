@@ -36,11 +36,20 @@ export const fetchProvidersIfNeeded = createAsyncThunk(
     // 2. There are no providers loaded
     // 3. The data is stale (older than 5 minutes)
     if (!loading && (providers.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS))) {
-      return dispatch(fetchProviders());
+      return dispatch(fetchProviders(undefined));
     }
     
     // Return existing data if cache is still valid
     return { payload: providers };
+  }
+);
+
+// New thunk for fetching providers by year
+export const fetchProvidersByYear = createAsyncThunk(
+  'providers/fetchByYear',
+  async (year: number) => {
+    const response = await awsProviders.list(year);
+    return response;
   }
 );
 
@@ -233,6 +242,26 @@ const providerSlice = createSlice({
       state.loading = false;
       state.loadingAction = null;
       state.error = action.error.message || 'Failed to fetch providers';
+    });
+
+    // Fetch Providers By Year
+    builder.addCase(fetchProvidersByYear.pending, (state) => {
+      state.loading = true;
+      state.loadingAction = 'fetching';
+      state.error = null;
+    });
+    builder.addCase(fetchProvidersByYear.fulfilled, (state, action) => {
+      state.loading = false;
+      state.loadingAction = null;
+      state.providers = action.payload as Provider[];
+      state.lastSync = new Date().toISOString();
+    });
+    builder.addCase(fetchProvidersByYear.rejected, (state, action) => {
+      state.loading = false;
+      state.loadingAction = null;
+      state.error = action.error.message || 'Failed to fetch providers by year';
+      // Defensive: clear providers if fetch fails
+      state.providers = [];
     });
 
     // Update Provider

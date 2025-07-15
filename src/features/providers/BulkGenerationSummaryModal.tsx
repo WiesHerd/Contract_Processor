@@ -54,7 +54,7 @@ export function BulkGenerationSummaryModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl p-0">
+      <DialogContent className="max-w-3xl p-0 z-50 animate-in slide-in-from-bottom-4 duration-300">
         <DialogHeader className="border-b px-6 pt-6 pb-2">
           <DialogTitle className="flex items-center justify-between w-full">
             <span>Contract Generation Summary</span>

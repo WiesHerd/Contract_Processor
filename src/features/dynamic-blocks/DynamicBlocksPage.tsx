@@ -13,7 +13,7 @@ interface SavedBlock {
   name: string;
   placeholder: string;
   description: string;
-  outputType: 'bullets' | 'table' | 'paragraph';
+  outputType: 'bullets' | 'table' | 'table-no-borders' | 'paragraph' | 'list' | 'compensation-summary' | 'call-schedule' | 'performance-metrics' | 'department-summary' | 'compliance-checklist' | 'timeline-tracker' | 'comparative-analysis';
   format: string;
   conditions: any[];
   alwaysInclude: any[];
@@ -64,7 +64,7 @@ const DynamicBlocksPage: React.FC = () => {
           name: block.name,
           description: block.description || '',
           placeholder: block.placeholder,
-          outputType: block.outputType as 'bullets' | 'table' | 'paragraph',
+          outputType: block.outputType as 'bullets' | 'table' | 'table-no-borders' | 'paragraph' | 'list' | 'compensation-summary' | 'call-schedule' | 'performance-metrics' | 'department-summary' | 'compliance-checklist' | 'timeline-tracker' | 'comparative-analysis',
           format: block.format,
           conditions: block.conditions || [],
           alwaysInclude: block.alwaysInclude || []
@@ -134,7 +134,7 @@ const DynamicBlocksPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50/50">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[95vw] mx-auto">
         {/* Page Header - Matching Provider Data Manager */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">

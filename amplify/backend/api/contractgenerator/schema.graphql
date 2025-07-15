@@ -77,6 +77,16 @@ type UserPreferences @model @auth(rules: [{ allow: owner, ownerField: "owner", o
   owner: String
 }
 
+# Generator-specific preferences for column management and views
+type GeneratorPreferences @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+  id: ID!
+  userId: String! @index(name: "byGeneratorUser", queryField: "generatorPreferencesByUserId")
+  columnPreferences: AWSJSON! # JSON object containing column visibility, order, pinning, saved views
+  createdAt: AWSDateTime
+  updatedAt: AWSDateTime
+  owner: String
+}
+
 # Provider-specific field mappings (for custom overrides)
 type Mapping @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!

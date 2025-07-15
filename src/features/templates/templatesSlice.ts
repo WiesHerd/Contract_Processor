@@ -28,8 +28,10 @@ export const hydrateTemplatesFromS3 = createAsyncThunk(
         const templateId = key.split('/').pop()?.replace('.json', '');
         if (templateId) {
           const template = await getTemplateMetadata(templateId);
-          if (template) {
+          if (template && template.id && template.id.trim() !== '' && template.name && template.name.trim() !== '') {
             templates.push(template);
+          } else {
+            console.warn('Skipping invalid template:', template);
           }
         }
       }
@@ -80,6 +82,11 @@ export const addTemplate = createAsyncThunk(
   'templates/addTemplate',
   async (template: Template, { dispatch, rejectWithValue }) => {
     try {
+      // Validate template before saving
+      if (!template.id || template.id.trim() === '' || !template.name || template.name.trim() === '') {
+        return rejectWithValue('Template must have valid ID and name');
+      }
+      
       await saveTemplateMetadata(template);
       dispatch(templatesSlice.actions.addTemplateSync(template));
       return template;
@@ -135,7 +142,13 @@ const templatesSlice = createSlice({
   initialState,
   reducers: {
     addTemplateSync: (state, action: PayloadAction<Template>) => {
-      state.templates.push(action.payload);
+      const template = action.payload;
+      // Only add valid templates
+      if (template && template.id && template.id.trim() !== '' && template.name && template.name.trim() !== '') {
+        state.templates.push(template);
+      } else {
+        console.warn('Attempted to add invalid template to state:', template);
+      }
     },
     updateTemplate: (state, action: PayloadAction<Template>) => {
       const index = state.templates.findIndex(t => t.id === action.payload.id);
@@ -147,7 +160,15 @@ const templatesSlice = createSlice({
       state.templates = state.templates.filter(t => t.id !== action.payload);
     },
     setTemplates: (state, action: PayloadAction<Template[]>) => {
-      state.templates = action.payload;
+      // Filter out invalid templates
+      const validTemplates = action.payload.filter(template => 
+        template && 
+        template.id && 
+        template.id.trim() !== '' && 
+        template.name && 
+        template.name.trim() !== ''
+      );
+      state.templates = validTemplates;
     },
     clearTemplates: (state) => {
       state.templates = [];
@@ -158,7 +179,15 @@ const templatesSlice = createSlice({
     builder
       .addCase(hydrateTemplates.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.templates = action.payload;
+        // Filter out invalid templates
+        const validTemplates = action.payload.filter(template => 
+          template && 
+          template.id && 
+          template.id.trim() !== '' && 
+          template.name && 
+          template.name.trim() !== ''
+        );
+        state.templates = validTemplates;
         state.lastSync = new Date().toISOString();
       })
       .addCase(hydrateTemplatesFromS3.pending, (state) => {
@@ -166,7 +195,15 @@ const templatesSlice = createSlice({
       })
       .addCase(hydrateTemplatesFromS3.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.templates = action.payload;
+        // Filter out invalid templates
+        const validTemplates = action.payload.filter(template => 
+          template && 
+          template.id && 
+          template.id.trim() !== '' && 
+          template.name && 
+          template.name.trim() !== ''
+        );
+        state.templates = validTemplates;
         state.lastSync = new Date().toISOString();
       })
       .addCase(hydrateTemplatesFromS3.rejected, (state, action) => {
@@ -176,7 +213,15 @@ const templatesSlice = createSlice({
       .addCase(fetchTemplatesIfNeeded.fulfilled, (state, action) => {
         // Only update if we actually fetched new data
         if (action.payload && Array.isArray(action.payload)) {
-          state.templates = action.payload;
+          // Filter out invalid templates
+          const validTemplates = action.payload.filter(template => 
+            template && 
+            template.id && 
+            template.id.trim() !== '' && 
+            template.name && 
+            template.name.trim() !== ''
+          );
+          state.templates = validTemplates;
           state.lastSync = new Date().toISOString();
         }
         state.status = 'succeeded';

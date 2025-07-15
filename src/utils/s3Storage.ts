@@ -216,7 +216,14 @@ export async function getContractFile(contractId: string, fileName: string): Pro
   const key = `${PATHS.CONTRACTS}${contractId}/${fileName}`;
   
   try {
-    // Get signed URL with 7-day expiration for better user experience (604800 seconds)
+    // First check if the file exists permanently in S3
+    const fileExists = await checkFileExists(key);
+    if (!fileExists) {
+      throw new Error('Contract file not found in permanent storage');
+    }
+    
+    // Generate a fresh download URL (expires in 7 days for security)
+    // Note: The file itself is stored permanently, only the download link expires
     const url = await getSignedDownloadUrl(key, 604800);
     const metadata = await getFileMetadata(key);
     
@@ -228,10 +235,34 @@ export async function getContractFile(contractId: string, fileName: string): Pro
 }
 
 /**
+ * Check if a file exists permanently in S3 storage
+ * 
+ * @param key - The S3 key to check
+ * @returns Promise<boolean> - True if file exists, false otherwise
+ */
+export async function checkFileExists(key: string): Promise<boolean> {
+  return withRetry(async () => {
+    try {
+      await s3Client.send(new HeadObjectCommand({
+        Bucket: BUCKET,
+        Key: key
+      }));
+      return true;
+    } catch (error) {
+      if ((error as any).code === 'NotFound' || (error as any).statusCode === 404) {
+        return false;
+      }
+      throw error;
+    }
+  });
+}
+
+/**
  * Regenerate a signed download URL for a contract file
  * 
- * Note: S3 signed URLs have expiration dates for security reasons. This is normal and recommended
- * to prevent unauthorized access to files. URLs expire after 7 days by default.
+ * IMPORTANT: Contract files are stored permanently in S3 and never expire.
+ * Only the download links expire for security reasons (prevents unauthorized sharing).
+ * This function generates a fresh download link for an existing permanent file.
  * 
  * @param contractId - The contract ID
  * @param fileName - The file name
@@ -241,7 +272,14 @@ export async function regenerateContractDownloadUrl(contractId: string, fileName
   const key = `${PATHS.CONTRACTS}${contractId}/${fileName}`;
   
   try {
-    // Get fresh signed URL with 7-day expiration (604800 seconds)
+    // Verify the file exists permanently
+    const fileExists = await checkFileExists(key);
+    if (!fileExists) {
+      throw new Error('Contract file not found in permanent storage. The file may have been deleted or never generated.');
+    }
+    
+    // Generate fresh download URL (expires in 7 days for security)
+    // The file itself remains permanently stored
     const url = await getSignedDownloadUrl(key, 604800);
     const metadata = await getFileMetadata(key);
     

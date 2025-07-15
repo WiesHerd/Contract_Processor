@@ -21,6 +21,7 @@ interface ContractPreviewModalProps {
   selectedProviderIds: string[];
   onGenerate: (providerId: string) => void;
   onBulkGenerate: () => void;
+  getAssignedTemplate: (provider: Provider) => Template | null;
 }
 
 const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
@@ -31,6 +32,7 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
   selectedProviderIds,
   onGenerate,
   onBulkGenerate,
+  getAssignedTemplate,
 }) => {
   const { mappings } = useSelector((state: RootState) => state.mappings);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
@@ -41,10 +43,17 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
   
   // Set default provider when modal opens
   React.useEffect(() => {
-    if (open && availableProviders.length > 0 && !selectedProviderId) {
-      setSelectedProviderId(availableProviders[0].id);
+    if (open && availableProviders.length > 0) {
+      // If there's only one provider selected (clicked from table), use that one
+      if (selectedProviderIds.length === 1) {
+        setSelectedProviderId(selectedProviderIds[0]);
+      }
+      // Otherwise, if no provider is selected or the selected provider is not in the available list, select the first one
+      else if (!selectedProviderId || !availableProviders.find(p => p.id === selectedProviderId)) {
+        setSelectedProviderId(availableProviders[0].id);
+      }
     }
-  }, [open, availableProviders, selectedProviderId]);
+  }, [open, availableProviders, selectedProviderId, selectedProviderIds]);
 
   const selectedProvider = availableProviders.find(p => p.id === selectedProviderId);
 
@@ -58,10 +67,8 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
 
   useEffect(() => {
     const generatePreview = async () => {
-      if (!template || !selectedProvider) {
-        const emptyContent = !template ? 
-          '<div style="padding: 2rem; text-align: center; color: #666; font-family: Arial, sans-serif;"><h3>No Template Selected</h3><p>Please select a template to preview contracts.</p></div>' : 
-          '<div style="padding: 2rem; text-align: center; color: #666; font-family: Arial, sans-serif;"><h3>No Provider Selected</h3><p>Please select a provider to preview.</p></div>';
+      if (!selectedProvider) {
+        const emptyContent = '<div style="padding: 2rem; text-align: center; color: #666; font-family: Arial, sans-serif;"><h3>No Provider Selected</h3><p>Please select a provider to preview.</p></div>';
         setPreviewData({
           content: emptyContent,
           warnings: [],
@@ -71,8 +78,21 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
         return;
       }
 
-      const html = template.editedHtmlContent || template.htmlPreviewContent || '';
-      const mapping = mappings[template.id]?.mappings;
+      // Use assigned template or fallback to global template
+      const templateToUse = getAssignedTemplate(selectedProvider) || template;
+      if (!templateToUse) {
+        const emptyContent = '<div style="padding: 2rem; text-align: center; color: #666; font-family: Arial, sans-serif;"><h3>No Template Assigned</h3><p>This provider does not have a template assigned. Please assign a template first.</p></div>';
+        setPreviewData({
+          content: emptyContent,
+          warnings: [],
+          hasUnresolved: false,
+          unresolvedPlaceholders: [],
+        });
+        return;
+      }
+
+      const html = templateToUse.editedHtmlContent || templateToUse.htmlPreviewContent || '';
+      const mapping = mappings[templateToUse.id]?.mappings;
       
       // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
       const enhancedMapping = mapping?.map(m => {
@@ -91,7 +111,7 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
         };
       });
       
-      const { content: mergedHtml, warnings } = await mergeTemplateWithData(template, selectedProvider, html, enhancedMapping);
+      const { content: mergedHtml, warnings } = await mergeTemplateWithData(templateToUse, selectedProvider, html, enhancedMapping);
       
       // Check for unresolved placeholders
       const unresolved = mergedHtml.match(/{{[^}]+}}/g);
@@ -106,7 +126,7 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
     };
 
     generatePreview();
-  }, [template, selectedProvider, mappings]);
+  }, [template, selectedProvider, mappings, getAssignedTemplate]);
 
   // Utility to normalize smart quotes and special characters
   const normalizeSmartQuotes = (text: string): string => {
@@ -141,9 +161,9 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
         th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
         th { background-color: #f8f9fa; font-weight: bold; }
         .preview-container { 
-          max-width: 8.5in; 
+          max-width: 14in; 
           margin: 0 auto; 
-          padding: 0.75in; 
+          padding: 0.4in; 
           background: white; 
           min-height: 11in;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -170,7 +190,7 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl w-full h-[95vh] flex flex-col p-0">
+      <DialogContent className="max-w-[95vw] w-full h-[95vh] flex flex-col p-0">
         <DialogHeader className="flex-shrink-0 px-6 py-4 border-b">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Eye className="w-5 h-5 text-blue-600" />
@@ -295,7 +315,7 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
           </div>
           
           <div className="flex items-center gap-2">
-            {selectedProviderIds.length > 1 && (
+                            {selectedProviderIds.length > 0 && (
               <Button 
                 onClick={handleGenerateAll}
                 className="flex items-center gap-2"

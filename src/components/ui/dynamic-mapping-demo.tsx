@@ -12,14 +12,14 @@ interface DynamicMappingDemoProps {}
 const sampleTemplate = `
 <div style="font-family: Arial, sans-serif; padding: 20px;">
   <h2>Contract Preview</h2>
-  <p><strong>Provider:</strong> {{ProviderName}}</p>
-  <p><strong>Start Date:</strong> {{StartDate}}</p>
-  <p><strong>Base Salary:</strong> {{BaseSalary}}</p>
+  <p><strong>Provider:</strong> \{\{ProviderName\}\}</p>
+  <p><strong>Start Date:</strong> \{\{StartDate\}\}</p>
+  <p><strong>Base Salary:</strong> \{\{BaseSalary\}\}</p>
   
   <h3>FTE Breakdown</h3>
-  {{FTEBreakdown}}
+  \{\{FTEBreakdown\}\}
   
-  <p>Total FTE: {{FTE}}</p>
+  <p>Total FTE: \{\{FTE\}\}</p>
 </div>
 `;
 
@@ -137,15 +137,15 @@ const DynamicMappingDemo: React.FC<DynamicMappingDemoProps> = () => {
             <label className="block text-sm font-medium mb-2">
               Select Dynamic Block for FTEBreakdown:
             </label>
-            <Select value={selectedBlockId} onValueChange={setSelectedBlockId}>
+            <Select value={selectedBlockId || 'none'} onValueChange={(value) => setSelectedBlockId(value === 'none' ? '' : value)}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Choose a dynamic block or leave empty for default" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None (use default FTE breakdown)</SelectItem>
+                <SelectItem value="none">None (use default FTE breakdown)</SelectItem>
                 {dynamicBlocks.map((block) => (
                   <SelectItem key={block.id} value={block.id}>
-                    {block.name} - {'{{' + block.placeholder + '}}'}
+                    {block.name} - {`{{${block.placeholder}}}`}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -210,18 +210,13 @@ const DynamicMappingDemo: React.FC<DynamicMappingDemoProps> = () => {
           </div>
           
           <div className="p-3 bg-blue-50 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">Step 2: Add Placeholder to Template</h4>
+            <h4 className="font-medium text-blue-900 mb-2">Step 2: Add to Template</h4>
             <p>In your DOCX template, add the placeholder: <Badge variant="outline">{'{{FTEBreakdown}}'}</Badge></p>
           </div>
           
           <div className="p-3 bg-green-50 rounded-lg">
             <h4 className="font-medium text-green-900 mb-2">Step 3: Map in Field Mapper</h4>
-            <p>In the field mapping screen, select "Dynamic Block" instead of "Field" and choose your dynamic block.</p>
-          </div>
-          
-          <div className="p-3 bg-purple-50 rounded-lg">
-            <h4 className="font-medium text-purple-900 mb-2">Step 4: Generate Contracts</h4>
-            <p>The system will automatically evaluate your dynamic logic during contract generation.</p>
+            <p>In the Field Mapper, map <Badge variant="outline">{'{{FTEBreakdown}}'}</Badge> to your dynamic block.</p>
           </div>
         </CardContent>
       </Card>
