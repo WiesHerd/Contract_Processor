@@ -327,23 +327,24 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
     [uploadedColumns]
   );
 
-  // Initialize default pinning if no preferences exist
-  useEffect(() => {
-    if (preferences && (!preferences.columnPinning || Object.keys(preferences.columnPinning).length === 0)) {
-      // Set default pinning for Provider Name if no pinning preferences exist
-    if (providerNameCol) {
-        const newPinning = { left: [providerNameCol] };
-        updateColumnPinning(newPinning);
-      } else if (columnOrder.length > 0) {
-        // Pin the first column (usually name) by default
-        const firstCol = columnOrder[0];
-        if (firstCol) {
-          const newPinning = { left: [firstCol] };
-          updateColumnPinning(newPinning);
-        }
-      }
-    }
-  }, [providerNameCol, preferences, updateColumnPinning, columnOrder]);
+  // Disabled automatic pinning - let user control pinning manually
+  // useEffect(() => {
+  //   if (preferences && (!preferences.columnPinning || Object.keys(preferences.columnPinning).length === 0)) {
+  //     // Only set default pinning if user hasn't explicitly unpinned columns
+  //     // This prevents auto-pinning from overriding user preferences
+  //     if (providerNameCol && !preferences.columnPinning?.left?.includes(providerNameCol)) {
+  //       const newPinning = { left: [providerNameCol] };
+  //       updateColumnPinning(newPinning);
+  //     } else if (columnOrder.length > 0 && !preferences.columnPinning?.left?.includes(columnOrder[0])) {
+  //       // Pin the first column (usually name) by default only if not already unpinned
+  //       const firstCol = columnOrder[0];
+  //       if (firstCol) {
+  //         const newPinning = { left: [firstCol] };
+  //         updateColumnPinning(newPinning);
+  //       }
+  //     }
+  //   }
+  // }, [providerNameCol, preferences, updateColumnPinning, columnOrder]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

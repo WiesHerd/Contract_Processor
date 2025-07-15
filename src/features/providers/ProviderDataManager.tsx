@@ -3,8 +3,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Trash2, Upload, Maximize2, Minimize2, Download, AlertCircle, CheckCircle, Info } from 'lucide-react';
-import { clearProviders, fetchProviders, uploadProviders, clearAllProviders, setProviders } from '@/store/slices/providerSlice';
+import { clearProviders, fetchProvidersByYear, uploadProviders, clearAllProviders, setProviders } from '@/store/slices/providerSlice';
 import { selectProviders, selectProvidersLoading, selectProvidersError } from '@/store/slices/providerSlice';
+import { useYear } from '@/contexts/YearContext';
 import ProviderManager from './ProviderManager';
 import Papa from 'papaparse';
 import { mapCsvRowToProviderFields } from './ProviderManager';
@@ -243,6 +244,7 @@ function parseValue(field: string, value: any) {
 
 export default function ProviderDataManager() {
   const dispatch = useDispatch<AppDispatch>();
+  const { selectedYear, setSelectedYear } = useYear();
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSticky, setIsSticky] = useState(true);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
@@ -250,8 +252,6 @@ export default function ProviderDataManager() {
   const [pendingUploadSummary, setPendingUploadSummary] = useState<{ uploaded: number; skipped: number; errors: ValidationError[] } | null>(null);
   const [showFinalUploadSummary, setShowFinalUploadSummary] = useState(false);
   const [csvRowCount, setCsvRowCount] = useState<number | null>(null);
-  const [availableYears, setAvailableYears] = useState<number[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   
   const providers = useSelector(selectProviders);
   const loading = useSelector(selectProvidersLoading);
@@ -299,10 +299,11 @@ export default function ProviderDataManager() {
     // Fetch if:
     // 1. No lastSync (first time loading)
     // 2. The data is stale (older than 5 minutes)
-    if (!lastSync || (now - lastSyncTime > CACHE_DURATION_MS)) {
-      dispatch(fetchProviders());
+    // 3. We have a selected year
+    if (selectedYear && (!lastSync || (now - lastSyncTime > CACHE_DURATION_MS))) {
+      dispatch(fetchProvidersByYear(selectedYear));
     }
-  }, [dispatch, lastSync]);
+  }, [dispatch, lastSync, selectedYear]);
 
   // Show error toast if there's an error
   useEffect(() => {
@@ -311,80 +312,7 @@ export default function ProviderDataManager() {
     }
   }, [error]);
 
-  useEffect(() => {
-    const fetchYears = async () => {
-      const client = generateClient();
-      const result = await client.graphql({
-        query: /* GraphQL */ `
-          query ListProviderYears {
-            listProviderYears
-          }
-        `
-      });
-      const years = (result as any)?.data?.listProviderYears || [];
-      setAvailableYears(years);
-      if (years.length > 0) {
-        setSelectedYear(years[0]);
-      }
-    };
-    fetchYears();
-  }, []);
 
-  useEffect(() => {
-    if (selectedYear) {
-      const fetchProvidersByYear = async () => {
-        const client = generateClient();
-        const result = await client.graphql({
-          query: /* GraphQL */ `
-            query ProvidersByCompensationYear($compensationYear: String!) {
-              providersByCompensationYear(compensationYear: $compensationYear) {
-                items {
-                  id
-                  name
-                  employeeId
-                  providerType
-                  specialty
-                  subspecialty
-                  fte
-                  administrativeFte
-                  administrativeRole
-                  yearsExperience
-                  hourlyWage
-                  baseSalary
-                  originalAgreementDate
-                  organizationName
-                  startDate
-                  contractTerm
-                  ptoDays
-                  holidayDays
-                  cmeDays
-                  cmeAmount
-                  signingBonus
-                  educationBonus
-                  qualityBonus
-                  compensationType
-                  conversionFactor
-                  wRVUTarget
-                  compensationYear
-                  credentials
-                  compensationModel
-                  fteBreakdown
-                  templateTag
-                  dynamicFields
-                  createdAt
-                  updatedAt
-                }
-              }
-            }
-          `,
-          variables: { compensationYear: selectedYear }
-        });
-        const providers = (result as any)?.data?.providersByCompensationYear?.items || [];
-        dispatch(setProviders(providers));
-      };
-      fetchProvidersByYear();
-    }
-  }, [selectedYear, dispatch]);
 
   // Simplified CSV upload handler that works with your existing CSV format
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -415,6 +343,12 @@ export default function ProviderDataManager() {
               }
             }
           });
+          
+          // Auto-populate compensationYear with selected year if not provided in CSV
+          if (!provider.compensationYear && selectedYear) {
+            provider.compensationYear = selectedYear;
+          }
+          
           // Add any additional unmapped columns as dynamic fields (only truly unknown columns)
           const dynamicFieldsObj: Record<string, any> = {};
           headers.forEach(header => {
@@ -461,7 +395,7 @@ export default function ProviderDataManager() {
         try {
           await dispatch(uploadProviders(providersToCreate)).unwrap();
           toast.success(`Successfully uploaded ${providersToCreate.length} providers`);
-          await dispatch(fetchProviders());
+          await dispatch(fetchProvidersByYear(selectedYear));
           // Now show the summary modal after upload is complete
           setShowFinalUploadSummary(true);
         } catch (error: unknown) {
@@ -475,12 +409,12 @@ export default function ProviderDataManager() {
       },
     });
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [dispatch]);
+  }, [dispatch, selectedYear]);
 
   // Handle clear table with DynamoDB sync
   const handleClearTable = useCallback(() => {
     setShowConfirm(false); // Close the confirmation modal immediately
-    dispatch(fetchProviders()).then(() => {
+    dispatch(fetchProvidersByYear(selectedYear)).then(() => {
       dispatch(clearAllProviders());
     });
   }, [dispatch]);
@@ -652,20 +586,7 @@ export default function ProviderDataManager() {
                 </Tooltip>
               </TooltipProvider>
             </div>
-            {/* Optional: Year Selector */}
-            {availableYears.length > 0 && (
-              <div className="flex items-center ml-6">
-                <label htmlFor="year-select" className="font-medium mr-2">Contract Year:</label>
-                <select
-                  id="year-select"
-                  value={selectedYear ?? ''}
-                  onChange={e => setSelectedYear(Number(e.target.value))}
-                  className="border rounded px-2 py-1"
-                >
-                  {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-            )}
+            {/* Removed duplicate year selector - using global YearSelector in header instead */}
           </div>
           <hr className="my-3 border-gray-100" />
           <div className="flex flex-wrap items-center justify-between gap-4 mt-4">

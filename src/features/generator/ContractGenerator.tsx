@@ -4,7 +4,7 @@ import { RootState } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search, Eye } from 'lucide-react';
+import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search, Eye, RotateCcw } from 'lucide-react';
 import {
   setSelectedTemplate,
   setSelectedProvider,
@@ -20,6 +20,7 @@ import {
 import { generateDocument, downloadDocument } from './utils/documentGenerator';
 import type { GeneratedFile } from './generatorSlice';
 import { Provider } from '@/types/provider';
+import { Template } from '@/types/template';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -48,12 +49,14 @@ import { RowSelectionModule } from 'ag-grid-community';
 import { PaginationModule } from 'ag-grid-community';
 import { Checkbox } from '@/components/ui/checkbox';
 import { saveAs } from 'file-saver';
-import { saveContractFile, getContractFile } from '@/utils/s3Storage';
+import { saveContractFile, getContractFile, regenerateContractDownloadUrl } from '@/utils/s3Storage';
 import { Progress } from '@/components/ui/progress';
 import { Clause } from '@/types/clause';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ContractPreviewModal from './components/ContractPreviewModal';
+import { useGeneratorPreferences } from '@/hooks/useGeneratorPreferences';
+import { toast } from 'sonner';
 
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
@@ -120,7 +123,7 @@ export default function ContractGenerator() {
   const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(40);
+  const [pageSize, setPageSize] = useState(100);
   const [userError, setUserError] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState('');
   const [editorModalOpen, setEditorModalOpen] = useState(false);
@@ -128,12 +131,9 @@ export default function ContractGenerator() {
   const [clauseSearch, setClauseSearch] = useState('');
   const [gridScrollWidth, setGridScrollWidth] = useState(0);
   const [gridClientWidth, setGridClientWidth] = useState(0);
-  const [activeView, setActiveView] = useState<'generator' | 'logs'>('generator');
+  const [activeTabView, setActiveTabView] = useState<'generator' | 'logs'>('generator');
 
-  const [selectedClauseId, setSelectedClauseId] = useState<string>('');
-  const [selectedPlaceholder, setSelectedPlaceholder] = useState<string>('');
-  const [customPlaceholder, setCustomPlaceholder] = useState<string>('');
-  const [bulkClausePreview, setBulkClausePreview] = useState<string>('');
+
   const [selectedSpecialty, setSelectedSpecialty] = useState("__ALL__");
   const [selectedSubspecialty, setSelectedSubspecialty] = useState("__ALL__");
   const [selectedProviderType, setSelectedProviderType] = useState("__ALL__");
@@ -142,6 +142,31 @@ export default function ContractGenerator() {
   const [alertError, setAlertError] = useState<string | null>(null);
   const [statusTab, setStatusTab] = useState<'notGenerated' | 'processed' | 'all'>('notGenerated');
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
+  
+  // Template assignment state - maps provider ID to assigned template ID
+  const [templateAssignments, setTemplateAssignments] = useState<Record<string, string>>({});
+
+  // Enterprise-grade user preferences for column management (separate from Providers)
+  const {
+    preferences: columnPreferences,
+    loading: preferencesLoading,
+    updateColumnVisibility,
+    updateColumnOrder,
+    updateColumnPinning,
+    createSavedView,
+    setActiveView: setActiveColumnView,
+    deleteSavedView,
+    updateDisplaySettings
+  } = useGeneratorPreferences();
+
+  // Get preferences (non-filter data)
+  const hiddenColumns = new Set(Object.entries(columnPreferences?.columnVisibility || {})
+    .filter(([_, visible]) => !visible)
+    .map(([col]) => col));
+  const columnOrder = columnPreferences?.columnOrder || [];
+  const savedViews = columnPreferences?.savedViews || {};
+  const activeColumnView = columnPreferences?.activeView || 'default';
 
   // Load clauses with caching
   useEffect(() => {
@@ -164,6 +189,29 @@ export default function ContractGenerator() {
     clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
   );
 
+  // Initialize column order for Contract Generator
+  useEffect(() => {
+    if (providers.length > 0 && columnOrder.length === 0) {
+      // Define default column order for Contract Generator
+      const defaultColumnOrder = [
+        'name',
+        'employeeId', 
+        'providerType',
+        'specialty',
+        'subspecialty',
+        'baseSalary',
+        'fte',
+        'startDate',
+        'compensationModel',
+        'assignedTemplate'
+      ];
+      
+      if (JSON.stringify(defaultColumnOrder) !== JSON.stringify(columnPreferences?.columnOrder)) {
+        updateColumnOrder(defaultColumnOrder);
+      }
+    }
+  }, [providers, columnOrder.length, columnPreferences?.columnOrder, updateColumnOrder]);
+
   // Update selected template when ID changes
   useEffect(() => {
     if (selectedTemplateId) {
@@ -176,7 +224,65 @@ export default function ContractGenerator() {
 
   // Add AG Grid ref for selection management
   const gridRef = useRef<AgGridReact>(null);
-  const isUpdatingSelection = useRef(false);
+
+  // Smart template assignment logic
+  const getAssignedTemplate = (provider: Provider) => {
+    // Filter out templates with empty IDs or names
+    const validTemplates = templates.filter(t => 
+      t && 
+      t.id && 
+      t.id.trim() !== '' && 
+      t.name && 
+      t.name.trim() !== ''
+    );
+    
+    // 1. Check if manually assigned
+    if (templateAssignments[provider.id]) {
+      const assignedTemplate = validTemplates.find(t => t.id === templateAssignments[provider.id]);
+      if (assignedTemplate) {
+        return assignedTemplate;
+      }
+      return null;
+    }
+    
+    // 2. Fallback to selected template (original behavior)
+    if (selectedTemplate && selectedTemplate.id && selectedTemplate.id.trim() !== '') {
+      return selectedTemplate;
+    }
+    return null;
+  };
+
+  // Update template assignment for a provider
+  const updateProviderTemplate = (providerId: string, templateId: string | null) => {
+    // Safety check to prevent empty template IDs
+    if (templateId && templateId.trim() !== '' && templateId !== 'no-template') {
+      setTemplateAssignments(prev => ({ ...prev, [providerId]: templateId }));
+    } else {
+      setTemplateAssignments(prev => {
+        const newAssignments = { ...prev };
+        delete newAssignments[providerId];
+        return newAssignments;
+      });
+    }
+  };
+
+  // Bulk template assignment functions
+  const assignTemplateToSelected = (templateId: string) => {
+    // Safety check to prevent empty template IDs
+    if (!templateId || templateId.trim() === '' || templateId === 'no-template') return;
+    
+    const newAssignments = { ...templateAssignments };
+    selectedProviderIds.forEach(providerId => {
+      newAssignments[providerId] = templateId;
+    });
+    setTemplateAssignments(newAssignments);
+  };
+
+
+
+  const clearTemplateAssignments = () => {
+    setTemplateAssignments({});
+  };
 
 
 
@@ -190,8 +296,16 @@ export default function ContractGenerator() {
       setSelectedProviderIds([]);
       gridRef.current?.api.deselectAll();
     } else {
-      setSelectedProviderIds(allProviderIds);
-      gridRef.current?.api.selectAll();
+      // Select all providers that are currently visible in the grid
+      const visibleProviderIds = visibleRows.map(row => row.id);
+      setSelectedProviderIds(visibleProviderIds);
+      // Manually select each visible row in the grid
+      visibleRows.forEach(row => {
+        const rowNode = gridRef.current?.api.getRowNode(row.id);
+        if (rowNode) {
+          rowNode.setSelected(true);
+        }
+      });
     }
   };
 
@@ -206,7 +320,20 @@ export default function ContractGenerator() {
   // Helper function to download a contract with error handling
   const downloadContract = async (provider: Provider, templateId: string) => {
     try {
-      const contractYear = selectedTemplate?.contractYear || new Date().getFullYear().toString();
+      // Find the actual generated contract to get the correct information
+      const contract = generatedContracts.find(
+        c => c.providerId === provider.id && c.templateId === templateId && c.status === 'SUCCESS'
+      );
+      
+      if (!contract) {
+        setUserError(`No generated contract found for ${provider.name} with template ${templateId}. Please regenerate the contract.`);
+        return;
+      }
+      
+      // Get the template to get the contract year
+      const template = templates.find(t => t.id === templateId);
+      const contractYear = template?.contractYear || new Date().getFullYear().toString();
+      
       const contractId = provider.id + '-' + templateId + '-' + contractYear;
       const fileName = getContractFileName(
         contractYear,
@@ -215,29 +342,45 @@ export default function ContractGenerator() {
       );
       
       // Try to get the contract file from S3
-      const { url: downloadUrl } = await getContractFile(contractId, fileName);
+      let downloadUrl: string;
+      try {
+        const result = await getContractFile(contractId, fileName);
+        downloadUrl = result.url;
+      } catch (s3Error) {
+        console.log('Initial download failed, trying to regenerate URL...');
+        // If the initial download fails, try to regenerate the URL
+        const result = await regenerateContractDownloadUrl(contractId, fileName);
+        downloadUrl = result.url;
+      }
       
       // Open download URL in new tab
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
       
     } catch (error) {
       console.error('Failed to download contract:', error);
-      setUserError(`Failed to download contract for ${provider.name}. The file may no longer be available or there was an error accessing S3.`);
+      setUserError(`Failed to download contract for ${provider.name}. Contract files are stored permanently, but download links expire for security. The system will automatically regenerate the link.`);
       
       // Try to regenerate the contract if download fails
       if (confirm(`Failed to download the contract. Would you like to regenerate it for ${provider.name}?`)) {
-        await generateAndDownloadDocx(provider);
+        // Find the assigned template for this provider
+        const assignedTemplate = getAssignedTemplate(provider);
+        if (assignedTemplate) {
+          await generateAndDownloadDocx(provider, assignedTemplate);
+        } else {
+          setUserError(`No template assigned to ${provider.name}. Please assign a template first.`);
+        }
       }
     }
   };
 
   // Helper to generate and download DOCX for a provider
-  const generateAndDownloadDocx = async (provider: Provider) => {
-    if (!selectedTemplate) return;
+  const generateAndDownloadDocx = async (provider: Provider, template?: Template) => {
+    const templateToUse = template || selectedTemplate;
+    if (!templateToUse) return;
     
     try {
-      const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
-      const mapping = mappings[selectedTemplate.id]?.mappings;
+      const html = templateToUse.editedHtmlContent || templateToUse.htmlPreviewContent || "";
+      const mapping = mappings[templateToUse.id]?.mappings;
       
       // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
       const enhancedMapping = mapping?.map(m => {
@@ -256,7 +399,7 @@ export default function ContractGenerator() {
         };
       });
       
-      const { content: mergedHtml } = await mergeTemplateWithData(selectedTemplate, provider, html, enhancedMapping);
+      const { content: mergedHtml } = await mergeTemplateWithData(templateToUse, provider, html, enhancedMapping);
       const htmlClean = normalizeSmartQuotes(mergedHtml);
       const aptosStyle = `<style>
 body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
@@ -276,7 +419,7 @@ b, strong { font-weight: bold !important; }
       }
       // @ts-ignore
       const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-      const contractYear = selectedTemplate.contractYear || new Date().getFullYear().toString();
+      const contractYear = templateToUse.contractYear || new Date().getFullYear().toString();
       const runDate = new Date().toISOString().split('T')[0];
       const fileName = getContractFileName(contractYear, provider.name, runDate);
       
@@ -288,14 +431,14 @@ b, strong { font-weight: bold !important; }
         const docxFile = new File([docxBlob], fileName, { 
           type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
         });
-        const contractId = provider.id + '-' + selectedTemplate.id + '-' + contractYear;
+        const contractId = provider.id + '-' + templateToUse.id + '-' + contractYear;
         
         // Save to S3
         s3Key = await saveContractFile(docxFile, contractId, {
           providerId: provider.id,
           providerName: provider.name,
-          templateId: selectedTemplate.id,
-          templateName: selectedTemplate.name,
+          templateId: templateToUse.id,
+          templateName: templateToUse.name,
           contractYear,
           fileName: fileName,
           fileSize: docxFile.size.toString(),
@@ -327,13 +470,13 @@ b, strong { font-weight: bold !important; }
       const logInput = {
         providerId: provider.id,
         contractYear: contractYear,
-        templateId: selectedTemplate.id,
+        templateId: templateToUse.id,
         generatedAt: new Date().toISOString(),
         generatedBy: 'user', // TODO: Get actual user ID
         outputType: 'DOCX',
         status: 'SUCCESS',
         fileUrl: s3Url || fileName, // Prefer S3 URL if available
-        notes: `Generated contract for ${provider.name} using template ${selectedTemplate.name}${s3Key ? ` (S3 Key: ${s3Key})` : ''}`
+        notes: `Generated contract for ${provider.name} using template ${templateToUse.name}${s3Key ? ` (S3 Key: ${s3Key})` : ''}`
       };
 
       try {
@@ -341,7 +484,7 @@ b, strong { font-weight: bold !important; }
         dispatch(addGenerationLog(logEntry));
         dispatch(addGeneratedContract({
           providerId: provider.id,
-          templateId: selectedTemplate.id,
+          templateId: templateToUse.id,
           status: 'SUCCESS',
           generatedAt: new Date().toISOString(),
           fileUrl: s3Url, // Store the S3 URL for later access
@@ -356,13 +499,13 @@ b, strong { font-weight: bold !important; }
       }
       
       // 4. Always attempt to log to the main audit log
-      console.log('Dispatching logSecurityEvent for contract generation', {provider, selectedTemplate, fileName, contractYear});
+      console.log('Dispatching logSecurityEvent for contract generation', {provider, templateToUse, fileName, contractYear});
       try {
         const auditDetails = JSON.stringify({
           providerId: provider.id,
           providerName: provider.name,
-          templateId: selectedTemplate.id,
-          templateName: selectedTemplate.name,
+          templateId: templateToUse.id,
+          templateName: templateToUse.name,
           contractYear,
           fileUrl: s3Url || fileName,
           fileName: fileName,
@@ -373,8 +516,8 @@ b, strong { font-weight: bold !important; }
           metadata: {
             providerId: provider.id,
             providerName: provider.name,
-            templateId: selectedTemplate.id,
-            templateName: selectedTemplate.name,
+            templateId: templateToUse.id,
+            templateName: templateToUse.name,
             contractYear,
             fileUrl: s3Url || fileName,
             fileName: fileName,
@@ -395,8 +538,8 @@ b, strong { font-weight: bold !important; }
           metadata: {
             providerId: provider.id,
             providerName: provider.name,
-            templateId: selectedTemplate.id,
-            templateName: selectedTemplate.name,
+            templateId: templateToUse.id,
+            templateName: templateToUse.name,
             contractYear,
             fileUrl: s3Url || fileName,
             fileName: fileName,
@@ -419,7 +562,7 @@ b, strong { font-weight: bold !important; }
       // Log the failure
       dispatch(addGeneratedContract({
         providerId: provider.id,
-        templateId: selectedTemplate.id,
+        templateId: templateToUse.id,
         status: 'FAILED',
         generatedAt: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -463,21 +606,29 @@ b, strong { font-weight: bold !important; }
   }, [dispatch]);
 
   const handleGenerate = async () => {
-    if (!selectedTemplate || selectedProviderIds.length !== 1) return;
+    if (selectedProviderIds.length !== 1) return;
     const provider = providers.find(p => p.id === selectedProviderIds[0]);
     if (!provider) return;
-    await generateAndDownloadDocx(provider);
-    await hydrateGeneratedContracts();
+    
+    // Use assigned template or fallback to selected template
+    const assignedTemplate = getAssignedTemplate(provider);
+    if (!assignedTemplate) {
+      setUserError("No template assigned to this provider. Please assign a template first.");
+      return;
+    }
+    
+    try {
+      await generateAndDownloadDocx(provider, assignedTemplate);
+      await hydrateGeneratedContracts();
+    } catch (e) {
+      setUserError("Failed to generate contract. Please try again.");
+    }
   };
 
   const handleBulkGenerate = async () => {
     setUserError(null);
     setIsBulkGenerating(true);
-    if (!selectedTemplate) {
-      setUserError("No template selected. Please select a template before generating.");
-      setIsBulkGenerating(false);
-      return;
-    }
+    
     // Use all filtered providers, not just paginated
     const selectedProviders = filteredProviders.filter(p => selectedProviderIds.includes(p.id));
     if (selectedProviders.length < 2) {
@@ -485,11 +636,26 @@ b, strong { font-weight: bold !important; }
       setIsBulkGenerating(false);
       return;
     }
+
+    // Check if all providers have templates assigned (either manually or using selected template)
+    const providersWithoutTemplates = selectedProviders.filter(provider => !getAssignedTemplate(provider));
+    if (providersWithoutTemplates.length > 0) {
+      setUserError(`Some providers don't have templates assigned. Please assign templates or select a default template.`);
+      setIsBulkGenerating(false);
+      return;
+    }
+
     let successCount = 0;
     let failCount = 0;
     for (const provider of selectedProviders) {
       try {
-        await generateAndDownloadDocx(provider);
+        const assignedTemplate = getAssignedTemplate(provider);
+        if (!assignedTemplate) {
+          failCount++;
+          continue;
+        }
+        // Generate with the assigned template
+        await generateAndDownloadDocx(provider, assignedTemplate);
         successCount++;
       } catch (err) {
         failCount++;
@@ -499,21 +665,29 @@ b, strong { font-weight: bold !important; }
     await hydrateGeneratedContracts();
     if (failCount === 0) {
       setUserError(null);
-      alert(`Successfully generated contracts for ${successCount} providers.`);
+      alert(`Successfully generated contracts for ${successCount} providers using their assigned templates.`);
     } else {
       setUserError(`Generated contracts for ${successCount} providers. ${failCount} failed. See logs for details.`);
     }
   };
 
   const handlePreview = () => {
-    if (!selectedTemplate) {
-      setUserError("Please select a template before previewing.");
-      return;
-    }
     if (selectedProviderIds.length === 0) {
       setUserError("Please select at least one provider to preview.");
       return;
     }
+    
+    // Check if all selected providers have templates assigned
+    const providersWithoutTemplates = selectedProviderIds
+      .map(id => providers.find(p => p.id === id))
+      .filter(provider => provider && !getAssignedTemplate(provider));
+    
+    if (providersWithoutTemplates.length > 0) {
+      const providerNames = providersWithoutTemplates.map(p => p?.name).filter(Boolean).join(', ');
+      setUserError(`Some selected providers don't have templates assigned: ${providerNames}. Please assign templates first.`);
+      return;
+    }
+    
     setPreviewModalOpen(true);
   };
 
@@ -524,17 +698,7 @@ b, strong { font-weight: bold !important; }
     }
   };
 
-  const handleRetryFailed = async () => {
-    setIsBulkGenerating(true);
-    const failedProviders = providers.filter(p => {
-      const contract = generatedContracts.find(c => c.providerId === p.id && c.templateId === (selectedTemplate?.id || ''));
-      return contract && contract.status === 'FAILED';
-    });
-    for (const provider of failedProviders) {
-      await generateAndDownloadDocx(provider);
-    }
-    setIsBulkGenerating(false);
-  };
+
 
   const handleGenerateDOCX = async () => {
     setUserError(null);
@@ -662,7 +826,7 @@ b, strong { font-weight: bold !important; }
     return matchesSearch && matchesSpecialty && matchesSubspecialty && matchesProviderType;
   });
 
-  // Pagination logic
+  // Pagination logic - apply to ALL filtered providers, not just tab-filtered ones
   const paginatedProviders = filteredProviders.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
   const totalPages = Math.ceil(filteredProviders.length / pageSize);
 
@@ -732,107 +896,361 @@ b, strong { font-weight: bold !important; }
   };
 
   // Base columns that appear in all tabs
-  const baseColumns = [
-    {
+  const baseColumns = useMemo(() => {
+    const leftPinned = columnPreferences?.columnPinning?.left || [];
+    const rightPinned = columnPreferences?.columnPinning?.right || [];
+    
+    // Start with the select column (always pinned left)
+    const selectColumn = {
       headerName: '',
       field: 'selected',
       width: 50,
-      checkboxSelection: true,
-      headerCheckboxSelection: true,
+      minWidth: 50,
+      maxWidth: 50,
       pinned: 'left',
       suppressMenu: true,
       sortable: false,
       filter: false,
       resizable: false,
-    },
-    {
-      headerName: 'Provider Name',
-      field: 'name',
-      width: 200,
-      pinned: 'left',
-      cellRenderer: (params: any) => (
-        <div className="font-medium text-gray-900">{params.value}</div>
-      ),
-      filter: 'agTextColumnFilter',
-      tooltipField: 'name',
-    },
-    {
-      headerName: 'Employee ID',
-      field: 'employeeId',
-      width: 120,
-      filter: 'agTextColumnFilter',
-      tooltipField: 'employeeId',
-    },
-    {
-      headerName: 'Specialty',
-      field: 'specialty',
-      width: 150,
-      filter: 'agTextColumnFilter',
-      tooltipField: 'specialty',
-    },
-    {
-      headerName: 'Subspecialty',
-      field: 'subspecialty',
-      width: 150,
-      filter: 'agTextColumnFilter',
-      tooltipField: 'subspecialty',
-    },
-    {
-      headerName: 'Provider Type',
-      field: 'providerType',
-      width: 120,
-      filter: 'agTextColumnFilter',
-      tooltipField: 'providerType',
-    },
-    {
-      headerName: 'Administrative Role',
-      field: 'administrativeRole',
-      width: 150,
-      filter: 'agTextColumnFilter',
-      tooltipField: 'administrativeRole',
-    },
-    {
-      headerName: 'Base Salary',
-      field: 'baseSalary',
-      width: 120,
-      valueFormatter: (params: any) => formatCurrency(params.value),
-      filter: 'agNumberColumnFilter',
-      tooltipValueGetter: (params: any) => formatCurrency(params.value),
-    },
-    {
-      headerName: 'FTE',
-      field: 'fte',
-      width: 80,
-      valueFormatter: (params: any) => formatNumber(params.value),
-      filter: 'agNumberColumnFilter',
-      tooltipValueGetter: (params: any) => formatNumber(params.value),
-    },
-    {
-      headerName: 'Start Date',
-      field: 'startDate',
-      width: 130,
-      valueFormatter: (params: any) => formatDate(params.value),
-      filter: 'agDateColumnFilter',
-      tooltipValueGetter: (params: any) => formatDate(params.value),
-    },
-    {
-      field: 'compensationModel',
-      headerName: 'Compensation Model',
-      width: 160,
-      valueGetter: (params: any) => {
-        const provider = params.data;
-        return provider.compensationModel || provider.compensationType || provider.CompensationModel || '';
+      suppressSizeToFit: true,
+      cellRenderer: (params: any) => {
+        const isSelected = selectedProviderIds.includes(params.data.id);
+        return (
+          <div className="flex items-center justify-center h-full">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                if (isSelected) {
+                  setSelectedProviderIds(prev => prev.filter(id => id !== params.data.id));
+                } else {
+                  setSelectedProviderIds(prev => [...prev, params.data.id]);
+                }
+              }}
+              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+            />
+          </div>
+        );
       },
-      filter: 'agTextColumnFilter',
-      tooltipField: 'compensationModel',
-    },
-  ];
+      headerComponent: () => {
+        const visibleRowIds = visibleRows.map(row => row.id);
+        const allVisibleSelected = visibleRowIds.length > 0 && 
+          visibleRowIds.every(id => selectedProviderIds.includes(id));
+        const someVisibleSelected = visibleRowIds.some(id => selectedProviderIds.includes(id));
+        
+        return (
+          <div className="flex items-center justify-center h-full">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+              }}
+              onChange={(e) => {
+                e.stopPropagation();
+                if (allVisibleSelected) {
+                  // Deselect all visible
+                  setSelectedProviderIds(prev => prev.filter(id => !visibleRowIds.includes(id)));
+                } else {
+                  // Select all visible
+                  setSelectedProviderIds(prev => {
+                    const newSelection = [...prev];
+                    visibleRowIds.forEach(id => {
+                      if (!newSelection.includes(id)) {
+                        newSelection.push(id);
+                      }
+                    });
+                    return newSelection;
+                  });
+                }
+              }}
+              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+            />
+          </div>
+        );
+      },
+    };
+
+    // Define all possible columns
+    const allColumnDefs = {
+      name: {
+        headerName: 'Provider Name',
+        field: 'name',
+        width: 220,
+        minWidth: 180,
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => params.value,
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+      employeeId: {
+        headerName: 'Employee ID',
+        field: 'employeeId',
+        width: 130,
+        minWidth: 100,
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => params.value,
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+      specialty: {
+        headerName: 'Specialty',
+        field: 'specialty',
+        width: 180,
+        minWidth: 140,
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => params.value,
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+      subspecialty: {
+        headerName: 'Subspecialty',
+        field: 'subspecialty',
+        width: 180,
+        minWidth: 140,
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => params.value,
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+      providerType: {
+        headerName: 'Provider Type',
+        field: 'providerType',
+        width: 140,
+        minWidth: 120,
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => params.value,
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+      administrativeRole: {
+        headerName: 'Administrative Role',
+        field: 'administrativeRole',
+        width: 180,
+        minWidth: 150,
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => params.value,
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+      baseSalary: {
+        headerName: 'Base Salary',
+        field: 'baseSalary',
+        width: 140,
+        minWidth: 120,
+        valueFormatter: (params: any) => formatCurrency(params.value),
+        filter: 'agNumberColumnFilter',
+        tooltipValueGetter: (params: any) => formatCurrency(params.value),
+        cellStyle: { 
+          textAlign: 'right',
+          fontFamily: 'monospace'
+        },
+      },
+      fte: {
+        headerName: 'FTE',
+        field: 'fte',
+        width: 100,
+        minWidth: 80,
+        valueFormatter: (params: any) => formatNumber(params.value),
+        filter: 'agNumberColumnFilter',
+        tooltipValueGetter: (params: any) => formatNumber(params.value),
+        cellStyle: { 
+          textAlign: 'right',
+          fontFamily: 'monospace'
+        },
+      },
+      startDate: {
+        headerName: 'Start Date',
+        field: 'startDate',
+        width: 140,
+        minWidth: 120,
+        valueFormatter: (params: any) => formatDate(params.value),
+        filter: 'agDateColumnFilter',
+        tooltipValueGetter: (params: any) => formatDate(params.value),
+        cellStyle: { 
+          textAlign: 'center',
+          fontFamily: 'monospace'
+        },
+      },
+      compensationModel: {
+        field: 'compensationModel',
+        headerName: 'Compensation Model',
+        width: 180,
+        minWidth: 150,
+        valueGetter: (params: any) => {
+          const provider = params.data;
+          return provider.compensationModel || provider.compensationType || provider.CompensationModel || '';
+        },
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => params.value,
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+      assignedTemplate: {
+        headerName: 'Template',
+        field: 'assignedTemplate',
+        width: 280,
+        minWidth: 240,
+        cellRenderer: (params: any) => {
+          const provider = params.data;
+          const assignedTemplate = getAssignedTemplate(provider);
+          
+          return (
+            <div className="flex items-center gap-2 w-full">
+              {/* Show template name prominently */}
+              {assignedTemplate ? (
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <div className="text-xs font-medium truncate" title={`${assignedTemplate.name} (v${assignedTemplate.version || '1'})`}>
+                      {assignedTemplate.name}
+                    </div>
+                    {templateAssignments[provider.id] === assignedTemplate.id && (
+                      <span className="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 flex-shrink-0">
+                        Manual
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">
+                    v{assignedTemplate.version || '1'}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-gray-400 italic truncate">
+                    No template assigned
+                  </div>
+                </div>
+              )}
+              <Select
+                value={assignedTemplate?.id?.trim() ? assignedTemplate.id : 'no-template'}
+                onValueChange={(templateId) => {
+                  // Safety check to prevent empty values
+                  if (templateId && templateId.trim() !== '' && templateId !== 'no-template') {
+                    updateProviderTemplate(provider.id, templateId);
+                  } else if (templateId === 'no-template') {
+                    updateProviderTemplate(provider.id, null);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-32 h-8 text-xs">
+                  <SelectValue placeholder="Change" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no-template">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">No template</span>
+                    </div>
+                  </SelectItem>
+                  {templates
+                    .filter(template => 
+                      template && 
+                      template.id && 
+                      template.id.trim() !== '' && 
+                      template.name && 
+                      template.name.trim() !== ''
+                    )
+                    .map(template => {
+                      // Triple-check to ensure no empty values and provide fallback
+                      const templateId = template?.id?.trim();
+                      const templateName = template?.name?.trim();
+                      
+                      if (!templateId || !templateName) {
+                        console.warn('Skipping template with empty ID or name:', template);
+                        return null;
+                      }
+                      
+                      return (
+                        <SelectItem key={templateId} value={templateId}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs truncate max-w-[150px]" title={templateName}>
+                              {templateName}
+                            </span>
+                            <span className="text-xs text-gray-500 flex-shrink-0">(v{template.version || '1'})</span>
+                            {templateAssignments[provider.id] === templateId && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 flex-shrink-0">
+                                Assigned
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })
+                    .filter(Boolean)}
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        },
+        sortable: true,
+        filter: 'agTextColumnFilter',
+        tooltipValueGetter: (params: any) => {
+          const provider = params.data;
+          const assignedTemplate = getAssignedTemplate(provider);
+          if (assignedTemplate) {
+            const assignmentType = templateAssignments[provider.id] === assignedTemplate.id ? ' - Manually Assigned' : ' - Using Selected Template';
+            return `${assignedTemplate.name} (v${assignedTemplate.version || '1'})${assignmentType}`;
+          }
+          return 'No template assigned';
+        },
+        cellStyle: { 
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
+        },
+      },
+    };
+
+    // Build columns based on columnOrder
+    const orderedColumns = columnOrder.map(field => {
+      const colDef = allColumnDefs[field as keyof typeof allColumnDefs];
+      if (!colDef) return null;
+
+      // Apply pinning from preferences
+      let pinned: 'left' | 'right' | undefined;
+      if (leftPinned.includes(field)) {
+        pinned = 'left';
+      } else if (rightPinned.includes(field)) {
+        pinned = 'right';
+      }
+
+      return {
+        ...colDef,
+        pinned,
+        hide: hiddenColumns.has(field),
+      };
+    }).filter(Boolean);
+
+    return [selectColumn, ...orderedColumns];
+  }, [columnOrder, hiddenColumns, columnPreferences?.columnPinning, selectedProviderIds, templateAssignments, templates, getAssignedTemplate, updateProviderTemplate]);
 
   // Generation Status column (only for All tab)
   const generationStatusColumn = {
     headerName: 'Generation Status',
     field: 'generationStatus',
-    width: 150,
+    width: 160,
+    minWidth: 140,
     cellRenderer: (params: any) => {
       const status = params.value;
       if (status === 'Success') {
@@ -881,7 +1299,8 @@ b, strong { font-weight: bold !important; }
   const contractActionsColumn = {
     headerName: 'Contract Actions',
     field: 'actions',
-    width: 140,
+    width: 160,
+    minWidth: 140,
     cellRenderer: (params: any) => {
       const provider = params.data;
       // Find any successful contract for this provider, regardless of template selection
@@ -1019,11 +1438,18 @@ b, strong { font-weight: bold !important; }
   // After provider and template are selected and merged, set editorContent
   useEffect(() => {
     const updateEditorContent = async () => {
-      if (selectedTemplate && selectedProviderIds.length === 1) {
+      if (selectedProviderIds.length === 1) {
         const provider = providers.find(p => p.id === selectedProviderIds[0]);
         if (provider) {
-          const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
-          const mapping = mappings[selectedTemplate.id]?.mappings;
+          // Use assigned template or fallback to selected template
+          const templateToUse = getAssignedTemplate(provider) || selectedTemplate;
+          if (!templateToUse) {
+            setEditorContent('');
+            return;
+          }
+          
+          const html = templateToUse.editedHtmlContent || templateToUse.htmlPreviewContent || '';
+          const mapping = mappings[templateToUse.id]?.mappings;
           
           // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
           const enhancedMapping = mapping?.map(m => {
@@ -1042,14 +1468,14 @@ b, strong { font-weight: bold !important; }
             };
           });
           
-          const { content: mergedHtml } = await mergeTemplateWithData(selectedTemplate, provider, html, enhancedMapping);
+          const { content: mergedHtml } = await mergeTemplateWithData(templateToUse, provider, html, enhancedMapping);
           setEditorContent(mergedHtml);
         }
       }
     };
     
     updateEditorContent();
-  }, [selectedTemplate, selectedProviderIds, providers, mappings]);
+  }, [selectedTemplate, selectedProviderIds, providers, mappings, templateAssignments]);
 
   useEffect(() => {
     async function hydrateGeneratedContracts() {
@@ -1081,12 +1507,7 @@ b, strong { font-weight: bold !important; }
     hydrateGeneratedContracts();
   }, [dispatch]);
 
-  // Bulk Edit Clauses modal logic
-  const availablePlaceholders = useMemo(() => {
-    if (!selectedTemplate) return [];
-    const content = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || '';
-    return scanPlaceholders(content);
-  }, [selectedTemplate]);
+
 
   // Add state and memo for filter values and unique lists at the top of the component
   // Compute unique options for cascading filters
@@ -1127,52 +1548,52 @@ b, strong { font-weight: bold !important; }
     // eslint-disable-next-line
   }, [selectedSpecialty, subspecialtyOptions, providerTypeOptions]);
 
-  // Compute filtered rows for each tab
-  const processedRows = agGridRows.filter(row => row.generationStatus === 'Success');
-  const notGeneratedRows = agGridRows.filter(row => row.generationStatus === 'Not Generated');
-  const allRows = agGridRows;
+  // Compute tab counts from ALL filtered providers (not just paginated ones)
+  const allFilteredProvidersWithStatus = filteredProviders.map((provider: Provider) => {
+    // Find the latest successful generated contract for this provider
+    const latestSuccessContract = generatedContracts
+      .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
+      .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+    
+    let generationStatus = 'Not Generated';
+    if (latestSuccessContract) {
+      generationStatus = 'Success';
+    } else {
+      generationStatus = 'Not Generated';
+    }
+    
+    return {
+      ...provider,
+      generationStatus,
+    };
+  });
+
+  const processedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Success');
+  const notGeneratedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Not Generated');
+  const allRows = allFilteredProvidersWithStatus;
+  
   const tabCounts = {
     notGenerated: notGeneratedRows.length,
     processed: processedRows.length,
     all: allRows.length,
   };
-  const visibleRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
+  
+  // For AG Grid display, use paginated providers with status
+  const tabFilteredRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
+  const visibleRows = tabFilteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+  
+  // Debug logging
+  console.log('🔍 Pagination Debug:', {
+    statusTab,
+    tabFilteredRowsCount: tabFilteredRows.length,
+    visibleRowsCount: visibleRows.length,
+    pageIndex,
+    pageSize,
+    selectedProviderIdsCount: selectedProviderIds.length
+  });
 
   // Sync AG Grid selection with selectedProviderIds state
-  useEffect(() => {
-    if (gridRef.current?.api) {
-      const api = gridRef.current.api;
-      
-      // Get currently selected nodes
-      const currentlySelected = api.getSelectedNodes().map(node => node.data.id);
-      
-      // Only update if there's actually a difference
-      const shouldUpdate = selectedProviderIds.length !== currentlySelected.length ||
-        selectedProviderIds.some(id => !currentlySelected.includes(id)) ||
-        currentlySelected.some(id => !selectedProviderIds.includes(id));
-      
-      if (shouldUpdate) {
-        // Set flag to prevent onSelectionChanged from firing
-        isUpdatingSelection.current = true;
-        
-        // Clear all selections first
-        api.deselectAll();
-        
-        // Select rows that should be selected
-        selectedProviderIds.forEach(id => {
-          const rowNode = api.getRowNode(id);
-          if (rowNode) {
-            rowNode.setSelected(true);
-          }
-        });
-        
-        // Reset flag after a short delay
-        setTimeout(() => {
-          isUpdatingSelection.current = false;
-        }, 50);
-      }
-    }
-  }, [selectedProviderIds, visibleRows]);
+
 
   return (
     <div className="min-h-screen bg-gray-50/50 pt-0 pb-4 px-2 sm:px-4">
@@ -1223,11 +1644,19 @@ b, strong { font-weight: bold !important; }
                               Loading templates...
                             </div>
                           ) : (
-                            templates.map((template: any) => (
-                              <SelectItem key={template.id} value={template.id}>
-                                {template.name} (v{template.version})
-                              </SelectItem>
-                            ))
+                            templates
+                              .filter((template: any) => template && template.id && template.id.trim() !== '' && template.name)
+                              .map((template: any) => {
+                                // Additional safety check to ensure no empty values
+                                if (!template.id || template.id.trim() === '') {
+                                  return null;
+                                }
+                                return (
+                                  <SelectItem key={template.id} value={template.id}>
+                                    {template.name} (v{template.version || '1'})
+                                  </SelectItem>
+                                );
+                              })
                           )}
                         </SelectContent>
                       </Select>
@@ -1248,197 +1677,257 @@ b, strong { font-weight: bold !important; }
         {/* Main Card: Filter, table, no top action buttons */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
           {/* Modern Filter Sections */}
-          <div className="flex flex-col gap-4 mb-2">
-            {/* Bulk Processing Section */}
-            <div className="rounded-xl border border-blue-100 bg-gray-50 shadow-sm p-0 transition-all duration-300 ${bulkOpen ? 'pb-6' : 'pb-0'}">
+          <div className="flex flex-col gap-4 mb-6">
+            {/* Bulk Processing Section - Progressive Disclosure Design */}
+            <div className="rounded-xl border border-blue-100 bg-gray-50 shadow-sm p-0 transition-all duration-300 ${bulkOpen ? 'pb-6' : 'pb-0'} relative">
               <div className="flex items-center gap-3 px-6 pt-6 pb-2 cursor-pointer select-none" onClick={() => setBulkOpen(v => !v)}>
                 <span className="text-blue-600 text-2xl">⚡</span>
                 <span className="font-bold text-lg text-blue-900 tracking-wide">Bulk Processing</span>
-                <button
-                  className="ml-2 p-1 rounded hover:bg-blue-100 transition-colors"
-                  aria-label={bulkOpen ? 'Collapse' : 'Expand'}
-                  tabIndex={0}
-                  onClick={e => { e.stopPropagation(); setBulkOpen(v => !v); }}
-                  type="button"
-                >
-                  {bulkOpen ? <ChevronUp className="w-5 h-5 text-blue-600" /> : <ChevronDown className="w-5 h-5 text-blue-600" />}
-                </button>
               </div>
+              <button
+                className="absolute top-4 right-4 p-1 rounded hover:bg-blue-100 transition-colors"
+                aria-label={bulkOpen ? 'Collapse' : 'Expand'}
+                tabIndex={0}
+                onClick={e => { e.stopPropagation(); setBulkOpen(v => !v); }}
+                type="button"
+              >
+                {bulkOpen ? <ChevronUp className="w-5 h-5 text-blue-600" /> : <ChevronDown className="w-5 h-5 text-blue-600" />}
+              </button>
               <div className={`overflow-hidden transition-all duration-300 ${bulkOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}> 
-                {/* Filters Row */}
-                <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 gap-2 px-6">
-                  <div className="flex flex-col min-w-[160px]">
-                    <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Specialty</span>
-                    <Select
-                      value={selectedSpecialty}
-                      onValueChange={val => {
-                        setSelectedSpecialty(val);
-                        setPageIndex(0);
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All Specialties" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__ALL__">All Specialties</SelectItem>
-                        {specialtyOptions.map(s => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-col min-w-[160px]">
-                    <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Subspecialty</span>
-                    <Select
-                      value={selectedSubspecialty}
-                      onValueChange={val => {
-                        setSelectedSubspecialty(val);
-                        setPageIndex(0);
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All Subspecialties" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__ALL__">All Subspecialties</SelectItem>
-                        {subspecialtyOptions.map(s => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-col min-w-[160px]">
-                    <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Provider Type</span>
-                    <Select
-                      value={selectedProviderType}
-                      onValueChange={val => {
-                        setSelectedProviderType(val);
-                        setPageIndex(0);
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All Types" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__ALL__">All Types</SelectItem>
-                        {providerTypeOptions.map(s => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-col justify-end min-w-[140px] mt-4 sm:mt-0">
-                    <Button
-                      variant="ghost"
-                      className="text-blue-600 border border-blue-100 hover:bg-blue-100"
-                      onClick={() => {
-                        setSelectedSpecialty("__ALL__");
-                        setSelectedSubspecialty("__ALL__");
-                        setSelectedProviderType("__ALL__");
-                        setPageIndex(0);
-                      }}
-                    >
-                      Clear All Filters
-                    </Button>
-                  </div>
-                </div>
-                <div className="border-t border-blue-100 my-2 mx-6" />
-                {/* Bulk Action Buttons and Progress */}
-                <div className="flex flex-col gap-2 px-6">
-                  <span className="font-semibold text-blue-900 text-sm tracking-wide mb-1">Bulk Actions</span>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    {/* Primary Actions */}
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedProviderIds(paginatedProviders.map((p: Provider) => p.id))}
-                            disabled={paginatedProviders.length === 0 || isBulkGenerating}
-                          >
-                            Select All Visible
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Select all providers currently visible in the table</TooltipContent>
-                      </Tooltip>
-
-
-
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleRetryFailed}
-                            disabled={isBulkGenerating || !generatedContracts.some(c => c.status === 'FAILED')}
-                          >
-                            Retry Failed
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Retry contract generation for all providers with failed status</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    {/* Divider for secondary actions */}
-                    <span className="mx-2 text-gray-300 select-none">|</span>
-                    {/* Secondary Actions */}
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedClauseId(selectedClauseId)}
-                            disabled={selectedProviderIds.length === 0 || isBulkGenerating}
-                          >
-                            Bulk Edit Clauses
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Insert or edit clauses for all selected providers</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleExportCSV}
-                            disabled={isBulkGenerating}
-                          >
-                            Export to CSV
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Export the current filtered provider list to CSV</TooltipContent>
-                      </Tooltip>
-                      {statusTab === 'processed' && (
+                
+                {/* Primary Actions */}
+                <div className="px-6 pt-4 pb-4 border-b border-gray-200">
+                  <div className="space-y-4">
+                    {/* Bulk Actions */}
+                    <div className="flex gap-2 flex-wrap">
+                      <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={handleClearGenerated}
-                              disabled={selectedProviderIds.length === 0 || isBulkGenerating}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                              onClick={() => {
+                                const allFilteredIds = tabFilteredRows.map((p: Provider) => p.id);
+                                setSelectedProviderIds(allFilteredIds);
+                              }}
+                              disabled={filteredProviders.length === 0 || isBulkGenerating}
+                              className="font-medium"
                             >
-                              Clear Generated
+                              All Filtered
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Clear generated contracts for selected providers</TooltipContent>
+                          <TooltipContent>Select all providers in the current tab (all pages)</TooltipContent>
                         </Tooltip>
+                        
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const visibleIds = visibleRows.map((p: Provider) => p.id);
+                                setSelectedProviderIds(visibleIds);
+                              }}
+                              disabled={providers.length === 0 || isBulkGenerating}
+                              className="font-medium"
+                            >
+                              Visible
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Select all providers currently visible on this page</TooltipContent>
+                        </Tooltip>
+                        
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedProviderIds([]);
+                              }}
+                              disabled={selectedProviderIds.length === 0 || isBulkGenerating}
+                              className="font-medium"
+                            >
+                              Clear
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Clear all selected providers</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+
+                      <Button
+                        onClick={handleGenerate}
+                        disabled={selectedProviderIds.length !== 1 || isGenerating}
+                        variant={selectedProviderIds.length === 1 ? 'default' : 'outline'}
+                        size="sm"
+                        className="font-medium"
+                        aria-label="Generate Selected"
+                      >
+                        {isGenerating && selectedProviderIds.length === 1 ? (
+                          <Loader2 className="animate-spin h-4 w-4 mr-1" />
+                        ) : null}
+                        Selected
+                      </Button>
+                      <Button
+                        onClick={handleBulkGenerate}
+                        disabled={selectedProviderIds.length < 2 || isGenerating}
+                        variant={selectedProviderIds.length > 1 ? 'default' : 'outline'}
+                        size="sm"
+                        className="font-medium"
+                        aria-label="Generate All"
+                      >
+                        {isGenerating && selectedProviderIds.length > 1 ? (
+                          <Loader2 className="animate-spin h-4 w-4 mr-1" />
+                        ) : null}
+                        All
+                      </Button>
+
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleExportCSV}
+                              disabled={isBulkGenerating}
+                              className="font-medium"
+                            >
+                              CSV
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Export the current filtered provider list to CSV</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                </div>
+
+
+
+                {/* Advanced Options */}
+                <div className="px-6 pt-4">
+                  <div className="text-sm font-semibold text-gray-700 mb-3">Filters & Advanced Options</div>
+                  
+                  {/* Filters Row */}
+                  <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 gap-2 mb-4">
+                    <div className="flex flex-col min-w-[160px]">
+                      <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Specialty</span>
+                      <Select
+                        value={selectedSpecialty}
+                        onValueChange={val => {
+                          setSelectedSpecialty(val);
+                          setPageIndex(0);
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="All Specialties" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__ALL__">All Specialties</SelectItem>
+                          {specialtyOptions.filter(s => s && s.trim() !== '').map(s => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col min-w-[160px]">
+                      <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Subspecialty</span>
+                      <Select
+                        value={selectedSubspecialty}
+                        onValueChange={val => {
+                          setSelectedSubspecialty(val);
+                          setPageIndex(0);
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="All Subspecialties" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__ALL__">All Subspecialties</SelectItem>
+                          {subspecialtyOptions.filter(s => s && s.trim() !== '').map(s => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col min-w-[160px]">
+                      <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Provider Type</span>
+                      <Select
+                        value={selectedProviderType}
+                        onValueChange={val => {
+                          setSelectedProviderType(val);
+                          setPageIndex(0);
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="All Types" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__ALL__">All Types</SelectItem>
+                          {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col justify-end min-w-[140px] mt-4 sm:mt-0">
+                      <Button
+                        variant="ghost"
+                        className="text-blue-600 border border-blue-100 hover:bg-blue-100"
+                        onClick={() => {
+                          setSelectedSpecialty("__ALL__");
+                          setSelectedSubspecialty("__ALL__");
+                          setSelectedProviderType("__ALL__");
+                          setPageIndex(0);
+                        }}
+                      >
+                        Clear All Filters
+                      </Button>
+                    </div>
+                    
+                    {/* Template Management Actions - Grouped with filters */}
+                    <div className="flex flex-col justify-end min-w-[180px] mt-4 sm:mt-0">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={clearTemplateAssignments}
+                              disabled={isBulkGenerating || Object.keys(templateAssignments).length === 0}
+                              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200 w-full"
+                            >
+                              <RotateCcw className="w-4 h-4 mr-1" />
+                              Clear All Assignments
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Clear all manual template assignments</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+
+                      {/* Clear Generated (only for processed tab) */}
+                      {statusTab === 'processed' && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleClearGenerated}
+                                disabled={selectedProviderIds.length === 0 || isBulkGenerating}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 w-full mt-2"
+                              >
+                                Clear Generated
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Clear generated contracts for selected providers</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       )}
-                    </TooltipProvider>
-                    {isBulkGenerating && (
-                      <span className="ml-4 flex items-center gap-2 text-blue-700 animate-pulse">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Processing bulk generation...
-                      </span>
-                    )}
+                    </div>
                   </div>
-                  {/* Progress Bar and Status */}
-                  <div className="flex flex-1 sm:justify-end items-center gap-4 min-w-0 mt-2">
-                    <Progress value={completedCount / totalCount * 100} className="w-48 h-2" />
-                    <span className="text-sm text-gray-600">{`${completedCount} of ${totalCount} generated (${totalCount ? Math.round(completedCount / totalCount * 100) : 0}%)`}</span>
-                    <span className="text-xs text-gray-500">{`${failedCount} failed`}</span>
-                  </div>
+                  
+
                 </div>
               </div>
             </div>
@@ -1446,7 +1935,7 @@ b, strong { font-weight: bold !important; }
 
           {/* Tabs for Pending / Processed / All */}
           <div className="mb-2 flex justify-between items-center">
-            <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'processed' | 'all')} className="w-full">
+            <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'processed' | 'all')} className="flex-1">
               <TabsList className="flex gap-2 border-b-0 bg-transparent justify-start relative after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-[1.5px] after:bg-gray-200 after:z-10 overflow-visible">
                 <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
                   data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
@@ -1466,6 +1955,63 @@ b, strong { font-weight: bold !important; }
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            
+            {/* Status & Progress - Positioned on the right side of tabs */}
+            <div className="bg-white border border-gray-200 rounded-lg px-4 py-2.5 shadow-sm hover:shadow-md transition-shadow duration-200">
+              <div className="flex items-center gap-6 text-sm">
+                {/* Template Assignment Status */}
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="font-medium text-gray-700">Templates:</span>
+                  <span className="text-green-600 font-semibold">{Object.keys(templateAssignments).length}</span>
+                  <span className="text-gray-400">/</span>
+                  <span className="text-gray-500">{tabFilteredRows.length}</span>
+                  <span className="text-gray-400">assigned</span>
+                </div>
+                
+                {/* Generation Progress Donut Chart */}
+                {(completedCount > 0 || isBulkGenerating) && (
+                  <div className="flex items-center gap-2">
+                    <div className="relative w-7 h-7">
+                      {/* Background circle */}
+                      <svg className="w-7 h-7 transform -rotate-90" viewBox="0 0 28 28">
+                        <circle
+                          cx="14"
+                          cy="14"
+                          r="12"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          fill="none"
+                          className="text-gray-200"
+                        />
+                        {/* Progress circle */}
+                        <circle
+                          cx="14"
+                          cy="14"
+                          r="12"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          fill="none"
+                          strokeLinecap="round"
+                          className="text-emerald-500 transition-all duration-300 ease-out"
+                          style={{
+                            strokeDasharray: `${2 * Math.PI * 12}`,
+                            strokeDashoffset: `${2 * Math.PI * 12 * (1 - (totalCount ? completedCount / totalCount : 0))}`
+                          }}
+                        />
+                      </svg>
+                      {/* Center percentage text */}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-xs font-semibold text-emerald-600">
+                          {totalCount ? Math.round(completedCount / totalCount * 100) : 0}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-500">complete</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Search Provider Section - Moved below bulk processing */}
@@ -1500,7 +2046,7 @@ b, strong { font-weight: bold !important; }
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__ALL__">All Types</SelectItem>
-                    {providerTypeOptions.map(s => (
+                    {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1517,6 +2063,18 @@ b, strong { font-weight: bold !important; }
                   className="px-3"
                 >
                   Clear
+                </Button>
+                <Button
+                  onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
+                  variant="outline"
+                  size="sm"
+                  className="px-3 flex items-center gap-2"
+                  title="Manage column visibility, order, and pinning"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                  Columns
                 </Button>
               </div>
             </div>
@@ -1541,7 +2099,6 @@ b, strong { font-weight: bold !important; }
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
               domLayout="normal"
               suppressRowClickSelection={true}
-              rowSelection="multiple"
               pagination={false}
               enableCellTextSelection={true}
               headerHeight={44}
@@ -1553,31 +2110,23 @@ b, strong { font-weight: bold !important; }
               suppressHorizontalScroll={false}
               maintainColumnOrder={true}
               getRowId={(params) => params.data.id}
-              onSelectionChanged={(event) => {
-                if (!isUpdatingSelection.current) {
-                  const selectedNodes = event.api.getSelectedNodes();
-                  const selectedIds = selectedNodes.map(node => node.data.id);
-                  setSelectedProviderIds(selectedIds);
-                }
-              }}
+              // Column sizing and auto-fit
+              suppressColumnMoveAnimation={false}
+              suppressRowHoverHighlight={false}
+              suppressCellFocus={false}
+
+              // Enable column auto-sizing
               onGridReady={(params) => {
-                // Store grid API reference for later use
-                setTimeout(() => {
-                  // Sync initial selection state when grid is ready (with small delay)
-                  const rowsToSelect = visibleRows.filter(row => selectedProviderIds.includes(row.id));
-                  rowsToSelect.forEach(row => {
-                    const rowNode = params.api.getRowNode(row.id);
-                    if (rowNode) {
-                      rowNode.setSelected(true);
-                    }
-                  });
-                }, 100);
+                // Auto-size columns to fit content but respect max widths
+                params.api.sizeColumnsToFit();
               }}
+
               defaultColDef={{ 
                 tooltipValueGetter: params => params.value, 
                 resizable: true, 
                 sortable: true, 
-                filter: true, 
+                filter: true,
+                menuTabs: ['generalMenuTab', 'filterMenuTab', 'columnsMenuTab'],
                 cellStyle: { 
                   fontSize: '14px', 
                   fontFamily: 'var(--font-sans, sans-serif)', 
@@ -1598,20 +2147,22 @@ b, strong { font-weight: bold !important; }
               singleClickEdit={false}
               suppressClipboardPaste={false}
               suppressCopyRowsToClipboard={false}
+              suppressMenuHide={false}
+              allowContextMenuWithControlKey={true}
             />
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4 border-t border-gray-200">
             <div className="text-sm text-gray-600">
-              Showing {Math.min(visibleRows.length, pageSize * (pageIndex + 1) - pageSize + 1)}–{Math.min(visibleRows.length, pageSize * (pageIndex + 1))} of {visibleRows.length} providers
+              Showing {Math.min(tabFilteredRows.length, pageSize * (pageIndex + 1) - pageSize + 1)}–{Math.min(tabFilteredRows.length, pageSize * (pageIndex + 1))} of {tabFilteredRows.length} providers
             </div>
             
             {/* Bottom Pagination Controls - Left aligned */}
             <div className="flex gap-2 items-center">
               <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
               <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
-              <span className="text-sm px-4">Page {pageIndex + 1} of {Math.max(1, Math.ceil(visibleRows.length / pageSize))}</span>
-              <Button variant="outline" size="sm" disabled={pageIndex >= Math.ceil(visibleRows.length / pageSize) - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
-              <Button variant="outline" size="sm" disabled={pageIndex >= Math.ceil(visibleRows.length / pageSize) - 1} onClick={() => setPageIndex(Math.ceil(visibleRows.length / pageSize) - 1)}>&raquo;</Button>
+              <span className="text-sm px-4">Page {pageIndex + 1} of {Math.max(1, Math.ceil(tabFilteredRows.length / pageSize))}</span>
+              <Button variant="outline" size="sm" disabled={pageIndex >= Math.ceil(tabFilteredRows.length / pageSize) - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
+              <Button variant="outline" size="sm" disabled={pageIndex >= Math.ceil(tabFilteredRows.length / pageSize) - 1} onClick={() => setPageIndex(Math.ceil(tabFilteredRows.length / pageSize) - 1)}>&raquo;</Button>
               <select
                 className="ml-4 border rounded px-2 py-1 text-sm"
                 value={pageSize}
@@ -1635,67 +2186,7 @@ b, strong { font-weight: bold !important; }
           </div>
         )}
 
-        {/* Sticky Action Bar */}
-        {selectedProviderIds.length > 0 && (
-          <div className="fixed bottom-0 left-0 w-full z-50 bg-white border-t shadow-lg flex flex-col md:flex-row md:justify-center items-center py-4 transition-all duration-300 animate-fade-in">
-            <div className="mb-2 md:mb-0 md:mr-6 text-gray-700 font-medium">
-              {selectedProviderIds.length === 1
-                ? `Selected: ${providers.find(p => p.id === selectedProviderIds[0])?.name || '1 provider'}`
-                : `${selectedProviderIds.length} providers selected`}
-            </div>
-            <div className="flex gap-4">
-              {/* Clear Selection Button */}
-              <div className="flex items-center">
-                <Button
-                  onClick={() => setSelectedProviderIds([])}
-                  variant="outline"
-                  className="h-10 px-6 text-base font-semibold"
-                  aria-label="Clear Selection"
-                  type="button"
-                >
-                  Clear Selection
-                </Button>
-              </div>
-              
-              {/* Preview Button */}
-              <Button
-                onClick={handlePreview}
-                disabled={!selectedTemplate || selectedProviderIds.length === 0 || isGenerating}
-                variant="outline"
-                className="h-10 px-6 text-base font-semibold flex items-center gap-2"
-                aria-label="Preview Contract"
-              >
-                <Eye className="w-4 h-4" />
-                Preview
-              </Button>
-              
-              <Button
-                onClick={handleGenerate}
-                disabled={!selectedTemplate || selectedProviderIds.length !== 1 || isGenerating}
-                variant={selectedProviderIds.length === 1 ? 'default' : 'outline'}
-                className="h-10 px-6 text-base font-semibold flex items-center gap-2"
-                aria-label="Generate Single"
-              >
-                {isGenerating && selectedProviderIds.length === 1 ? (
-                  <Loader2 className="animate-spin h-5 w-5" />
-                ) : null}
-                Generate Single
-              </Button>
-              <Button
-                onClick={handleBulkGenerate}
-                disabled={!selectedTemplate || selectedProviderIds.length < 2 || isGenerating}
-                variant={selectedProviderIds.length > 1 ? 'default' : 'outline'}
-                className="h-10 px-6 text-base font-semibold flex items-center gap-2"
-                aria-label="Generate All"
-              >
-                {isGenerating && selectedProviderIds.length > 1 ? (
-                  <Loader2 className="animate-spin h-5 w-5" />
-                ) : null}
-                Generate All
-              </Button>
-            </div>
-          </div>
-        )}
+
         {/* AG Grid font override for exact match */}
         <style>{`
           .ag-theme-alpine, .ag-theme-alpine .ag-cell, .ag-theme-alpine .ag-header-cell, .ag-theme-alpine .ag-header-group-cell {
@@ -1764,58 +2255,408 @@ b, strong { font-weight: bold !important; }
           .ag-theme-alpine .ag-cell[title] {
             cursor: help;
           }
+          /* Fix pinned column scrollbar issues */
+          .ag-theme-alpine .ag-pinned-left {
+            overflow: hidden !important;
+          }
+          .ag-theme-alpine .ag-pinned-left .ag-cell {
+            overflow: hidden !important;
+          }
+          /* Hide scrollbars in pinned sections */
+          .ag-theme-alpine .ag-pinned-left::-webkit-scrollbar {
+            display: none !important;
+          }
+          .ag-theme-alpine .ag-pinned-left {
+            -ms-overflow-style: none !important;
+            scrollbar-width: none !important;
+          }
+          /* Ensure checkbox column doesn't have scrollbars */
+          .ag-theme-alpine .ag-cell[col-id="selected"] {
+            overflow: hidden !important;
+          }
+          .ag-theme-alpine .ag-cell[col-id="selected"]::-webkit-scrollbar {
+            display: none !important;
+          }
+
+
+
         `}</style>
-        {/* Bulk Edit Clauses modal */}
-        <Dialog open={selectedClauseId !== ""} onOpenChange={() => setSelectedClauseId("")}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Bulk Edit Clauses</DialogTitle>
-            </DialogHeader>
-            <div className="mb-4">
-              <label className="block font-medium mb-1">Select Insertion Point</label>
-              <select
-                className="w-full border rounded px-2 py-1"
-                value={selectedPlaceholder}
-                onChange={e => setSelectedPlaceholder(e.target.value)}
-              >
-                <option value="">-- Select a placeholder --</option>
-                {availablePlaceholders.map(ph => (
-                  <option key={ph} value={ph}>{`{{${ph}}}`}</option>
-                ))}
-                <option value="custom">Custom...</option>
-              </select>
-              {selectedPlaceholder === 'custom' && (
-                <input
-                  className="w-full border rounded px-2 py-1 mt-2"
-                  placeholder="Enter custom placeholder (e.g., CustomClause1)"
-                  value={customPlaceholder}
-                  onChange={e => setCustomPlaceholder(e.target.value)}
-                />
-              )}
-            </div>
-            {selectedClauseId !== "" && (
-              <div className="mb-4">
-                <label className="block font-medium mb-1">Clause Preview</label>
-                <div className="border rounded p-2 bg-gray-50 text-sm whitespace-pre-wrap">{selectedClauseId}</div>
+
+
+        {/* Modern Column Visibility Sidebar */}
+        {isColumnSidebarOpen && (
+          <div 
+            className="fixed inset-0 z-50 flex"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setIsColumnSidebarOpen(false);
+              }
+            }}
+            tabIndex={-1}
+          >
+            {/* Backdrop */}
+            <div 
+              className="absolute inset-0 bg-black bg-opacity-25" 
+              onClick={() => setIsColumnSidebarOpen(false)}
+            />
+            
+            {/* Sidebar */}
+            <div className="relative ml-auto w-80 bg-white shadow-xl h-full flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b">
+                <h3 className="text-lg font-semibold text-gray-900">Column Manager</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsColumnSidebarOpen(false)}
+                  className="p-1"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </Button>
               </div>
-            )}
-            <DialogFooter>
-              <Button
-                variant="default"
-                onClick={() => {
-                  // Save clause/placeholder selection for bulk generation
-                  setSelectedClauseId(selectedClauseId);
-                  setBulkClausePreview(selectedClauseId);
-                  // Store selectedClauseId and selectedPlaceholder/customPlaceholder for use in bulk generation
-                }}
-                disabled={!selectedPlaceholder && !customPlaceholder}
-              >
-                Apply to Selected
-              </Button>
-              <Button variant="outline" onClick={() => setSelectedClauseId("")}>Cancel</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="space-y-6">
+                  {/* View Management */}
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-3">Saved Views</div>
+                    <div className="flex gap-2 mb-3">
+                      <select 
+                        value={activeColumnView} 
+                        onChange={(e) => {
+                          const viewName = e.target.value;
+                          setActiveColumnView(viewName);
+                          if (savedViews[viewName]) {
+                            updateColumnOrder(savedViews[viewName].columnOrder);
+                            updateColumnVisibility(savedViews[viewName].columnVisibility);
+                          }
+                        }}
+                        className="flex-1 text-sm border rounded px-2 py-1"
+                      >
+                        <option value="default">Default View</option>
+                        {Object.keys(savedViews).map(viewName => (
+                          <option key={viewName} value={viewName}>{viewName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const viewName = prompt('Enter view name:');
+                          if (viewName && viewName.trim()) {
+                            createSavedView(viewName.trim(), {
+                              columnVisibility: columnPreferences?.columnVisibility || {},
+                              columnOrder,
+                              columnPinning: columnPreferences?.columnPinning || {}
+                            });
+                          }
+                        }}
+                        className="flex-1 text-xs"
+                      >
+                        Save View
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // This would open a more advanced arrangement dialog
+                          // For now, just show a message
+                          alert('Advanced arrangement features coming soon!');
+                        }}
+                        className="flex-1 text-xs"
+                      >
+                        Arrange...
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Column Pinning */}
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-3">Column Pinning</div>
+                    <div className="flex gap-2 pb-3 border-b">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          updateColumnPinning({ left: [], right: [] });
+                        }}
+                        className="flex-1 text-xs"
+                      >
+                        Unpin All
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Pin first 2 columns to left by default
+                          const firstTwoColumns = columnOrder.slice(0, 2);
+                          updateColumnPinning({ left: firstTwoColumns, right: [] });
+                        }}
+                        className="flex-1 text-xs"
+                      >
+                        Pin First 2
+                      </Button>
+                    </div>
+                    
+                    {/* Show pinned columns summary */}
+                    {((columnPreferences?.columnPinning?.left || []).length > 0 || (columnPreferences?.columnPinning?.right || []).length > 0) && (
+                      <div className="text-xs text-gray-600 mb-3">
+                        {(columnPreferences?.columnPinning?.left || []).length > 0 && (
+                          <div>Left: {(columnPreferences?.columnPinning?.left || []).join(', ')}</div>
+                        )}
+                        {(columnPreferences?.columnPinning?.right || []).length > 0 && (
+                          <div>Right: {(columnPreferences?.columnPinning?.right || []).join(', ')}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column Visibility */}
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                    <div className="flex gap-2 pb-3 border-b">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const allVisible = columnOrder.reduce((acc, field) => {
+                            acc[field] = true;
+                            return acc;
+                          }, {} as Record<string, boolean>);
+                          updateColumnVisibility(allVisible);
+                        }}
+                        className="flex-1 text-xs"
+                      >
+                        Show All
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const allHidden = columnOrder.reduce((acc, field) => {
+                            acc[field] = false; // Hide all columns
+                            return acc;
+                          }, {} as Record<string, boolean>);
+                          updateColumnVisibility(allHidden);
+                        }}
+                        className="flex-1 text-xs"
+                      >
+                        Hide All
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Column Reordering */}
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-3">Column Order</div>
+                    <div className="text-xs text-gray-500 mb-3">Drag to reorder columns. Click eye to show/hide.</div>
+                    <div className="space-y-1">
+                      {columnOrder.map((field, index) => {
+                        const colDef = baseColumns.find((col: any) => col.field === field);
+                        if (!colDef) return null;
+                        
+                        return (
+                          <div
+                            key={field}
+                            className="flex items-center gap-2 p-2 bg-gray-50 rounded border hover:bg-gray-100 transition-colors"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', index.toString());
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                              const hoverIndex = index;
+                              
+                              if (dragIndex !== hoverIndex) {
+                                const newOrder = [...columnOrder];
+                                const draggedItem = newOrder[dragIndex];
+                                newOrder.splice(dragIndex, 1);
+                                newOrder.splice(hoverIndex, 0, draggedItem);
+                                updateColumnOrder(newOrder);
+                              }
+                            }}
+                          >
+                            {/* Drag Handle */}
+                            <svg className="w-4 h-4 text-gray-400 cursor-move" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                            </svg>
+                            
+                            {/* Visibility Toggle */}
+                            <button
+                              onClick={() => {
+                                const newVisibility = { ...columnPreferences?.columnVisibility };
+                                newVisibility[field] = !newVisibility[field];
+                                updateColumnVisibility(newVisibility);
+                              }}
+                              className="p-1 rounded text-gray-600 hover:text-blue-600"
+                            >
+                              {hiddenColumns.has(field) ? (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.464 8.464M18.364 18.364l-9.9-9.9" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                              )}
+                            </button>
+                            
+                            {/* Pin/Unpin Button */}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      const currentPinning = columnPreferences?.columnPinning || { left: [], right: [] };
+                                      const leftPinned = currentPinning.left || [];
+                                      const rightPinned = currentPinning.right || [];
+                                      
+                                      const isLeftPinned = leftPinned.includes(field);
+                                      const isRightPinned = rightPinned.includes(field);
+                                      
+                                      if (e.shiftKey) {
+                                        // Shift+Click: Pin to right or unpin from right
+                                        if (isRightPinned) {
+                                          updateColumnPinning({
+                                            left: leftPinned,
+                                            right: rightPinned.filter(f => f !== field)
+                                          });
+                                        } else {
+                                          updateColumnPinning({
+                                            left: leftPinned.filter(f => f !== field),
+                                            right: [...rightPinned, field]
+                                          });
+                                        }
+                                      } else {
+                                        // Regular click: Pin to left or unpin from left
+                                        if (isLeftPinned) {
+                                          updateColumnPinning({
+                                            left: leftPinned.filter(f => f !== field),
+                                            right: rightPinned
+                                          });
+                                        } else {
+                                          updateColumnPinning({
+                                            left: [...leftPinned, field],
+                                            right: rightPinned.filter(f => f !== field)
+                                          });
+                                        }
+                                      }
+                                    }}
+                                    className={`p-1 rounded transition-colors ${
+                                      (columnPreferences?.columnPinning?.left || []).includes(field) || 
+                                      (columnPreferences?.columnPinning?.right || []).includes(field)
+                                        ? 'text-blue-600 hover:text-blue-800 bg-blue-50' 
+                                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                                    </svg>
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>
+                                    {(columnPreferences?.columnPinning?.left || []).includes(field) 
+                                      ? 'Click to unpin from left' 
+                                      : (columnPreferences?.columnPinning?.right || []).includes(field)
+                                      ? 'Click to unpin from right'
+                                      : 'Click to pin left • Shift+click to pin right'}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            {/* Column Name */}
+                            <span className={`flex-1 text-sm ${field === 'name' ? 'text-gray-700' : 'text-gray-700'}`}>
+                              {colDef.headerName}
+                              {(columnPreferences?.columnPinning?.left || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned left)</span>}
+                              {(columnPreferences?.columnPinning?.right || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned right)</span>}
+                              {field.toLowerCase().includes('fte') && <span className="text-xs text-blue-500 ml-1">FTE</span>}
+                            </span>
+                            
+                            {/* Move Buttons */}
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => {
+                                  if (index > 0) {
+                                    const newOrder = [...columnOrder];
+                                    [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
+                                    updateColumnOrder(newOrder);
+                                  }
+                                }}
+                                disabled={index === 0}
+                                className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (index < columnOrder.length - 1) {
+                                    const newOrder = [...columnOrder];
+                                    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+                                    updateColumnOrder(newOrder);
+                                  }
+                                }}
+                                disabled={index === columnOrder.length - 1}
+                                className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Footer */}
+              <div className="p-4 border-t bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-gray-500">
+                    {columnOrder.length - hiddenColumns.size} of {columnOrder.length} columns visible
+                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() => {
+                            // Close the sidebar and ensure preferences are saved
+                            setIsColumnSidebarOpen(false);
+                            // Show success message
+                            toast.success('Column preferences saved successfully!');
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
+                        >
+                          Done
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Close column manager (Esc)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Contract Preview Modal */}
         <ContractPreviewModal
@@ -1826,6 +2667,7 @@ b, strong { font-weight: bold !important; }
           selectedProviderIds={selectedProviderIds}
           onGenerate={handlePreviewGenerate}
           onBulkGenerate={handleBulkGenerate}
+          getAssignedTemplate={getAssignedTemplate}
         />
         
 
