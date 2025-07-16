@@ -38,7 +38,7 @@ import { fetchTemplatesIfNeeded } from '@/features/templates/templatesSlice';
 import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import type { AppDispatch } from '@/store';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 import { ContractGenerationLogService, ContractGenerationLog } from '@/services/contractGenerationLogService';
 import { AgGridReact } from 'ag-grid-react';
@@ -55,6 +55,7 @@ import { Progress } from '@/components/ui/progress';
 import { Clause } from '@/types/clause';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ContractPreviewModal from './components/ContractPreviewModal';
 import { BulkGenerationSummaryModal } from '@/features/providers/BulkGenerationSummaryModal';
 import { useGeneratorPreferences } from '@/hooks/useGeneratorPreferences';
@@ -121,7 +122,7 @@ export default function ContractGenerator() {
   const generatedFiles = useSelector((state: RootState) => state.generator.generatedFiles);
   const { generatedContracts } = useSelector((state: RootState) => state.generator);
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
   const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
@@ -136,9 +137,18 @@ export default function ContractGenerator() {
   const [activeTabView, setActiveTabView] = useState<'generator' | 'logs'>('generator');
 
 
+  // Main page filter state (separate from modal)
   const [selectedSpecialty, setSelectedSpecialty] = useState("__ALL__");
   const [selectedSubspecialty, setSelectedSubspecialty] = useState("__ALL__");
   const [selectedProviderType, setSelectedProviderType] = useState("__ALL__");
+  
+  // Modal-specific filter state (separate from main page)
+  const [modalSelectedSpecialty, setModalSelectedSpecialty] = useState("__ALL__");
+  const [modalSelectedSubspecialty, setModalSelectedSubspecialty] = useState("__ALL__");
+  const [modalSelectedProviderType, setModalSelectedProviderType] = useState("__ALL__");
+  const [modalSelectedAdminRole, setModalSelectedAdminRole] = useState("__ALL__");
+  const [modalSelectedCompModel, setModalSelectedCompModel] = useState("__ALL__");
+  const [selectedTemplateForFiltered, setSelectedTemplateForFiltered] = useState<string>("");
   const [bulkOpen, setBulkOpen] = useState(true);
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
   const [alertError, setAlertError] = useState<string | null>(null);
@@ -152,9 +162,64 @@ export default function ContractGenerator() {
   const [bulkAssignmentModalOpen, setBulkAssignmentModalOpen] = useState(false);
   const [sameTemplateModalOpen, setSameTemplateModalOpen] = useState(false);
   const [showDetailedView, setShowDetailedView] = useState(false);
+  const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
   
   // Template assignment state - maps provider ID to assigned template ID
   const [templateAssignments, setTemplateAssignments] = useState<Record<string, string>>({});
+  
+  // Session storage for template assignments (temporary persistence during tab navigation)
+  const [sessionTemplateAssignments, setSessionTemplateAssignments] = useState<Record<string, string>>({});
+  
+  // Track if we've shown the session restoration notification to avoid spam
+  const sessionRestoredRef = useRef(false);
+
+  // State for bulk assignment loading
+  const [bulkAssignmentLoading, setBulkAssignmentLoading] = useState(false);
+  const [bulkAssignmentProgress, setBulkAssignmentProgress] = useState<{ completed: number; total: number } | null>(null);
+
+  // Filter logic for bulk assignment modal
+  const getFilteredProviderIds = useMemo(() => {
+    return selectedProviderIds.filter(providerId => {
+      const provider = providers.find(p => p.id === providerId);
+      if (!provider) return false;
+      
+      // Filter by specialty
+      if (modalSelectedSpecialty !== "__ALL__" && provider.specialty !== modalSelectedSpecialty) {
+        return false;
+      }
+      
+      // Filter by subspecialty
+      if (modalSelectedSubspecialty !== "__ALL__" && provider.subspecialty !== modalSelectedSubspecialty) {
+        return false;
+      }
+      
+      // Filter by provider type
+      if (modalSelectedProviderType !== "__ALL__" && provider.providerType !== modalSelectedProviderType) {
+        return false;
+      }
+      
+      // Filter by administrative role
+      if (modalSelectedAdminRole !== "__ALL__") {
+        const providerAdminRole = provider.administrativeRole || "None";
+        if (providerAdminRole !== modalSelectedAdminRole) {
+          return false;
+        }
+      }
+      
+      // Filter by compensation model
+      if (modalSelectedCompModel !== "__ALL__") {
+        const providerCompModel = provider.compensationModel || "Base";
+        if (providerCompModel !== modalSelectedCompModel) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [selectedProviderIds, providers, modalSelectedSpecialty, modalSelectedSubspecialty, modalSelectedProviderType, modalSelectedAdminRole, modalSelectedCompModel]);
+
+  // Get filtered providers count
+  const filteredProvidersCount = getFilteredProviderIds.length;
 
   // Enterprise-grade user preferences for column management (separate from Providers)
   const {
@@ -224,15 +289,32 @@ export default function ContractGenerator() {
     }
   }, [providers, columnOrder.length, columnPreferences?.columnOrder, updateColumnOrder]);
 
-  // Update selected template when ID changes
+
+
+  // Handle tab switching and restore session assignments
   useEffect(() => {
-    if (selectedTemplateId) {
-      const template = templates.find(t => t.id === selectedTemplateId);
-      dispatch(setSelectedTemplate(template || null));
+    if (statusTab === 'notGenerated') {
+      // When switching to "Not Generated" tab, restore session assignments
+      if (Object.keys(sessionTemplateAssignments).length > 0) {
+        setTemplateAssignments(sessionTemplateAssignments);
+        // Show a subtle notification that session assignments were restored (only once per session)
+        if (!sessionRestoredRef.current) {
+          toast.info(`Session assignments restored (${Object.keys(sessionTemplateAssignments).length} templates)`, {
+            duration: 3000,
+            position: 'bottom-right'
+          });
+          sessionRestoredRef.current = true;
+        }
+      }
     } else {
-      dispatch(setSelectedTemplate(null));
+      // When switching away from "Not Generated" tab, save current assignments to session
+      if (Object.keys(templateAssignments).length > 0) {
+        setSessionTemplateAssignments(templateAssignments);
+        // Reset the notification flag when saving new assignments
+        sessionRestoredRef.current = false;
+      }
     }
-  }, [selectedTemplateId, templates, dispatch]);
+  }, [statusTab, sessionTemplateAssignments, templateAssignments]);
 
   // Add AG Grid ref for selection management
   const gridRef = useRef<AgGridReact>(null);
@@ -249,6 +331,32 @@ export default function ContractGenerator() {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Keyboard shortcuts for quick actions
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + R for complete reset
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
+        e.preventDefault();
+        setTemplateAssignments({});
+        setSessionTemplateAssignments({});
+        sessionRestoredRef.current = false;
+        setSelectedProviderIds([]);
+        toast.success('Complete reset: All assignments and selections cleared (Ctrl+R)');
+      }
+      
+      // Ctrl/Cmd + Shift + R for session-only reset
+      if ((e.ctrlKey || e.metaKey) && e.key === 'R' && e.shiftKey) {
+        e.preventDefault();
+        setSessionTemplateAssignments({});
+        sessionRestoredRef.current = false;
+        toast.success('Session assignments cleared (Ctrl+Shift+R)');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Smart template assignment logic
@@ -285,34 +393,136 @@ export default function ContractGenerator() {
     
     // Safety check to prevent empty template IDs
     if (templateId && templateId.trim() !== '' && templateId !== 'no-template') {
-      setTemplateAssignments(prev => ({ ...prev, [providerId]: templateId }));
+      const newAssignments = { ...templateAssignments, [providerId]: templateId };
+      setTemplateAssignments(newAssignments);
+      // Also update session storage for tab navigation persistence
+      setSessionTemplateAssignments(newAssignments);
       toast.success(`Template "${template?.name}" assigned to ${provider?.name}`);
     } else {
-      setTemplateAssignments(prev => {
-        const newAssignments = { ...prev };
-        delete newAssignments[providerId];
-        return newAssignments;
-      });
+      const newAssignments = { ...templateAssignments };
+      delete newAssignments[providerId];
+      setTemplateAssignments(newAssignments);
+      // Also update session storage
+      setSessionTemplateAssignments(newAssignments);
       toast.success(`Template assignment cleared for ${provider?.name}`);
     }
   };
 
-  // Bulk template assignment functions
-  const assignTemplateToSelected = (templateId: string) => {
-    // Safety check to prevent empty template IDs
-    if (!templateId || templateId.trim() === '' || templateId === 'no-template') return;
-    
-    const newAssignments = { ...templateAssignments };
-    selectedProviderIds.forEach(providerId => {
-      newAssignments[providerId] = templateId;
-    });
-    setTemplateAssignments(newAssignments);
+  // Bulk template assignment with progress
+  const assignTemplateToFiltered = async (templateId: string) => {
+    if (!templateId || templateId.trim() === '' || templateId === 'no-template') {
+      toast.error('Please select a template first');
+      return;
+    }
+
+    const filteredIds = getFilteredProviderIds;
+    if (filteredIds.length === 0) {
+      toast.error('No providers match the current filters');
+      return;
+    }
+
+    setBulkAssignmentLoading(true);
+    setBulkAssignmentProgress({ completed: 0, total: filteredIds.length });
+
+    try {
+      const newAssignments = { ...templateAssignments };
+      const template = templates.find(t => t.id === templateId);
+      
+      // Process in batches for better UX
+      const batchSize = 10;
+      for (let i = 0; i < filteredIds.length; i += batchSize) {
+        const batch = filteredIds.slice(i, i + batchSize);
+        
+        // Update assignments for this batch
+        batch.forEach(providerId => {
+          newAssignments[providerId] = templateId;
+        });
+        
+        // Update state immediately for visual feedback
+        setTemplateAssignments(newAssignments);
+        setSessionTemplateAssignments(newAssignments);
+        
+        // Update progress
+        setBulkAssignmentProgress({ 
+          completed: Math.min(i + batchSize, filteredIds.length), 
+          total: filteredIds.length 
+        });
+        
+        // Small delay to show progress
+        if (i + batchSize < filteredIds.length) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+      }
+      
+      toast.success(`Assigned template "${template?.name}" to ${filteredIds.length} providers`);
+      setSelectedTemplateForFiltered("");
+      
+    } catch (error) {
+      console.error('Error during bulk assignment:', error);
+      toast.error('Failed to assign templates. Please try again.');
+    } finally {
+      setBulkAssignmentLoading(false);
+      setBulkAssignmentProgress(null);
+    }
   };
 
+  // Clear filtered assignments with progress
+  const clearFilteredAssignments = async () => {
+    const filteredIds = getFilteredProviderIds;
+    if (filteredIds.length === 0) {
+      toast.error('No providers match the current filters');
+      return;
+    }
 
+    setBulkAssignmentLoading(true);
+    setBulkAssignmentProgress({ completed: 0, total: filteredIds.length });
+
+    try {
+      const newAssignments = { ...templateAssignments };
+      
+      // Process in batches for better UX
+      const batchSize = 10;
+      for (let i = 0; i < filteredIds.length; i += batchSize) {
+        const batch = filteredIds.slice(i, i + batchSize);
+        
+        // Clear assignments for this batch
+        batch.forEach(providerId => {
+          delete newAssignments[providerId];
+        });
+        
+        // Update state immediately for visual feedback
+        setTemplateAssignments(newAssignments);
+        setSessionTemplateAssignments(newAssignments);
+        
+        // Update progress
+        setBulkAssignmentProgress({ 
+          completed: Math.min(i + batchSize, filteredIds.length), 
+          total: filteredIds.length 
+        });
+        
+        // Small delay to show progress
+        if (i + batchSize < filteredIds.length) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+      }
+      
+      toast.success(`Cleared assignments for ${filteredIds.length} providers`);
+      
+    } catch (error) {
+      console.error('Error during bulk clear:', error);
+      toast.error('Failed to clear assignments. Please try again.');
+    } finally {
+      setBulkAssignmentLoading(false);
+      setBulkAssignmentProgress(null);
+    }
+  };
 
   const clearTemplateAssignments = () => {
     setTemplateAssignments({});
+    // Also clear session storage
+    setSessionTemplateAssignments({});
+    // Reset notification flag
+    sessionRestoredRef.current = false;
     // Show success feedback
     toast.success('All template assignments cleared successfully!');
   };
@@ -368,6 +578,8 @@ export default function ContractGenerator() {
     });
 
     setTemplateAssignments(newAssignments);
+    // Also update session storage
+    setSessionTemplateAssignments(newAssignments);
     
     if (assignedCount > 0) {
       toast.success(`Smart assigned templates to ${assignedCount} providers`);
@@ -774,6 +986,65 @@ b, strong { font-weight: bold !important; }
     toast.success(`Bulk generation completed! ${successful.length} succeeded, ${skipped.length} skipped.`);
   };
 
+  // Modal-specific bulk generation function
+  const handleModalBulkGenerate = async () => {
+    setUserError(null);
+    setIsBulkGenerating(true);
+    
+    // Use the providers that were selected for the modal (not filtered providers from main page)
+    const modalSelectedProviders = providers.filter(p => selectedProviderIds.includes(p.id));
+    if (modalSelectedProviders.length === 0) {
+      setUserError('No providers selected for generation.');
+      setIsBulkGenerating(false);
+      return;
+    }
+
+    // Check if all providers have templates assigned
+    const providersWithoutTemplates = modalSelectedProviders.filter(provider => !getAssignedTemplate(provider));
+    if (providersWithoutTemplates.length > 0) {
+      const providerNames = providersWithoutTemplates.map(p => p.name).join(', ');
+      setUserError(`Some providers don't have templates assigned: ${providerNames}. Please assign templates first.`);
+      setIsBulkGenerating(false);
+      return;
+    }
+
+    const successful: any[] = [];
+    const skipped: any[] = [];
+    
+    for (const provider of modalSelectedProviders) {
+      try {
+        const assignedTemplate = getAssignedTemplate(provider);
+        if (!assignedTemplate) {
+          skipped.push({
+            providerName: provider.name,
+            reason: 'No template assigned'
+          });
+          continue;
+        }
+        // Generate with the assigned template
+        await generateAndDownloadDocx(provider, assignedTemplate);
+        successful.push({
+          providerName: provider.name,
+          templateName: assignedTemplate.name
+        });
+      } catch (err) {
+        skipped.push({
+          providerName: provider.name,
+          reason: `Generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+        });
+      }
+    }
+    
+    setIsBulkGenerating(false);
+    await hydrateGeneratedContracts();
+    
+    // Set results and show modal
+    console.log('Modal bulk generation completed:', { successful, skipped });
+    setBulkGenerationResults({ successful, skipped });
+    setBulkGenerationSummaryModalOpen(true);
+    toast.success(`Bulk generation completed! ${successful.length} succeeded, ${skipped.length} skipped.`);
+  };
+
   const handlePreview = () => {
     if (selectedProviderIds.length === 0) {
       setUserError("Please select at least one provider to preview.");
@@ -801,7 +1072,7 @@ b, strong { font-weight: bold !important; }
     }
   };
 
-  // Handle row click to toggle selection
+  // Handle row click to toggle selection (primary interaction method)
   const handleRowClick = (event: any) => {
     const provider = event.data;
     if (provider) {
@@ -1055,74 +1326,73 @@ b, strong { font-weight: bold !important; }
     const leftPinned = columnPreferences?.columnPinning?.left || [];
     const rightPinned = columnPreferences?.columnPinning?.right || [];
     
-    // Start with the select column (always pinned left)
+    // Selection indicator column (visual only, no interaction)
     const selectColumn = {
       headerName: '',
       field: 'selected',
-      width: 50,
-      minWidth: 50,
-      maxWidth: 50,
+      width: 40,
+      minWidth: 40,
+      maxWidth: 40,
       pinned: 'left',
       suppressMenu: true,
       sortable: false,
       filter: false,
       resizable: false,
       suppressSizeToFit: true,
-      suppressRowClickSelection: true, // Prevent row clicks in checkbox column
+      suppressRowClickSelection: true,
       cellRenderer: (params: any) => {
         const isSelected = selectedProviderIds.includes(params.data.id);
         return (
-          <div className="flex items-center justify-center h-full w-full">
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={(e) => {
-                e.stopPropagation();
-                if (isSelected) {
-                  setSelectedProviderIds(prev => prev.filter(id => id !== params.data.id));
-                } else {
-                  setSelectedProviderIds(prev => [...prev, params.data.id]);
-                }
-              }}
-              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
-            />
+          <div className="flex items-center justify-center h-full">
+            {isSelected ? (
+              <div className="w-3 h-3 bg-blue-600 rounded-full flex items-center justify-center">
+                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+              </div>
+            ) : (
+              <div className="w-3 h-3 border-2 border-gray-300 rounded-full"></div>
+            )}
           </div>
         );
       },
-            headerComponent: () => {
+      headerComponent: () => {
         const visibleRowIds = visibleRows.map(row => row.id);
         const allVisibleSelected = visibleRowIds.length > 0 && 
           visibleRowIds.every(id => selectedProviderIds.includes(id));
         const someVisibleSelected = visibleRowIds.some(id => selectedProviderIds.includes(id));
         
         return (
-          <div className="flex items-center justify-center h-full w-full">
-            <input
-              type="checkbox"
-              checked={allVisibleSelected}
-              ref={(el) => {
-                if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
-              }}
-              onChange={(e) => {
-                e.stopPropagation();
-                if (allVisibleSelected) {
-                  // Deselect all visible
-                  setSelectedProviderIds(prev => prev.filter(id => !visibleRowIds.includes(id)));
-                } else {
-                  // Select all visible
-                  setSelectedProviderIds(prev => {
-                     const newSelection = [...prev];
-                     visibleRowIds.forEach(id => {
-                       if (!newSelection.includes(id)) {
-                         newSelection.push(id);
-                       }
-                     });
-                     return newSelection;
+          <div 
+            className="flex items-center justify-center h-full cursor-pointer hover:bg-gray-100 rounded transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (allVisibleSelected) {
+                // Deselect all visible
+                setSelectedProviderIds(prev => prev.filter(id => !visibleRowIds.includes(id)));
+              } else {
+                // Select all visible
+                setSelectedProviderIds(prev => {
+                   const newSelection = [...prev];
+                   visibleRowIds.forEach(id => {
+                     if (!newSelection.includes(id)) {
+                       newSelection.push(id);
+                     }
                    });
-                }
-              }}
-              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
-            />
+                   return newSelection;
+                 });
+              }
+            }}
+          >
+            {allVisibleSelected ? (
+              <div className="w-3 h-3 bg-blue-600 rounded-full flex items-center justify-center">
+                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+              </div>
+            ) : someVisibleSelected ? (
+              <div className="w-3 h-3 bg-blue-600 rounded-full flex items-center justify-center">
+                <div className="w-1.5 h-1.5 bg-white rounded-full opacity-50"></div>
+              </div>
+            ) : (
+              <div className="w-3 h-3 border-2 border-gray-300 rounded-full"></div>
+            )}
           </div>
         );
       },
@@ -1324,7 +1594,7 @@ b, strong { font-weight: bold !important; }
         field: 'assignedTemplate',
         width: 180,
         minWidth: 150,
-        maxWidth: 200,
+        maxWidth: 220,
         valueGetter: (params: any) => {
           const provider = params.data;
           const assignedTemplate = getAssignedTemplate(provider);
@@ -1332,52 +1602,94 @@ b, strong { font-weight: bold !important; }
         },
         cellRenderer: (params: any) => {
           const provider = params.data;
+          
+          // For Processed tab: Show the template that was actually used
+          if (statusTab === 'processed') {
+            const contract = generatedContracts.find(
+              c => c.providerId === provider.id && c.status === 'SUCCESS'
+            );
+            
+            if (contract) {
+              const usedTemplate = templates.find(t => t.id === contract.templateId);
+              return (
+                <div className="w-full h-full flex items-center px-2" style={{ position: 'relative', overflow: 'hidden' }}>
+                  <div className="flex items-center gap-2 w-full">
+                    <FileText className="w-4 h-4 text-green-600 flex-shrink-0" />
+                    <span className="text-sm font-medium text-gray-900 truncate" title={usedTemplate?.name || 'Unknown template'}>
+                      {usedTemplate?.name || 'Unknown template'}
+                    </span>
+                  </div>
+                </div>
+              );
+            } else {
+              return (
+                <div className="w-full h-full flex items-center px-2" style={{ position: 'relative', overflow: 'hidden' }}>
+                  <span className="text-sm text-gray-400 italic">No contract found</span>
+                </div>
+              );
+            }
+          }
+          
+          // For Not Generated and All tabs: Show template selection dropdown
           const assignedTemplate = getAssignedTemplate(provider);
           
           return (
-            <div className="w-full h-full flex items-center px-2">
-              <Select
-                value={assignedTemplate?.id || 'no-template'}
-                onValueChange={(templateId) => {
-                  if (templateId === 'no-template') {
-                    updateProviderTemplate(provider.id, null);
-                  } else {
-                    updateProviderTemplate(provider.id, templateId);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full h-7 text-xs">
-                  <SelectValue>
-                    {assignedTemplate ? (
-                      <span className="truncate" title={assignedTemplate.name}>
-                        {assignedTemplate.name}
-                      </span>
-                    ) : (
-                      <span className="text-gray-500">Select template</span>
-                    )}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="no-template">
-                    <span className="text-gray-500">No template</span>
-                  </SelectItem>
-                  {templates
-                    .filter(t => t?.id && t?.name)
-                    .map(template => (
-                      <SelectItem key={template.id} value={template.id}>
-                        <div>
-                          <div className="font-medium">{template.name}</div>
-                          <div className="text-xs text-gray-500">v{template.version || '1'}</div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+            <div className="w-full h-full flex items-center justify-center px-1" style={{ position: 'relative', overflow: 'hidden' }}>
+              <div className="w-full">
+                <Select
+                  value={assignedTemplate?.id || 'no-template'}
+                  onValueChange={(templateId) => {
+                    if (templateId === 'no-template') {
+                      updateProviderTemplate(provider.id, null);
+                    } else {
+                      updateProviderTemplate(provider.id, templateId);
+                    }
+                  }}
+                >
+                  <SelectTrigger 
+                    className="h-6 px-2 text-xs bg-white hover:bg-gray-50 border border-gray-300 rounded transition-colors" 
+                    style={{ position: 'relative', zIndex: 1, maxWidth: '140px' }}
+                    title={assignedTemplate ? `${assignedTemplate.name} v${assignedTemplate.version || '1.0.0'}` : 'Select Template'}
+                  >
+                    <SelectValue>
+                      {assignedTemplate ? (
+                        <span className="truncate text-gray-700 font-medium">
+                          {assignedTemplate.name}
+                        </span>
+                      ) : (
+                        <span className="text-gray-500 text-xs">Select</span>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no-template">
+                      <span className="text-gray-500">No template</span>
+                    </SelectItem>
+                    {templates
+                      .filter(t => t?.id && t?.name)
+                      .map(template => (
+                        <SelectItem key={template.id} value={template.id}>
+                          <div>
+                            <div className="font-medium">{template.name}</div>
+                            <div className="text-xs text-gray-500">v{template.version || '1'}</div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           );
         },
         sortable: true,
         filter: 'agTextColumnFilter',
+        suppressSizeToFit: false,
+        suppressAutoSize: false,
+        resizable: true,
+        cellStyle: { 
+          padding: '0',
+          overflow: 'hidden'
+        },
       },
     };
 
@@ -1402,7 +1714,7 @@ b, strong { font-weight: bold !important; }
     }).filter(Boolean);
 
     return [selectColumn, ...orderedColumns];
-  }, [columnOrder, hiddenColumns, columnPreferences?.columnPinning, selectedProviderIds, templateAssignments, templates, getAssignedTemplate, updateProviderTemplate]);
+  }, [columnOrder, hiddenColumns, columnPreferences?.columnPinning, selectedProviderIds, templateAssignments, templates, getAssignedTemplate, updateProviderTemplate, statusTab, generatedContracts]);
 
   // Generation Status column (only for All tab)
   const generationStatusColumn = {
@@ -1470,43 +1782,27 @@ b, strong { font-weight: bold !important; }
       if (contract) {
         return (
           <div className="flex items-center gap-1">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => downloadContract(provider, contract.templateId)}
-                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
-                  >
-                    <FileDown className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Download Contract
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedProviderIds([provider.id]);
-                      setPreviewModalOpen(true);
-                    }}
-                    className="text-gray-600 hover:text-gray-700 hover:bg-gray-50 px-2"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Preview Contract
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => downloadContract(provider, contract.templateId)}
+              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
+              title="Download Contract"
+            >
+              <FileDown className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelectedProviderIds([provider.id]);
+                setPreviewModalOpen(true);
+              }}
+              className="text-gray-600 hover:text-gray-700 hover:bg-gray-50 px-2"
+              title="Preview Contract"
+            >
+              <Eye className="w-4 h-4" />
+            </Button>
           </div>
         );
       }
@@ -1518,22 +1814,22 @@ b, strong { font-weight: bold !important; }
     sortable: false,
     filter: false,
     resizable: false,
-    pinned: 'right',
+    pinned: null, // Explicitly set to null to prevent any pinning
   };
+
+  // Comprehensive column definitions for all tabs - column manager will handle visibility
+  const allPossibleColumns = useMemo(() => [
+    ...baseColumns,
+    generationStatusColumn,
+    contractActionsColumn
+  ], [baseColumns, generationStatusColumn, contractActionsColumn]);
 
   // Contextual column definitions based on current tab
   const agGridColumnDefs = useMemo(() => {
-    if (statusTab === 'notGenerated') {
-      // Not Generated tab: Base columns only (no status, no actions)
-      return baseColumns;
-    } else if (statusTab === 'processed') {
-      // Processed tab: Base columns + Contract Actions (no status since all are processed)
-      return [...baseColumns, contractActionsColumn];
-    } else {
-      // All tab: Base columns + Generation Status + Contract Actions
-      return [...baseColumns, generationStatusColumn, contractActionsColumn];
-    }
-  }, [statusTab, baseColumns, generationStatusColumn, contractActionsColumn]);
+    // Always return all possible columns - let the column manager handle visibility
+    // This ensures the column manager sees all columns regardless of tab
+    return allPossibleColumns;
+  }, [allPossibleColumns]);
 
   // Prepare row data for AG Grid - ONLY include the fields we have column definitions for
   const agGridRows = paginatedProviders.map((provider: Provider) => {
@@ -1554,13 +1850,20 @@ b, strong { font-weight: bold !important; }
       'id', 'name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 
       'administrativeRole', 'baseSalary', 'fte', 'startDate', 'compensationModel',
       'totalFTE', 'TotalFTE', 'dynamicFields', 'compensationType', 'CompensationModel',
-      'generationStatus'
+      'generationStatus', 'actions'
     ];
     
     const filteredProvider: any = {};
     allowedFields.forEach(field => {
-      if (field in provider || field === 'generationStatus') {
-        filteredProvider[field] = field === 'generationStatus' ? generationStatus : provider[field as keyof Provider];
+      if (field in provider || field === 'generationStatus' || field === 'actions') {
+        if (field === 'generationStatus') {
+          filteredProvider[field] = generationStatus;
+        } else if (field === 'actions') {
+          // Add actions field for Contract Actions column
+          filteredProvider[field] = 'actions';
+        } else {
+          filteredProvider[field] = provider[field as keyof Provider];
+        }
       }
     });
     
@@ -1574,36 +1877,90 @@ b, strong { font-weight: bold !important; }
 
   const totalCount = agGridRows.length;
 
-  // CSV Export
-  const handleExportCSV = () => {
-    // Use all filtered providers, not just paginated
-    const allRows = filteredProviders.map((provider: Provider) => {
-      // Find the latest successful generated contract for this provider
-      const latestSuccessContract = generatedContracts
-        .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
-        .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+  // CSV Export (async, robust download links)
+  const [isExportingCSV, setIsExportingCSV] = useState(false);
+  const handleExportCSV = async () => {
+    setIsExportingCSV(true);
+    try {
+      // Use all filtered providers, not just paginated
+      const allRows = await Promise.all(filteredProviders.map(async (provider: Provider) => {
+        // Find the latest successful generated contract for this provider
+        const latestSuccessContract = generatedContracts
+          .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        // Find assigned template
+        const assignedTemplateId = templateAssignments[provider.id];
+        const assignedTemplate = assignedTemplateId
+          ? templates.find(t => t.id === assignedTemplateId)
+          : null;
+        
+        let generationStatus = 'Outstanding';
+        let generationDate = '';
+        let downloadLink = '';
+        if (latestSuccessContract && assignedTemplate) {
+          generationStatus = 'Generated';
+          generationDate = latestSuccessContract.generatedAt;
+          // Try to use fileUrl if present and looks like a URL
+          if (latestSuccessContract.fileUrl && latestSuccessContract.fileUrl.startsWith('http')) {
+            downloadLink = latestSuccessContract.fileUrl;
+          } else {
+            // Reconstruct contractId and fileName
+            const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
+            const contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
+            const fileName = getContractFileName(contractYear, provider.name, generationDate ? generationDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+            try {
+              const result = await getContractFile(contractId, fileName);
+              downloadLink = result.url;
+            } catch (e) {
+              downloadLink = '';
+            }
+          }
+        }
+        
+        return {
+          ...provider,
+          assignedTemplate: assignedTemplate ? assignedTemplate.name : 'Unassigned',
+          generationStatus,
+          generationDate,
+          downloadLink,
+        };
+      }));
       
-      let generationStatus = 'Not Generated';
-      if (latestSuccessContract) {
-        generationStatus = 'Success';
-      } else {
-        generationStatus = 'Not Generated';
-      }
+      // Build headers based on visible columns + extra fields
+      const visibleFields = agGridColumnDefs
+        .filter(col => col.field && col.field !== 'checkbox' && !hiddenColumns.has(col.field))
+        .map(col => col.field);
+      const headers = [
+        ...visibleFields.map(field => {
+          const col = agGridColumnDefs.find(c => c.field === field);
+          return col?.headerName || field;
+        }),
+        'Assigned Template',
+        'Generation Status',
+        'Generation Date',
+        'Download Link',
+      ];
       
-      return {
-        ...provider,
-        generationStatus,
-      };
-    });
-    
-    // Export with current column structure
-    const headers = agGridColumnDefs.filter(col => col.field && col.field !== 'checkbox').map(col => col.headerName);
-    const rows = allRows.map(row =>
-      agGridColumnDefs.filter(col => col.field && col.field !== 'checkbox').map(col => (row as any)[col.field] ?? '')
-    );
-    const csv = [headers, ...rows].map(r => r.map(String).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    saveAs(blob, 'contract-generation-providers.csv');
+      // Build rows
+      const rows = allRows.map(row => [
+        ...visibleFields.map(field => (row as any)[field] ?? ''),
+        row.assignedTemplate,
+        row.generationStatus,
+        row.generationDate,
+        row.downloadLink,
+      ]);
+      
+      // CSV encode
+      const csv = [headers, ...rows].map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      saveAs(blob, 'contract-generation-providers.csv');
+    } catch (err) {
+      setUserError('Failed to export CSV. Please try again.');
+      console.error('CSV Export Error:', err);
+    } finally {
+      setIsExportingCSV(false);
+    }
   };
 
   // After provider and template are selected and merged, set editorContent
@@ -1787,60 +2144,35 @@ b, strong { font-weight: bold !important; }
                       <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Info" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="right" align="start">
-                    Generate contracts for selected providers using your templates. Choose a template and providers, then generate DOCX files.
+                  <TooltipContent className="bg-gray-900 text-white px-3 py-2 text-sm rounded-md shadow-lg">
+                    Generate contracts for selected providers using your templates
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              
+              <div className="flex-1" /> {/* Spacer to push help icon to the right */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setInstructionsModalOpen(true)}
+                      className="p-1 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                      title="View detailed instructions"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="bg-gray-900 text-white px-3 py-2 text-sm rounded-md shadow-lg">
+                    View detailed instructions and help
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
             {/* Template Selector - right-aligned in header */}
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="font-medium text-gray-700">Template:</span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="truncate max-w-xs">
-                      <Select
-                        value={selectedTemplateId}
-                        onValueChange={setSelectedTemplateId}
-                        disabled={templatesStatus === 'loading'}
-                      >
-                        <SelectTrigger className="w-64 truncate">
-                          <SelectValue placeholder={templatesStatus === 'loading' ? 'Loading templates...' : 'Select template'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {templatesStatus === 'loading' ? (
-                            <div className="flex items-center gap-2 p-2 text-sm text-muted-foreground">
-                              <LoadingSpinner size="sm" />
-                              Loading templates...
-                            </div>
-                          ) : (
-                            templates
-                              .filter((template: any) => template && template.id && template.id.trim() !== '' && template.name)
-                              .map((template: any) => {
-                                // Additional safety check to ensure no empty values
-                                if (!template.id || template.id.trim() === '') {
-                                  return null;
-                                }
-                                return (
-                                  <SelectItem key={template.id} value={template.id}>
-                                    {template.name} (v{template.version || '1'})
-                                  </SelectItem>
-                                );
-                              })
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>{
-                    selectedTemplateId && templates?.find(t => t.id === selectedTemplateId)
-                      ? templates.find(t => t.id === selectedTemplateId)?.name + ' (v' + templates.find(t => t.id === selectedTemplateId)?.version + ')'
-                      : 'Select a template'
-                  }</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            
           </div>
           <hr className="my-3 border-gray-100" />
         </div>
@@ -1871,60 +2203,46 @@ b, strong { font-weight: bold !important; }
                   <div className="space-y-4">
                     {/* Bulk Actions */}
                     <div className="flex gap-2 flex-wrap">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const allFilteredIds = tabFilteredRows.map((p: Provider) => p.id);
-                                setSelectedProviderIds(allFilteredIds);
-                              }}
-                              disabled={filteredProviders.length === 0 || isBulkGenerating}
-                              className="font-medium"
-                            >
-                              All Filtered
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Select all providers in the current tab (all pages)</TooltipContent>
-                        </Tooltip>
-                        
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const visibleIds = visibleRows.map((p: Provider) => p.id);
-                                setSelectedProviderIds(visibleIds);
-                              }}
-                              disabled={providers.length === 0 || isBulkGenerating}
-                              className="font-medium"
-                            >
-                              Visible
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Select all providers currently visible on this page</TooltipContent>
-                        </Tooltip>
-                        
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedProviderIds([]);
-                              }}
-                              disabled={selectedProviderIds.length === 0 || isBulkGenerating}
-                              className="font-medium"
-                            >
-                              Clear
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Clear all selected providers</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
+                          setSelectedProviderIds(allFilteredIds);
+                        }}
+                        disabled={filteredProviders.length === 0 || isBulkGenerating}
+                        className="font-medium"
+                        title="Select all providers across all tabs and pages"
+                      >
+                        All Filtered ({filteredProviders.length})
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const visibleIds = visibleRows.map((p: Provider) => p.id);
+                          setSelectedProviderIds(visibleIds);
+                        }}
+                        disabled={providers.length === 0 || isBulkGenerating}
+                        className="font-medium"
+                        title="Select all providers currently visible on this page"
+                      >
+                        Visible
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedProviderIds([]);
+                        }}
+                        disabled={selectedProviderIds.length === 0 || isBulkGenerating}
+                        className="font-medium"
+                        title="Clear all selected providers"
+                      >
+                        Clear
+                      </Button>
 
 
                     </div>
@@ -2025,43 +2343,51 @@ b, strong { font-weight: bold !important; }
                             Clear All Filters
                           </Button>
                           
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={clearTemplateAssignments}
-                                  disabled={isBulkGenerating || Object.keys(templateAssignments).length === 0}
-                                  className="flex items-center gap-2"
-                                >
-                                  <RotateCcw className="w-4 h-4" />
-                                  Clear Template Assignments
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Clear all manual template assignments</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={clearTemplateAssignments}
+                            disabled={isBulkGenerating || Object.keys(templateAssignments).length === 0}
+                            className="flex items-center gap-2"
+                            title="Clear all manual template assignments"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            Clear Template Assignments
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setTemplateAssignments({});
+                              setSessionTemplateAssignments({});
+                              sessionRestoredRef.current = false;
+                              setSelectedProviderIds([]);
+                              toast.success('Complete reset: All assignments and selections cleared');
+                            }}
+                            disabled={isBulkGenerating}
+                            className="flex items-center gap-2 text-gray-600 hover:text-gray-700 hover:bg-gray-50 border-gray-300"
+                            title="Complete reset - clears all assignments, session data, and selections"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Complete Reset
+                          </Button>
 
                           {/* Clear Generated (only for processed tab) */}
                           {statusTab === 'processed' && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={handleClearGenerated}
-                                    disabled={selectedProviderIds.length === 0 || isBulkGenerating}
-                                    className="flex items-center gap-2"
-                                  >
-                                    <RotateCcw className="w-4 h-4" />
-                                    Clear Generated
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Clear generated contracts for selected providers</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleClearGenerated}
+                              disabled={selectedProviderIds.length === 0 || isBulkGenerating}
+                              className="flex items-center gap-2"
+                              title="Clear generated contracts for selected providers"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              Clear Generated
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -2078,19 +2404,19 @@ b, strong { font-weight: bold !important; }
           <div className="mb-2 flex justify-between items-center">
             <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'processed' | 'all')} className="flex-1">
               <TabsList className="flex gap-2 border-b-0 bg-transparent justify-start relative after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-[1.5px] after:bg-gray-200 after:z-10 overflow-visible">
-                <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
                   data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
                   Not Generated <span className="ml-1 text-xs">({tabCounts.notGenerated})</span>
                 </TabsTrigger>
 
-                <TabsTrigger value="processed" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                <TabsTrigger value="processed" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
                   data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
                   Processed <span className="ml-1 text-xs">({tabCounts.processed})</span>
                 </TabsTrigger>
-                <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
                   data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
                   All <span className="ml-1 text-xs">({tabCounts.all})</span>
                 </TabsTrigger>
@@ -2208,9 +2534,9 @@ b, strong { font-weight: bold !important; }
                 </Button>
                 <Button
                   onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
-                  variant="outline"
+                  variant="default"
                   size="sm"
-                  className="px-3 flex items-center gap-2"
+                  className="px-3 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
                   title="Manage column visibility, order, and pinning"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2263,8 +2589,11 @@ b, strong { font-weight: bold !important; }
           </div>
 
           {/* AG Grid Table */}
-          <div className="ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-hidden" style={{ 
+          <div className="ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-visible" style={{ 
             height: '600px',
+            width: '100%',
+            minWidth: '100%',
+            maxWidth: '100%',
             '--ag-header-background-color': '#f8fafc',
             '--ag-header-foreground-color': '#374151',
             '--ag-border-color': '#e5e7eb',
@@ -2280,7 +2609,7 @@ b, strong { font-weight: bold !important; }
               rowData={visibleRows}
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
               domLayout="normal"
-              suppressRowClickSelection={true}
+              suppressRowClickSelection={false}
               onRowClicked={handleRowClick}
               pagination={false}
               enableCellTextSelection={true}
@@ -2288,7 +2617,7 @@ b, strong { font-weight: bold !important; }
               rowHeight={40}
               suppressDragLeaveHidesColumns={true}
               suppressScrollOnNewData={true}
-              suppressColumnVirtualisation={false}
+              suppressColumnVirtualisation={true}
               suppressRowVirtualisation={false}
               suppressHorizontalScroll={false}
               maintainColumnOrder={true}
@@ -2301,16 +2630,31 @@ b, strong { font-weight: bold !important; }
               suppressColumnMoveAnimation={false}
               suppressRowHoverHighlight={false}
               suppressCellFocus={false}
+              // Prevent blank space issues
+              suppressFieldDotNotation={true}
+              // Remove unwanted gridlines and separators
+              suppressMenuHide={false}
 
               // Enable column auto-sizing
               onGridReady={(params) => {
                 // Auto-size columns to fit content but respect max widths
                 params.api.sizeColumnsToFit();
                 
-                // Ensure the grid takes up the full available width
+                // Force columns to fill the entire width
                 setTimeout(() => {
                   params.api.sizeColumnsToFit();
+                  // Force a second resize to ensure proper layout
+                  setTimeout(() => {
+                    params.api.sizeColumnsToFit();
+                  }, 50);
                 }, 100);
+              }}
+              
+              // Force proper column sizing on data changes
+              onRowDataUpdated={(params) => {
+                setTimeout(() => {
+                  params.api.sizeColumnsToFit();
+                }, 50);
               }}
 
               defaultColDef={{ 
@@ -2344,7 +2688,6 @@ b, strong { font-weight: bold !important; }
               singleClickEdit={false}
               suppressClipboardPaste={false}
               suppressCopyRowsToClipboard={false}
-              suppressMenuHide={false}
               allowContextMenuWithControlKey={true}
             />
           </div>
@@ -2400,6 +2743,18 @@ b, strong { font-weight: bold !important; }
             align-items: center !important;
             justify-content: center !important;
           }
+          /* Selection indicator styling */
+          .ag-theme-alpine .ag-cell[col-id="selected"] {
+            pointer-events: none !important;
+          }
+          /* Header selection indicator - make it clickable */
+          .ag-theme-alpine .ag-header-cell[col-id="selected"] {
+            pointer-events: auto !important;
+            cursor: pointer !important;
+          }
+          .ag-theme-alpine .ag-header-cell[col-id="selected"]:hover {
+            background-color: #f3f4f6 !important;
+          }
           /* Native checkbox styling with subtle modern enhancements */
           .ag-theme-alpine .ag-checkbox-input {
             width: 16px !important;
@@ -2416,23 +2771,62 @@ b, strong { font-weight: bold !important; }
             outline: 2px solid #3b82f6 !important;
             outline-offset: 2px !important;
           }
-          /* Modern, subtle row selection styling - exclude checkbox column */
-          .ag-theme-alpine .ag-row-selected .ag-cell:not(.ag-cell-range-selected):not([col-id="selected"]) {
+          /* Enhanced row interaction styling */
+          .ag-theme-alpine .ag-row {
+            cursor: pointer !important;
+            transition: background-color 0.15s ease !important;
+          }
+          .ag-theme-alpine .ag-row:hover {
             background-color: #f8fafc !important;
           }
-          .ag-theme-alpine .ag-row-selected:hover .ag-cell:not(.ag-cell-range-selected):not([col-id="selected"]) {
-            background-color: #f1f5f9 !important;
+          .ag-theme-alpine .ag-row-selected {
+            background-color: #eff6ff !important;
           }
-          .ag-theme-alpine .ag-row:hover .ag-cell:not([col-id="selected"]) {
-            background-color: #fafbfc !important;
+          .ag-theme-alpine .ag-row-selected:hover {
+            background-color: #dbeafe !important;
           }
-          /* Keep checkbox column unaffected by row selection */
+          /* Keep selection indicator column unaffected by row selection */
           .ag-theme-alpine .ag-row-selected .ag-cell[col-id="selected"] {
             background-color: transparent !important;
           }
           /* Ensure text remains readable in selected rows */
           .ag-theme-alpine .ag-row-selected .ag-cell {
             color: #111827 !important;
+          }
+          /* Remove ALL horizontal gridlines */
+          .ag-theme-alpine .ag-row {
+            border-bottom: none !important;
+          }
+          .ag-theme-alpine .ag-row:last-child {
+            border-bottom: none !important;
+          }
+          /* Remove any internal row borders that might cause gridlines */
+          .ag-theme-alpine .ag-cell {
+            border: none !important;
+            border-right: 1px solid #e5e7eb !important;
+            border-bottom: none !important;
+            border-top: none !important;
+          }
+          .ag-theme-alpine .ag-cell:last-child {
+            border-right: none !important;
+          }
+          /* Remove ALL possible horizontal lines */
+          .ag-theme-alpine .ag-row-group {
+            border-bottom: none !important;
+          }
+          .ag-theme-alpine .ag-row-group-indent-1,
+          .ag-theme-alpine .ag-row-group-indent-2,
+          .ag-theme-alpine .ag-row-group-indent-3 {
+            border-bottom: none !important;
+          }
+          .ag-theme-alpine .ag-body-viewport {
+            border-bottom: none !important;
+          }
+          .ag-theme-alpine .ag-center-cols-container {
+            border-bottom: none !important;
+          }
+          .ag-theme-alpine .ag-body-viewport-wrapper {
+            border-bottom: none !important;
           }
           /* Vertically center all cell and header content */
           .ag-theme-alpine .ag-cell, .ag-theme-alpine .ag-header-cell {
@@ -2467,6 +2861,61 @@ b, strong { font-weight: bold !important; }
             -ms-overflow-style: none !important;
             scrollbar-width: none !important;
           }
+
+          /* Override AG Grid's default border styling */
+          .ag-theme-alpine .ag-root-wrapper {
+            border: none !important;
+          }
+          .ag-theme-alpine .ag-root {
+            border: none !important;
+          }
+          .ag-theme-alpine .ag-body {
+            border: none !important;
+          }
+          .ag-theme-alpine .ag-body-viewport {
+            border: none !important;
+          }
+          .ag-theme-alpine .ag-center-cols-container {
+            border: none !important;
+          }
+          .ag-theme-alpine .ag-center-cols-clipper {
+            border: none !important;
+          }
+          .ag-theme-alpine .ag-center-cols-viewport {
+            border: none !important;
+          }
+          /* Final override to remove ALL horizontal lines */
+          .ag-theme-alpine * {
+            border-bottom: none !important;
+            border-top: none !important;
+          }
+          /* But keep vertical borders for columns */
+          .ag-theme-alpine .ag-cell {
+            border-right: 1px solid #e5e7eb !important;
+          }
+          .ag-theme-alpine .ag-cell:last-child {
+            border-right: none !important;
+          }
+          /* Prevent button highlighting issues */
+          .ag-theme-alpine button:focus {
+            outline: none !important;
+          }
+          .ag-theme-alpine button:focus-visible {
+            outline: 2px solid #3b82f6 !important;
+            outline-offset: 2px !important;
+          }
+          /* Template dropdown button styling - match AG Grid borders */
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] .border {
+            border-width: 1px !important;
+            border-style: solid !important;
+            border-color: #e5e7eb !important;
+          }
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] .bg-white {
+            transition: all 0.15s ease !important;
+          }
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] .bg-white:hover {
+            border-color: #d1d5db !important;
+          }
           /* Ensure checkbox column doesn't have scrollbars */
           .ag-theme-alpine .ag-cell[col-id="selected"] {
             overflow: hidden !important;
@@ -2478,6 +2927,11 @@ b, strong { font-weight: bold !important; }
           /* Prevent internal scrollbars in cells */
           .ag-theme-alpine .ag-cell {
             overflow: hidden !important;
+          }
+          
+          /* Allow tooltips to overflow from cells */
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] {
+            overflow: visible !important;
           }
           .ag-theme-alpine .ag-cell::-webkit-scrollbar {
             display: none !important;
@@ -2494,8 +2948,26 @@ b, strong { font-weight: bold !important; }
           
           /* Fix template column layout */
           .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] {
-            min-width: 350px !important;
-            max-width: 500px !important;
+            min-width: 150px !important;
+            max-width: 200px !important;
+            position: relative !important;
+            overflow: visible !important;
+          }
+          
+          /* Ensure tooltips appear above AG Grid */
+          .ag-theme-alpine [data-radix-popper-content-wrapper] {
+            z-index: 9999 !important;
+            position: relative !important;
+          }
+          
+
+          
+          /* Ensure template column scrolls with table */
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] .select-trigger {
+            position: relative !important;
+            z-index: 1 !important;
+            width: 100% !important;
+            max-width: 100% !important;
           }
           
           /* Ensure dropdowns don't overflow */
@@ -2508,7 +2980,7 @@ b, strong { font-weight: bold !important; }
           .ag-theme-alpine {
             border: 1px solid #e5e7eb !important;
             border-radius: 8px !important;
-            overflow: hidden !important;
+            overflow: visible !important;
           }
           
           /* Ensure proper row heights */
@@ -2756,70 +3228,62 @@ b, strong { font-weight: bold !important; }
                             </button>
                             
                             {/* Pin/Unpin Button */}
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      const currentPinning = columnPreferences?.columnPinning || { left: [], right: [] };
-                                      const leftPinned = currentPinning.left || [];
-                                      const rightPinned = currentPinning.right || [];
-                                      
-                                      const isLeftPinned = leftPinned.includes(field);
-                                      const isRightPinned = rightPinned.includes(field);
-                                      
-                                      if (e.shiftKey) {
-                                        // Shift+Click: Pin to right or unpin from right
-                                        if (isRightPinned) {
-                                          updateColumnPinning({
-                                            left: leftPinned,
-                                            right: rightPinned.filter(f => f !== field)
-                                          });
-                                        } else {
-                                          updateColumnPinning({
-                                            left: leftPinned.filter(f => f !== field),
-                                            right: [...rightPinned, field]
-                                          });
-                                        }
-                                      } else {
-                                        // Regular click: Pin to left or unpin from left
-                                        if (isLeftPinned) {
-                                          updateColumnPinning({
-                                            left: leftPinned.filter(f => f !== field),
-                                            right: rightPinned
-                                          });
-                                        } else {
-                                          updateColumnPinning({
-                                            left: [...leftPinned, field],
-                                            right: rightPinned.filter(f => f !== field)
-                                          });
-                                        }
-                                      }
-                                    }}
-                                    className={`p-1 rounded transition-colors ${
-                                      (columnPreferences?.columnPinning?.left || []).includes(field) || 
-                                      (columnPreferences?.columnPinning?.right || []).includes(field)
-                                        ? 'text-blue-600 hover:text-blue-800 bg-blue-50' 
-                                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                                    }`}
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                                    </svg>
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>
-                                    {(columnPreferences?.columnPinning?.left || []).includes(field) 
-                                      ? 'Click to unpin from left' 
-                                      : (columnPreferences?.columnPinning?.right || []).includes(field)
-                                      ? 'Click to unpin from right'
-                                      : 'Click to pin left • Shift+click to pin right'}
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                const currentPinning = columnPreferences?.columnPinning || { left: [], right: [] };
+                                const leftPinned = currentPinning.left || [];
+                                const rightPinned = currentPinning.right || [];
+                                
+                                const isLeftPinned = leftPinned.includes(field);
+                                const isRightPinned = rightPinned.includes(field);
+                                
+                                if (e.shiftKey) {
+                                  // Shift+Click: Pin to right or unpin from right
+                                  if (isRightPinned) {
+                                    updateColumnPinning({
+                                      left: leftPinned,
+                                      right: rightPinned.filter(f => f !== field)
+                                    });
+                                  } else {
+                                    updateColumnPinning({
+                                      left: leftPinned.filter(f => f !== field),
+                                      right: [...rightPinned, field]
+                                    });
+                                  }
+                                } else {
+                                  // Regular click: Pin to left or unpin from left
+                                  if (isLeftPinned) {
+                                    updateColumnPinning({
+                                      left: leftPinned.filter(f => f !== field),
+                                      right: rightPinned
+                                    });
+                                  } else {
+                                    updateColumnPinning({
+                                      left: [...leftPinned, field],
+                                      right: rightPinned.filter(f => f !== field)
+                                    });
+                                  }
+                                }
+                              }}
+                              className={`p-1 rounded transition-colors ${
+                                (columnPreferences?.columnPinning?.left || []).includes(field) || 
+                                (columnPreferences?.columnPinning?.right || []).includes(field)
+                                  ? 'text-blue-600 hover:text-blue-800 bg-blue-50' 
+                                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                              }`}
+                              title={
+                                (columnPreferences?.columnPinning?.left || []).includes(field) 
+                                  ? 'Click to unpin from left' 
+                                  : (columnPreferences?.columnPinning?.right || []).includes(field)
+                                  ? 'Click to unpin from right'
+                                  : 'Click to pin left • Shift+click to pin right'
+                              }
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                              </svg>
+                            </button>
 
                             {/* Column Name */}
                             <span className={`flex-1 text-sm ${field === 'name' ? 'text-gray-700' : 'text-gray-700'}`}>
@@ -2876,26 +3340,18 @@ b, strong { font-weight: bold !important; }
                   <div className="text-xs text-gray-500">
                     {columnOrder.length - hiddenColumns.size} of {columnOrder.length} columns visible
                   </div>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={() => {
-                            // Close the sidebar and ensure preferences are saved
-                            setIsColumnSidebarOpen(false);
-                            // Show success message
-                            toast.success('Column preferences saved successfully!');
-                          }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
-                        >
-                          Done
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Close column manager (Esc)</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Button
+                    onClick={() => {
+                      // Close the sidebar and ensure preferences are saved
+                      setIsColumnSidebarOpen(false);
+                      // Show success message
+                      toast.success('Column preferences saved successfully!');
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
+                    title="Close column manager (Esc)"
+                  >
+                    Done
+                  </Button>
                 </div>
               </div>
             </div>
@@ -2922,90 +3378,325 @@ b, strong { font-weight: bold !important; }
           skipped={bulkGenerationResults.skipped}
         />
 
-        {/* COMPACT Bulk Template Assignment Modal */}
+        {/* Professional Bulk Template Assignment Modal */}
         {bulkAssignmentModalOpen && (
-          <Dialog open={bulkAssignmentModalOpen} onOpenChange={setBulkAssignmentModalOpen}>
-            <DialogContent className="max-w-3xl w-[80vw] max-h-[85vh] overflow-hidden flex flex-col">
-              <DialogHeader className="flex-shrink-0 pb-3 border-b border-gray-200">
-                <DialogTitle className="text-lg font-semibold text-gray-900">Bulk Template Assignment</DialogTitle>
-                <DialogDescription className="text-gray-600">
-                  {selectedProviderIds.length} providers selected
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="flex flex-col flex-1 min-h-0">
-                {/* Quick Template Selector */}
-                <div className="flex-shrink-0 p-3 bg-gray-50 border-b border-gray-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Quick Assign:</span>
-                      <Select onValueChange={(templateId) => {
-                        if (templateId && templateId !== 'no-template') {
-                          selectedProviderIds.forEach(providerId => {
-                            updateProviderTemplate(providerId, templateId);
-                          });
-                        }
-                      }}>
-                        <SelectTrigger className="w-full sm:w-72 min-w-0">
-                          <SelectValue placeholder="Select template..." />
-                        </SelectTrigger>
-                        <SelectContent className="max-w-72">
-                          <SelectItem value="no-template">
-                            <div className="flex items-center gap-2 py-1">
-                              <span className="text-sm text-gray-500">No template</span>
-                            </div>
-                          </SelectItem>
-                          {templates.map(template => (
-                            <SelectItem key={template.id} value={template.id}>
-                              <div className="flex items-center gap-2 py-1">
-                                <span className="text-sm font-medium truncate">{template.name}</span>
-                                <Badge variant="outline" className="text-xs flex-shrink-0">
-                                  {template.compensationModel}
-                                </Badge>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-3">
+          <Dialog open={bulkAssignmentModalOpen} onOpenChange={(open) => {
+            setBulkAssignmentModalOpen(open);
+            // Reset modal filters when modal closes to prevent affecting main page
+            if (!open) {
+              setModalSelectedSpecialty("__ALL__");
+              setModalSelectedSubspecialty("__ALL__");
+              setModalSelectedProviderType("__ALL__");
+              setModalSelectedAdminRole("__ALL__");
+              setModalSelectedCompModel("__ALL__");
+              setSelectedTemplateForFiltered("");
+            }
+          }}>
+            <DialogContent className="max-w-7xl w-[95vw] max-h-[90vh] flex flex-col bg-gray-50">
+              <DialogHeader className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <DialogTitle className="text-base font-semibold text-gray-900">
+                      Bulk Template Assignment
+                    </DialogTitle>
+                    <DialogDescription className="text-sm text-gray-600 mt-0.5">
+                      {selectedProviderIds.length} providers selected
+                    </DialogDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {(modalSelectedSpecialty !== "__ALL__" || modalSelectedSubspecialty !== "__ALL__" || modalSelectedProviderType !== "__ALL__" || modalSelectedAdminRole !== "__ALL__" || modalSelectedCompModel !== "__ALL__") && (
                       <Button
-                        onClick={clearTemplateAssignments}
                         variant="outline"
                         size="sm"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 whitespace-nowrap"
+                        onClick={() => {
+                          setModalSelectedSpecialty("__ALL__");
+                          setModalSelectedSubspecialty("__ALL__");
+                          setModalSelectedProviderType("__ALL__");
+                          setModalSelectedAdminRole("__ALL__");
+                          setModalSelectedCompModel("__ALL__");
+                          setSelectedTemplateForFiltered("");
+                        }}
+                        className="text-gray-600 hover:text-gray-700 hover:bg-gray-50 border-gray-200 h-7 px-3"
                       >
-                        <RotateCcw className="w-4 h-4 mr-2" />
-                        Clear All
+                        Reset Filters
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        selectedProviderIds.forEach(providerId => {
+                          updateProviderTemplate(providerId, null);
+                        });
+                      }}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 h-7 px-3"
+                    >
+                      Clear All
+                    </Button>
+                  </div>
+                </div>
+              </DialogHeader>
+              
+              <div className="flex flex-1 min-h-0 gap-2 p-2">
+                {/* Left Panel - Filters and Assignment */}
+                <div className="w-2/5 bg-white rounded border border-gray-200 flex flex-col">
+                  <div className="flex-shrink-0 p-3 border-b border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      Filters & Assignment
+                    </h3>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                    {/* Filters Section */}
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-900 mb-2 uppercase tracking-wide">Filter Providers</h4>
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Specialty</label>
+                            <Select value={modalSelectedSpecialty} onValueChange={(value) => {
+                              setModalSelectedSpecialty(value);
+                              // Reset subspecialty when specialty changes
+                              setModalSelectedSubspecialty("__ALL__");
+                            }}>
+                              <SelectTrigger className="w-full h-7 text-xs">
+                                <SelectValue placeholder="All Specialties" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__ALL__">All Specialties</SelectItem>
+                                {[...new Set(providers.filter(p => selectedProviderIds.includes(p.id)).map(p => p.specialty))].sort().map(specialty => (
+                                  <SelectItem key={specialty} value={specialty}>
+                                    {specialty}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Subspecialty</label>
+                            <Select value={modalSelectedSubspecialty} onValueChange={setModalSelectedSubspecialty}>
+                              <SelectTrigger className="w-full h-7 text-xs">
+                                <SelectValue placeholder="All Subspecialties" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__ALL__">All Subspecialties</SelectItem>
+                                {modalSelectedSpecialty !== "__ALL__" 
+                                  ? [...new Set(providers
+                                      .filter(p => selectedProviderIds.includes(p.id) && p.specialty === modalSelectedSpecialty)
+                                      .map(p => p.subspecialty)
+                                      .filter(Boolean))].sort().map(subspecialty => (
+                                    <SelectItem key={subspecialty} value={subspecialty}>
+                                      {subspecialty}
+                                    </SelectItem>
+                                  ))
+                                  : [...new Set(providers
+                                      .filter(p => selectedProviderIds.includes(p.id))
+                                      .map(p => p.subspecialty)
+                                      .filter(Boolean))].sort().map(subspecialty => (
+                                    <SelectItem key={subspecialty} value={subspecialty}>
+                                      {subspecialty}
+                                    </SelectItem>
+                                  ))
+                                }
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Provider Type</label>
+                            <Select value={modalSelectedProviderType} onValueChange={setModalSelectedProviderType}>
+                              <SelectTrigger className="w-full h-7 text-xs">
+                                <SelectValue placeholder="All Types" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__ALL__">All Types</SelectItem>
+                                {[...new Set(providers.filter(p => selectedProviderIds.includes(p.id)).map(p => p.providerType))].sort().map(providerType => (
+                                  <SelectItem key={providerType} value={providerType}>
+                                    {providerType}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Admin Role</label>
+                            <Select value={modalSelectedAdminRole} onValueChange={setModalSelectedAdminRole}>
+                              <SelectTrigger className="w-full h-7 text-xs">
+                                <SelectValue placeholder="All Roles" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__ALL__">All Roles</SelectItem>
+                                <SelectItem value="Department Chair">Department Chair</SelectItem>
+                                <SelectItem value="Division Chief">Division Chief</SelectItem>
+                                <SelectItem value="Medical Director">Medical Director</SelectItem>
+                                <SelectItem value="None">None</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Compensation Model</label>
+                          <Select value={modalSelectedCompModel} onValueChange={setModalSelectedCompModel}>
+                            <SelectTrigger className="w-full h-7 text-xs">
+                              <SelectValue placeholder="All Models" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__ALL__">All Models</SelectItem>
+                              <SelectItem value="Base">Base</SelectItem>
+                              <SelectItem value="Productivity">Productivity</SelectItem>
+                              <SelectItem value="Hybrid">Hybrid</SelectItem>
+                              <SelectItem value="Hospitalist">Hospitalist</SelectItem>
+                              <SelectItem value="Leadership">Leadership</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Template Assignment Section */}
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-900 mb-2 uppercase tracking-wide">Assign Template</h4>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Template to Assign</label>
+                          <Select value={selectedTemplateForFiltered} onValueChange={setSelectedTemplateForFiltered}>
+                            <SelectTrigger className="w-full h-7 text-xs">
+                              <SelectValue>
+                                {selectedTemplateForFiltered ? (
+                                  <div className="flex items-center gap-1 min-w-0">
+                                    <span className="truncate text-xs" title={templates.find(t => t.id === selectedTemplateForFiltered)?.name}>
+                                      {templates.find(t => t.id === selectedTemplateForFiltered)?.name}
+                                    </span>
+                                    <span className="text-xs text-gray-500 flex-shrink-0">
+                                      ({templates.find(t => t.id === selectedTemplateForFiltered)?.compensationModel})
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-gray-500">Select template...</span>
+                                )}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="max-w-md">
+                              {templates.map(template => (
+                                <SelectItem key={template.id} value={template.id}>
+                                  <div className="flex items-center gap-2 py-0.5 min-w-0">
+                                    <span className="text-sm font-medium truncate" title={template.name}>
+                                      {template.name}
+                                    </span>
+                                    <span className="text-xs text-gray-500 flex-shrink-0">({template.compensationModel})</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Action Buttons - Outside scrollable container */}
+                  <div className="flex-shrink-0 p-3 border-t border-gray-200">
+                    {/* Progress indicator */}
+                    {bulkAssignmentLoading && bulkAssignmentProgress && (
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                          <span>Processing assignments...</span>
+                          <span>{bulkAssignmentProgress.completed}/{bulkAssignmentProgress.total}</span>
+                        </div>
+                        <Progress 
+                          value={(bulkAssignmentProgress.completed / bulkAssignmentProgress.total) * 100} 
+                          className="h-2"
+                        />
+                      </div>
+                    )}
+                    
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        className="flex-1 h-7 text-xs"
+                        onClick={clearFilteredAssignments}
+                        disabled={filteredProvidersCount === 0 || bulkAssignmentLoading}
+                      >
+                        {bulkAssignmentLoading ? (
+                          <div className="flex items-center gap-1">
+                            <LoadingSpinner size="sm" color="gray" inline />
+                            <span>Clearing...</span>
+                          </div>
+                        ) : (
+                          'Clear Filtered'
+                        )}
+                      </Button>
+                      <Button 
+                        className="flex-1 h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                        onClick={() => assignTemplateToFiltered(selectedTemplateForFiltered)}
+                        disabled={filteredProvidersCount === 0 || !selectedTemplateForFiltered || bulkAssignmentLoading}
+                      >
+                        {bulkAssignmentLoading ? (
+                          <div className="flex items-center gap-1">
+                            <LoadingSpinner size="sm" color="white" inline />
+                            <span>Assigning...</span>
+                          </div>
+                        ) : (
+                          'Assign Template'
+                        )}
                       </Button>
                     </div>
                   </div>
                 </div>
-
-                {/* Provider List with FORCED SCROLL */}
-                <div className="flex-1 min-h-0 overflow-hidden" style={{ height: '350px' }}>
-                  <div className="h-full overflow-y-auto custom-scrollbar" style={{ maxHeight: '350px' }}>
-                    <div className="space-y-1 p-2">
-                      {selectedProviderIds.map(providerId => {
+                
+                {/* Right Panel - Provider List */}
+                <div className="w-3/5 bg-white rounded border border-gray-200 flex flex-col">
+                  <div className="flex-shrink-0 p-3 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900">
+                          Provider List
+                        </h3>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          {getFilteredProviderIds.length} providers match filters
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          placeholder="Search providers..." 
+                          className="w-56 h-7 text-xs"
+                          onChange={(e) => {
+                            // Add search functionality here
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Provider List */}
+                  <div className="flex-1 overflow-y-auto">
+                    <div className="p-2 space-y-1">
+                      {/* Always show only filtered providers when filters are active */}
+                      {getFilteredProviderIds.slice(0, 100).map(providerId => {
                         const provider = providers.find(p => p.id === providerId);
+                        const currentTemplate = templates.find(t => t.id === templateAssignments[providerId]);
+                        
                         if (!provider) return null;
                         
-                        const currentTemplate = getAssignedTemplate(provider);
-                        
                         return (
-                          <div key={providerId} className="flex items-center gap-3 p-2 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors duration-200 bg-white">
-                            {/* Provider Info - Compact */}
-                            <div className="w-40 flex-shrink-0">
-                              <div className="font-medium text-sm text-gray-900 truncate mb-1">{provider.name}</div>
-                              <div className="text-xs text-gray-500 flex items-center gap-1">
-                                <span className="truncate">{provider.specialty}</span>
-                                <span className="w-1 h-1 bg-gray-300 rounded-full flex-shrink-0"></span>
-                                <span className="truncate">{provider.providerType}</span>
+                          <div key={providerId} className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100 transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-medium text-gray-900 truncate text-sm">{provider.name}</h4>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {provider.specialty} • {provider.providerType}
+                                  </p>
+                                </div>
                               </div>
                             </div>
                             
-                            {/* Template Assignment - No redundant text */}
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1 min-w-0 ml-3">
                               <Select
                                 value={templateAssignments[providerId] || 'no-template'}
                                 onValueChange={(templateId) => {
@@ -3016,33 +3707,31 @@ b, strong { font-weight: bold !important; }
                                   }
                                 }}
                               >
-                                <SelectTrigger className="w-full min-w-0">
+                                <SelectTrigger className="w-full min-w-0 h-7 text-xs">
                                   <SelectValue>
                                     {currentTemplate ? (
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <span className="truncate text-sm">{currentTemplate.name}</span>
-                                        <Badge variant="outline" className="text-xs flex-shrink-0 bg-blue-50 text-blue-700 border-blue-200">
-                                          {currentTemplate.compensationModel}
-                                        </Badge>
+                                      <div className="flex items-center gap-1 min-w-0">
+                                        <span className="truncate text-xs" title={currentTemplate.name}>
+                                          {currentTemplate.name}
+                                        </span>
+                                        <span className="text-xs text-gray-500 flex-shrink-0">({currentTemplate.compensationModel})</span>
                                       </div>
                                     ) : (
-                                      <span className="text-sm text-gray-500">No template</span>
+                                      <span className="text-xs text-gray-500">No template</span>
                                     )}
                                   </SelectValue>
                                 </SelectTrigger>
-                                <SelectContent className="max-w-full">
+                                <SelectContent className="max-w-md">
                                   <SelectItem value="no-template">
-                                    <div className="flex items-center gap-2 py-1">
-                                      <span className="text-sm text-gray-500">No template</span>
-                                    </div>
+                                    <span className="text-sm text-gray-500">No template</span>
                                   </SelectItem>
                                   {templates.map(template => (
                                     <SelectItem key={template.id} value={template.id}>
-                                      <div className="flex items-center gap-2 py-1">
-                                        <span className="text-sm font-medium truncate">{template.name}</span>
-                                        <Badge variant="outline" className="text-xs flex-shrink-0">
-                                          {template.compensationModel}
-                                        </Badge>
+                                      <div className="flex items-center gap-2 py-0.5 min-w-0">
+                                        <span className="text-sm font-medium truncate" title={template.name}>
+                                          {template.name}
+                                        </span>
+                                        <span className="text-xs text-gray-500 flex-shrink-0">({template.compensationModel})</span>
                                       </div>
                                     </SelectItem>
                                   ))}
@@ -3052,31 +3741,51 @@ b, strong { font-weight: bold !important; }
                           </div>
                         );
                       })}
+                      
+                      {/* Show message when no providers match filters */}
+                      {getFilteredProviderIds.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                          <p className="text-sm font-medium">No providers match the current filters</p>
+                          <p className="text-xs">Try adjusting your filter criteria</p>
+                        </div>
+                      )}
+                      
+                      {/* Show pagination message */}
+                      {getFilteredProviderIds.length > 100 && (
+                        <div className="text-center py-2 text-xs text-gray-500">
+                          Showing first 100 of {getFilteredProviderIds.length} providers
+                          {filteredProvidersCount !== selectedProviderIds.length && (
+                            <span className="ml-2 text-blue-600">
+                              (filtered from {selectedProviderIds.length} total)
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
-
-              <DialogFooter className="flex-shrink-0 pt-3 border-t border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-between w-full">
-                  <div className="text-sm text-gray-600">
-                    {selectedProviderIds.length} provider{selectedProviderIds.length !== 1 ? 's' : ''} selected
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setBulkAssignmentModalOpen(false)}
-                      className="px-4"
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={() => setBulkAssignmentModalOpen(false)}
-                      className="px-4 bg-blue-600 hover:bg-blue-700"
-                    >
-                      Apply Assignments
-                    </Button>
-                  </div>
+              
+              <DialogFooter className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-2">
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setBulkAssignmentModalOpen(false)} className="h-7 text-xs">
+                    Cancel
+                  </Button>
+                  <Button onClick={() => setBulkAssignmentModalOpen(false)} className="bg-blue-600 hover:bg-blue-700 h-7 text-xs">
+                    Apply Assignments
+                  </Button>
+                  <Button 
+                    onClick={async () => {
+                      // Close the modal first
+                      setBulkAssignmentModalOpen(false);
+                      // Then trigger modal-specific bulk generation
+                      await handleModalBulkGenerate();
+                    }} 
+                    className="bg-green-600 hover:bg-green-700 h-7 text-xs"
+                    disabled={selectedProviderIds.length === 0}
+                  >
+                    Generate Contracts
+                  </Button>
                 </div>
               </DialogFooter>
             </DialogContent>
@@ -3101,7 +3810,13 @@ b, strong { font-weight: bold !important; }
                   value=""
                   onValueChange={(templateId) => {
                     if (templateId) {
-                      assignTemplateToSelected(templateId);
+                      // Assign template to all selected providers
+                      const newAssignments = { ...templateAssignments };
+                      selectedProviderIds.forEach(providerId => {
+                        newAssignments[providerId] = templateId;
+                      });
+                      setTemplateAssignments(newAssignments);
+                      setSessionTemplateAssignments(newAssignments);
                       setSameTemplateModalOpen(false);
                       toast.success(`Template assigned to ${selectedProviderIds.length} providers`);
                     }
@@ -3144,180 +3859,178 @@ b, strong { font-weight: bold !important; }
           <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-2 duration-200">
             <div className="bg-white border-t border-gray-200 shadow-lg">
               <div className="max-w-7xl mx-auto px-4 py-3">
-                <div className="flex items-center justify-between">
-                  {/* Left side - Selection count */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between text-sm">
+                  {/* Left side - Selection and Status */}
+                  <div className="flex items-center gap-6">
+                    {/* Selection Count */}
+                    <div className="flex items-center gap-2" title={`${selectedProviderIds.length} providers selected`}>
                       <CheckSquare className="w-5 h-5 text-blue-600" />
-                      <span className="font-medium text-gray-900">
-                        {selectedProviderIds.length} provider{selectedProviderIds.length !== 1 ? 's' : ''} selected
-                      </span>
+                      <span className="font-medium">{selectedProviderIds.length}</span>
+                      <span className="text-gray-600">selected</span>
                     </div>
                     
-                    {/* Template Assignment Status */}
-                    {selectedProviderIds.length > 0 && (
-                      <div className="flex items-center gap-2 ml-4 pl-4 border-l border-gray-200">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="cursor-help">
-                                {(() => {
-                                  const assignedCount = selectedProviderIds.filter(id => {
-                                    const provider = providers.find(p => p.id === id);
-                                    return provider && getAssignedTemplate(provider);
-                                  }).length;
-                                  
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm text-gray-600">
-                                        {assignedCount === selectedProviderIds.length ? (
-                                          <span className="text-green-600 font-medium">✓ All assigned</span>
-                                        ) : assignedCount > 0 ? (
-                                          <span className="text-yellow-600">{assignedCount}/{selectedProviderIds.length} assigned</span>
-                                        ) : (
-                                          <span className="text-red-600">No templates assigned</span>
-                                        )}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-md">
-                              <div className="space-y-2">
-                                <p className="font-medium">Template Assignment Summary:</p>
-                                {(() => {
-                                  const assignmentSummary = selectedProviderIds.map(id => {
-                                    const provider = providers.find(p => p.id === id);
-                                    const assignedTemplate = provider ? getAssignedTemplate(provider) : null;
-                                    return {
-                                      providerName: provider?.name || 'Unknown',
-                                      templateName: assignedTemplate?.name || 'No template'
-                                    };
-                                  });
-                                  
-                                  const groupedByTemplate = assignmentSummary.reduce((acc, item) => {
-                                    if (!acc[item.templateName]) {
-                                      acc[item.templateName] = [];
-                                    }
-                                    acc[item.templateName].push(item.providerName);
-                                    return acc;
-                                  }, {} as Record<string, string[]>);
-                                  
-                                  return (
-                                    <div className="space-y-1 text-sm">
-                                      {Object.entries(groupedByTemplate).map(([templateName, providerNames]) => (
-                                        <div key={templateName} className="flex items-start gap-2">
-                                          <span className="font-medium text-blue-600 min-w-0 flex-1 truncate">
-                                            {templateName}:
-                                          </span>
-                                          <span className="text-gray-600">
-                                            {providerNames.length} provider{providerNames.length !== 1 ? 's' : ''}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                    )}
+                    {/* Assignment Status */}
+                    {selectedProviderIds.length > 0 && (() => {
+                      const assignedCount = selectedProviderIds.filter(id => {
+                        const provider = providers.find(p => p.id === id);
+                        return provider && getAssignedTemplate(provider);
+                      }).length;
+                      
+                      return (
+                        <div className="flex items-center gap-2" title={`${assignedCount} templates assigned`}>
+                          {assignedCount === selectedProviderIds.length ? (
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                          ) : assignedCount > 0 ? (
+                            <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                          ) : (
+                            <XCircle className="w-4 h-4 text-red-500" />
+                          )}
+                          <span className="font-medium">{assignedCount}</span>
+                          <span className="text-gray-600">assigned</span>
+                          {statusTab === 'notGenerated' && Object.keys(sessionTemplateAssignments).length > 0 && (
+                            <span className="text-xs text-gray-400">• restored</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     
-                    {/* Template Assignment for Single or Multiple Selection */}
-                    {selectedProviderIds.length > 0 && (
-                      <div className="flex items-center gap-2 ml-4 pl-4 border-l border-gray-200">
-                        <span className="text-sm text-gray-600">Quick Assign:</span>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Select
-                                value=""
-                                onValueChange={(option) => {
-                                  if (option === 'same-template') {
-                                    // Show template selector for same template assignment
-                                    setSameTemplateModalOpen(true);
-                                  } else if (option === 'bulk-different') {
-                                    // Show bulk assignment modal
-                                    setBulkAssignmentModalOpen(true);
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="w-48 h-8 text-sm">
-                                  <SelectValue placeholder="Choose assignment..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="same-template">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm">Same Template (All)</span>
-                                    </div>
-                                  </SelectItem>
-                                  <SelectItem value="bulk-different">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm">Different Templates</span>
-                                    </div>
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-md">
-                              <div className="space-y-2">
-                                <p className="font-medium">Assignment Options:</p>
-                                <div className="space-y-1 text-sm">
-                                  <div><strong>Same Template:</strong> Assign one template to all selected providers</div>
-                                  <div><strong>Different Templates:</strong> Choose different templates for each provider</div>
-                                </div>
+                    {/* Session Management */}
+                    {selectedProviderIds.length > 0 && (Object.keys(sessionTemplateAssignments).length > 0 || Object.keys(templateAssignments).length > 0) && (
+                      <div className="relative">
+                        <Select
+                          value=""
+                          onValueChange={(option) => {
+                            if (option === 'clear-session') {
+                              setSessionTemplateAssignments({});
+                              sessionRestoredRef.current = false;
+                              toast.success('Session assignments cleared');
+                            } else if (option === 'clear-all') {
+                              setTemplateAssignments({});
+                              setSessionTemplateAssignments({});
+                              sessionRestoredRef.current = false;
+                              toast.success('All template assignments cleared');
+                            } else if (option === 'save-to-session') {
+                              setSessionTemplateAssignments(templateAssignments);
+                              toast.success('Current assignments saved to session');
+                            }
+                          }}
+                        >
+                          <SelectTrigger 
+                            className="h-7 px-2 text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded transition-colors"
+                            title="Session management options"
+                          >
+                            <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="save-to-session">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                </svg>
+                                <span className="text-gray-900">Save to Session</span>
                               </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                            </SelectItem>
+                            <SelectItem value="clear-session">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                <span className="text-gray-900">Clear Session Only</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="clear-all">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                <span className="text-gray-900">Clear All Assignments</span>
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     )}
                   </div>
 
-                  {/* Right side - Action buttons */}
-                  <div className="flex items-center gap-2">
+                  {/* Center - Quick Assign */}
+                  {selectedProviderIds.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600">Quick:</span>
+                      <Select
+                        value=""
+                        onValueChange={(option) => {
+                          if (option === 'same-template') {
+                            setSameTemplateModalOpen(true);
+                          } else if (option === 'bulk-different') {
+                            setBulkAssignmentModalOpen(true);
+                          }
+                        }}
+                      >
+                        <SelectTrigger 
+                          className="w-48 h-7 text-gray-900"
+                          title="Assignment Options:\nSame Template: Assign one template to all selected providers\nDifferent Templates: Choose different templates for each provider"
+                        >
+                          <SelectValue placeholder="Choose assignment..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="same-template">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-900">Same Template (All)</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="bulk-different">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-900">Different Templates</span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Right side - Action Buttons */}
+                  <div className="flex items-center gap-3">
                     <Button
-                      onClick={handleGenerateOne}
+                      onClick={handleGenerateAll}
                       className="bg-blue-600 hover:bg-blue-700 text-white"
                       size="sm"
                     >
                       <FileText className="w-4 h-4 mr-2" />
-                      Create 1
+                      Create
                     </Button>
                     
-                    {selectedProviderIds.length > 1 && (
-                      <>
-                        <Button
-                          onClick={handleGenerateAll}
-                          className="bg-green-600 hover:bg-green-700 text-white"
-                          size="sm"
-                        >
-                          <FileDown className="w-4 h-4 mr-2" />
-                          Create All
-                        </Button>
-                        
+                    {(() => {
+                      const assignedCount = selectedProviderIds.filter(id => {
+                        const provider = providers.find(p => p.id === id);
+                        return provider && getAssignedTemplate(provider);
+                      }).length;
+                      
+                      return assignedCount > 0 ? (
                         <Button
                           onClick={clearTemplateAssignments}
                           variant="outline"
-                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200"
+                          className="text-gray-900 hover:text-gray-700 hover:bg-gray-50 border-gray-300"
                           size="sm"
                         >
-                          <X className="w-4 h-4 mr-2" />
-                          Clear Assignments
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Clear ({assignedCount})
                         </Button>
-                      </>
-                    )}
+                      ) : null;
+                    })()}
                     
                     <Button
                       onClick={() => setSelectedProviderIds([])}
                       variant="outline"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                      className="text-gray-900 hover:text-gray-700 hover:bg-gray-50 border-gray-300"
                       size="sm"
                     >
-                      <RotateCcw className="w-4 h-4 mr-2" />
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                       Clear Selection
                     </Button>
                   </div>
@@ -3325,6 +4038,170 @@ b, strong { font-weight: bold !important; }
               </div>
             </div>
           </div>
+        )}
+
+        {/* Instructions Modal */}
+        {instructionsModalOpen && (
+          <Dialog open={instructionsModalOpen} onOpenChange={setInstructionsModalOpen}>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+              <DialogHeader className="flex-shrink-0 pb-4 border-b border-gray-200">
+                <DialogTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Contract Generation Instructions
+                </DialogTitle>
+                <DialogDescription className="text-gray-600">
+                  Complete guide to using the contract generation system
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Quick Start */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-blue-900 mb-2">🚀 Quick Start</h3>
+                  <ol className="text-sm text-blue-800 space-y-1">
+                    <li>1. Select providers using checkboxes or "All Filtered" button (selects all 1000+ providers)</li>
+                    <li>2. Assign templates using individual dropdowns or bulk actions</li>
+                    <li>3. Click "Create Selected" to generate contracts</li>
+                    <li>4. Download individual files or bulk ZIP archive</li>
+                  </ol>
+                </div>
+
+                {/* Template Assignment */}
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    Template Assignment Methods
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Individual Assignment</h4>
+                      <p className="text-sm text-gray-600 mb-3">Assign different templates to each provider</p>
+                      <div className="text-xs text-gray-500 space-y-1">
+                        <p>• Use dropdown in each provider row</p>
+                        <p>• Perfect for custom assignments</p>
+                        <p>• Changes saved automatically</p>
+                      </div>
+                    </div>
+                    
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Bulk Assignment</h4>
+                      <p className="text-sm text-gray-600 mb-3">Assign templates to multiple providers at once</p>
+                      <div className="text-xs text-gray-500 space-y-1">
+                        <p>• Select providers → "Same Template (All)"</p>
+                        <p>• Or "Different Templates" for individual control</p>
+                        <p>• Use bulk assignment modal for complex scenarios</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Workflow Options */}
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    Workflow Options
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Single Contract</h4>
+                      <p className="text-sm text-gray-600">Generate one contract at a time</p>
+                      <div className="text-xs text-gray-500 mt-2">
+                        <p>• Right-click provider → "Generate"</p>
+                        <p>• Immediate download</p>
+                      </div>
+                    </div>
+                    
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Bulk Generation</h4>
+                      <p className="text-sm text-gray-600">Generate multiple contracts</p>
+                      <div className="text-xs text-gray-500 mt-2">
+                        <p>• Select multiple providers</p>
+                        <p>• Download as ZIP archive</p>
+                      </div>
+                    </div>
+                    
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Session Management</h4>
+                      <p className="text-sm text-gray-600">Temporary template assignments</p>
+                      <div className="text-xs text-gray-500 mt-2">
+                        <p>• Persists during tab navigation</p>
+                        <p>• Clear with "Complete Reset"</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Keyboard Shortcuts */}
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Keyboard Shortcuts
+                  </h3>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2">Reset Operations</h4>
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Complete Reset:</span>
+                            <kbd className="px-2 py-1 bg-white border border-gray-300 rounded text-xs">Ctrl+R</kbd>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Session Only:</span>
+                            <kbd className="px-2 py-1 bg-white border border-gray-300 rounded text-xs">Ctrl+Shift+R</kbd>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2">Navigation</h4>
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Tab Navigation:</span>
+                            <span className="text-gray-500 text-xs">Click tabs</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Row Selection:</span>
+                            <span className="text-gray-500 text-xs">Click rows</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tips & Best Practices */}
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Tips & Best Practices
+                  </h3>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <ul className="text-sm text-amber-800 space-y-2">
+                      <li>• <strong>Filter first:</strong> Use specialty/subspecialty filters to narrow down providers</li>
+                      <li>• <strong>Bulk assign:</strong> Use "Same Template (All)" for efficiency when possible</li>
+                      <li>• <strong>Session persistence:</strong> Template assignments are saved during tab navigation</li>
+                      <li>• <strong>Check status:</strong> Use the "Processed" tab to see generated contracts</li>
+                      <li>• <strong>Bulk download:</strong> Use ZIP archives for multiple contracts</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              
+              <DialogFooter className="flex-shrink-0 pt-4 border-t border-gray-200">
+                <Button onClick={() => setInstructionsModalOpen(false)}>
+                  Got it, thanks!
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
 
       </div>
