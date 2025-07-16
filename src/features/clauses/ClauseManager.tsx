@@ -82,11 +82,19 @@ export default function ClauseManager() {
     dispatch(fetchClausesIfNeeded());
   }, [dispatch]);
 
+  // Force load static clauses immediately if Redux state is empty
+  useEffect(() => {
+    if (clauses.length === 0 && !loading) {
+      console.log('No clauses in Redux state, forcing load of static clauses');
+      dispatch(loadStaticClauses());
+    }
+  }, [clauses.length, loading, dispatch]);
+
   // Force load static clauses if Redux state is empty after a delay
   useEffect(() => {
     const timer = setTimeout(() => {
       if (clauses.length === 0 && !loading) {
-        console.log('Forcing load of static clauses');
+        console.log('Forcing load of static clauses after timeout');
         dispatch(loadStaticClauses());
       }
     }, 2000); // Wait 2 seconds for API call to complete
@@ -102,8 +110,15 @@ export default function ClauseManager() {
     clausesLength: clauses.length,
     loading,
     displayClausesLength: displayClauses.length,
-    sharedClausesLength: SHARED_CLAUSES.length
+    sharedClausesLength: SHARED_CLAUSES.length,
+    search,
+    selectedCategory,
+    pageIndex,
+    pageSize
   });
+
+  // Debug: Log first few clauses
+  console.log('First 5 display clauses:', displayClauses.slice(0, 5).map(c => ({ id: c.id, title: c.title, category: c.category })));
 
   // Save custom categories to localStorage whenever they change
   useEffect(() => {
@@ -400,6 +415,33 @@ export default function ClauseManager() {
                 </Button>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Debug Info - Temporary */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-yellow-800">Debug Info</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                console.log('Manual force load of static clauses');
+                dispatch(loadStaticClauses());
+              }}
+              className="h-8 px-3 text-xs"
+            >
+              Force Load
+            </Button>
+          </div>
+          <div className="text-xs text-yellow-700 space-y-1">
+            <div>Redux clauses: {clauses.length}</div>
+            <div>Display clauses: {displayClauses.length}</div>
+            <div>Static clauses: {SHARED_CLAUSES.length}</div>
+            <div>Loading: {loading ? 'Yes' : 'No'}</div>
+            <div>Search: "{search}"</div>
+            <div>Category: {selectedCategory}</div>
+            <div>Page: {pageIndex + 1} of {Math.ceil(filteredClauses.length / pageSize)}</div>
           </div>
         </div>
 
