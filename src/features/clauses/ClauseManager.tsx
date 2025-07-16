@@ -7,7 +7,7 @@ import { CLAUSES as SHARED_CLAUSES } from '@/features/clauses/clausesData';
 import { awsClauses } from '@/utils/awsServices';
 import { Clause } from '@/types/clause';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { fetchClausesIfNeeded, addClause, updateClause, deleteClause } from '@/store/slices/clauseSlice';
+import { fetchClausesIfNeeded, addClause, updateClause, deleteClause, loadStaticClauses } from '@/store/slices/clauseSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -61,7 +61,16 @@ export default function ClauseManager() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(10);
-  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>(() => {
+    // Load custom categories from localStorage on component mount
+    try {
+      const saved = localStorage.getItem('clause-custom-categories');
+      return saved ? JSON.parse(saved) : [];
+    } catch (error) {
+      console.error('Error loading custom categories from localStorage:', error);
+      return [];
+    }
+  });
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategory, setNewCategory] = useState('');
 
@@ -73,8 +82,37 @@ export default function ClauseManager() {
     dispatch(fetchClausesIfNeeded());
   }, [dispatch]);
 
+  // Force load static clauses if Redux state is empty after a delay
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (clauses.length === 0 && !loading) {
+        console.log('Forcing load of static clauses');
+        dispatch(loadStaticClauses());
+      }
+    }, 2000); // Wait 2 seconds for API call to complete
+
+    return () => clearTimeout(timer);
+  }, [clauses.length, loading, dispatch]);
+
   // Fallback to static clauses if Redux state is empty and not loading
   const displayClauses = clauses.length > 0 ? clauses : (!loading ? SHARED_CLAUSES : []);
+
+  // Debug logging
+  console.log('ClauseManager Debug:', {
+    clausesLength: clauses.length,
+    loading,
+    displayClausesLength: displayClauses.length,
+    sharedClausesLength: SHARED_CLAUSES.length
+  });
+
+  // Save custom categories to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('clause-custom-categories', JSON.stringify(customCategories));
+    } catch (error) {
+      console.error('Error saving custom categories to localStorage:', error);
+    }
+  }, [customCategories]);
 
   // Filter clauses
   const filteredClauses = displayClauses.filter(clause => {
@@ -204,16 +242,53 @@ export default function ClauseManager() {
   };
 
   const addCustomCategory = () => {
-    if (newCategory.trim() && !allCategories.includes(newCategory.trim().toLowerCase())) {
-      setCustomCategories(prev => [...prev, newCategory.trim().toLowerCase()]);
-      setNewCategory('');
-      setShowAddCategory(false);
-      toast.success(`Category "${newCategory.trim()}" added successfully`);
-    } else if (allCategories.includes(newCategory.trim().toLowerCase())) {
-      toast.error('Category already exists');
-    } else {
+    const trimmedCategory = newCategory.trim();
+    if (!trimmedCategory) {
       toast.error('Please enter a valid category name');
+      return;
     }
+    
+    const lowerCategory = trimmedCategory.toLowerCase();
+    if (allCategories.includes(lowerCategory)) {
+      toast.error('Category already exists');
+      return;
+    }
+    
+    setCustomCategories(prev => [...prev, lowerCategory]);
+    setNewCategory('');
+    setShowAddCategory(false);
+    toast.success(`Category "${trimmedCategory}" added successfully`);
+    
+    // Log the category creation
+    dispatch(logSecurityEvent({
+      action: 'custom_category_created',
+      details: `Created custom category: ${trimmedCategory}`,
+      category: 'DATA',
+      resourceType: 'clause_category',
+      resourceId: lowerCategory
+    }));
+  };
+
+  const deleteCustomCategory = (categoryToDelete: string) => {
+    // Check if any clauses are using this category
+    const clausesUsingCategory = displayClauses.filter(clause => clause.category === categoryToDelete);
+    
+    if (clausesUsingCategory.length > 0) {
+      toast.error(`Cannot delete category "${categoryToDelete}" - ${clausesUsingCategory.length} clause(s) are using it`);
+      return;
+    }
+    
+    setCustomCategories(prev => prev.filter(cat => cat !== categoryToDelete));
+    toast.success(`Category "${categoryToDelete}" deleted successfully`);
+    
+    // Log the category deletion
+    dispatch(logSecurityEvent({
+      action: 'custom_category_deleted',
+      details: `Deleted custom category: ${categoryToDelete}`,
+      category: 'DATA',
+      resourceType: 'clause_category',
+      resourceId: categoryToDelete
+    }));
   };
 
   if (loading) {
@@ -295,11 +370,23 @@ export default function ClauseManager() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
-                      {allCategories.map(cat => (
+                      {defaultCategories.map(cat => (
                         <SelectItem key={cat} value={cat}>
                           {cat.charAt(0).toUpperCase() + cat.slice(1)}
                         </SelectItem>
                       ))}
+                      {customCategories.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-medium text-gray-500 border-t border-gray-100 mt-1">
+                            Custom Categories
+                          </div>
+                          {customCategories.map(cat => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -315,6 +402,31 @@ export default function ClauseManager() {
             </div>
           </div>
         </div>
+
+        {/* Custom Categories Management */}
+        {customCategories.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-900">Custom Categories</h3>
+              <span className="text-xs text-gray-500">{customCategories.length} custom category{customCategories.length !== 1 ? 'ies' : 'y'}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {customCategories.map(cat => (
+                <div key={cat} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1">
+                  <span className="text-sm text-blue-800 capitalize">{cat}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteCustomCategory(cat)}
+                    className="h-5 w-5 p-0 text-blue-600 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Clauses Table - SharePoint Style */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
