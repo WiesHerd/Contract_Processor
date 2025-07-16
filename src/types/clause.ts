@@ -3,7 +3,7 @@ export interface Clause {
   title: string;
   content: string;
   type: 'standard' | 'custom';
-  category: 'compensation' | 'benefits' | 'termination' | 'restrictive' | 'other';
+  category: string; // Allow any string for custom categories
   tags: string[];
   applicableProviderTypes: ('physician' | 'advanced-practitioner' | 'other')[];
   applicableCompensationModels: ('base' | 'productivity' | 'hybrid' | 'hospitalist' | 'leadership')[];
