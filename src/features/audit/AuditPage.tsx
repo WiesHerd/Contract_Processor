@@ -140,7 +140,19 @@ export default function AuditPage() {
 
   // Filter logs based on search and filters
   const filteredLogs = logs.filter((log) => {
-    if (log.action !== 'TEMPLATE_CREATED' && log.action !== 'CONTRACT_GENERATED') return false;
+    // Include all relevant action types
+    const relevantActions = [
+      'TEMPLATE_CREATED', 
+      'CONTRACT_GENERATED', 
+      'BULK_CONTRACT_GENERATION',
+      'TEMPLATE_ASSIGNED',
+      'TEMPLATE_UNASSIGNED',
+      'BULK_TEMPLATE_ASSIGNMENT',
+      'BULK_TEMPLATE_ASSIGNMENT_FAILED',
+      'BULK_TEMPLATE_CLEAR',
+      'FMV_OVERRIDE'
+    ];
+    if (!relevantActions.includes(log.action)) return false;
     const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
     const templateInfo = getTemplateInfo(parsed.templateId || '');
     const providerName = getProviderName(parsed.providerId || '', parsed);
@@ -243,9 +255,23 @@ export default function AuditPage() {
     { headerName: 'Output', field: 'outputType', minWidth: 100, cellRenderer: (params: any) => (
       <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-gray-400" /><span className="text-sm font-medium">{params.value}</span></div>
     ), sortable: true },
-    { headerName: 'Action', field: 'action', minWidth: 160, cellRenderer: (params: any) => (
-      <span className="text-xs font-semibold text-gray-700">{params.value}</span>
-    ), sortable: true },
+    { headerName: 'Action', field: 'action', minWidth: 160, cellRenderer: (params: any) => {
+      const actionLabels: { [key: string]: string } = {
+        'TEMPLATE_CREATED': 'Template Created',
+        'CONTRACT_GENERATED': 'Contract Generated',
+        'BULK_CONTRACT_GENERATION': 'Bulk Generation',
+        'TEMPLATE_ASSIGNED': 'Template Assigned',
+        'TEMPLATE_UNASSIGNED': 'Template Unassigned',
+        'BULK_TEMPLATE_ASSIGNMENT': 'Bulk Assignment',
+        'BULK_TEMPLATE_ASSIGNMENT_FAILED': 'Bulk Assignment Failed',
+        'BULK_TEMPLATE_CLEAR': 'Bulk Clear',
+        'FMV_OVERRIDE': 'FMV Override'
+      };
+      const label = actionLabels[params.value] || params.value;
+      return (
+        <span className="text-xs font-semibold text-gray-700">{label}</span>
+      );
+    }, sortable: true },
     { headerName: 'Actions', field: 'fileUrl', minWidth: 100, cellRenderer: (params: any) => (
       params.value ? (
         <TooltipProvider>
@@ -273,8 +299,8 @@ export default function AuditPage() {
                       if (parsed.providerId && parsed.templateId) {
                         const contractYear = parsed.contractYear || new Date().getFullYear().toString();
                         const contractId = parsed.providerId + '-' + parsed.templateId + '-' + contractYear;
-                        const downloadUrl = await regenerateContractDownloadUrl(contractId, params.value);
-                        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+                        const result = await regenerateContractDownloadUrl(contractId, params.value);
+                        window.open(result.url, '_blank', 'noopener,noreferrer');
                       } else {
                         throw new Error('Unable to regenerate download URL - missing contract information');
                       }

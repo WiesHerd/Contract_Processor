@@ -398,6 +398,48 @@ export default function ContractGenerator() {
       // Also update session storage for tab navigation persistence
       setSessionTemplateAssignments(newAssignments);
       toast.success(`Template "${template?.name}" assigned to ${provider?.name}`);
+      
+      // Log individual template assignment
+      try {
+        const auditDetails = JSON.stringify({
+          action: 'TEMPLATE_ASSIGNED',
+          providerId: providerId,
+          providerName: provider?.name,
+          templateId: templateId,
+          templateName: template?.name,
+          assignmentType: 'individual',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            providerId: providerId,
+            providerName: provider?.name,
+            templateId: templateId,
+            templateName: template?.name,
+            assignmentType: 'individual',
+            operation: 'assign',
+            success: true
+          }
+        });
+        
+        dispatch(logSecurityEvent({
+          action: 'TEMPLATE_ASSIGNED',
+          details: auditDetails,
+          severity: 'LOW',
+          category: 'DATA',
+          resourceType: 'TEMPLATE_ASSIGNMENT',
+          resourceId: providerId,
+          metadata: {
+            providerId: providerId,
+            providerName: provider?.name,
+            templateId: templateId,
+            templateName: template?.name,
+            assignmentType: 'individual',
+            operation: 'assign',
+            success: true
+          },
+        }));
+      } catch (auditError) {
+        console.error('Failed to log template assignment:', auditError);
+      }
     } else {
       const newAssignments = { ...templateAssignments };
       delete newAssignments[providerId];
@@ -405,6 +447,42 @@ export default function ContractGenerator() {
       // Also update session storage
       setSessionTemplateAssignments(newAssignments);
       toast.success(`Template assignment cleared for ${provider?.name}`);
+      
+      // Log template unassignment
+      try {
+        const auditDetails = JSON.stringify({
+          action: 'TEMPLATE_UNASSIGNED',
+          providerId: providerId,
+          providerName: provider?.name,
+          assignmentType: 'individual',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            providerId: providerId,
+            providerName: provider?.name,
+            assignmentType: 'individual',
+            operation: 'unassign',
+            success: true
+          }
+        });
+        
+        dispatch(logSecurityEvent({
+          action: 'TEMPLATE_UNASSIGNED',
+          details: auditDetails,
+          severity: 'LOW',
+          category: 'DATA',
+          resourceType: 'TEMPLATE_ASSIGNMENT',
+          resourceId: providerId,
+          metadata: {
+            providerId: providerId,
+            providerName: provider?.name,
+            assignmentType: 'individual',
+            operation: 'unassign',
+            success: true
+          },
+        }));
+      } catch (auditError) {
+        console.error('Failed to log template unassignment:', auditError);
+      }
     }
   };
 
@@ -454,12 +532,90 @@ export default function ContractGenerator() {
         }
       }
       
+      // Log bulk template assignment operation
+      try {
+        const auditDetails = JSON.stringify({
+          action: 'BULK_TEMPLATE_ASSIGNMENT',
+          templateId: templateId,
+          templateName: template?.name,
+          providerCount: filteredIds.length,
+          providerIds: filteredIds,
+          assignmentType: 'filtered',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            templateId: templateId,
+            templateName: template?.name,
+            providerCount: filteredIds.length,
+            providerIds: filteredIds,
+            assignmentType: 'filtered',
+            operation: 'bulk_assignment',
+            success: true
+          }
+        });
+        
+        await dispatch(logSecurityEvent({
+          action: 'BULK_TEMPLATE_ASSIGNMENT',
+          details: auditDetails,
+          severity: 'MEDIUM',
+          category: 'DATA',
+          resourceType: 'TEMPLATE_ASSIGNMENT',
+          resourceId: templateId,
+          metadata: {
+            templateId: templateId,
+            templateName: template?.name,
+            providerCount: filteredIds.length,
+            providerIds: filteredIds,
+            assignmentType: 'filtered',
+            operation: 'bulk_assignment',
+            success: true
+          },
+        }));
+      } catch (auditError) {
+        console.error('Failed to log bulk template assignment:', auditError);
+      }
+      
       toast.success(`Assigned template "${template?.name}" to ${filteredIds.length} providers`);
       setSelectedTemplateForFiltered("");
       
     } catch (error) {
       console.error('Error during bulk assignment:', error);
       toast.error('Failed to assign templates. Please try again.');
+      
+      // Log the failure
+      try {
+        const auditDetails = JSON.stringify({
+          action: 'BULK_TEMPLATE_ASSIGNMENT_FAILED',
+          templateId: templateId,
+          providerCount: filteredIds.length,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            templateId: templateId,
+            providerCount: filteredIds.length,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            operation: 'bulk_assignment',
+            success: false
+          }
+        });
+        
+        await dispatch(logSecurityEvent({
+          action: 'BULK_TEMPLATE_ASSIGNMENT_FAILED',
+          details: auditDetails,
+          severity: 'HIGH',
+          category: 'DATA',
+          resourceType: 'TEMPLATE_ASSIGNMENT',
+          resourceId: templateId,
+          metadata: {
+            templateId: templateId,
+            providerCount: filteredIds.length,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            operation: 'bulk_assignment',
+            success: false
+          },
+        }));
+      } catch (auditError) {
+        console.error('Failed to log bulk template assignment failure:', auditError);
+      }
     } finally {
       setBulkAssignmentLoading(false);
       setBulkAssignmentProgress(null);
@@ -518,6 +674,7 @@ export default function ContractGenerator() {
   };
 
   const clearTemplateAssignments = () => {
+    const previousCount = Object.keys(templateAssignments).length;
     setTemplateAssignments({});
     // Also clear session storage
     setSessionTemplateAssignments({});
@@ -525,6 +682,39 @@ export default function ContractGenerator() {
     sessionRestoredRef.current = false;
     // Show success feedback
     toast.success('All template assignments cleared successfully!');
+    
+    // Log bulk clear operation
+    try {
+      const auditDetails = JSON.stringify({
+        action: 'BULK_TEMPLATE_CLEAR',
+        clearedCount: previousCount,
+        assignmentType: 'all',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          clearedCount: previousCount,
+          assignmentType: 'all',
+          operation: 'bulk_clear',
+          success: true
+        }
+      });
+      
+      dispatch(logSecurityEvent({
+        action: 'BULK_TEMPLATE_CLEAR',
+        details: auditDetails,
+        severity: 'MEDIUM',
+        category: 'DATA',
+        resourceType: 'TEMPLATE_ASSIGNMENT',
+        resourceId: 'bulk_clear',
+        metadata: {
+          clearedCount: previousCount,
+          assignmentType: 'all',
+          operation: 'bulk_clear',
+          success: true
+        },
+      }));
+    } catch (auditError) {
+      console.error('Failed to log bulk template clear:', auditError);
+    }
   };
 
   // Smart template assignment based on provider characteristics
@@ -978,6 +1168,48 @@ b, strong { font-weight: bold !important; }
     
     setIsBulkGenerating(false);
     await hydrateGeneratedContracts();
+    
+    // Log bulk generation operation
+    try {
+      const auditDetails = JSON.stringify({
+        action: 'BULK_CONTRACT_GENERATION',
+        providerCount: selectedProviders.length,
+        successfulCount: successful.length,
+        skippedCount: skipped.length,
+        successful: successful,
+        skipped: skipped,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          providerCount: selectedProviders.length,
+          successfulCount: successful.length,
+          skippedCount: skipped.length,
+          successful: successful,
+          skipped: skipped,
+          operation: 'bulk_generation',
+          success: true
+        }
+      });
+      
+      await dispatch(logSecurityEvent({
+        action: 'BULK_CONTRACT_GENERATION',
+        details: auditDetails,
+        severity: 'MEDIUM',
+        category: 'DATA',
+        resourceType: 'CONTRACT_GENERATION',
+        resourceId: 'bulk',
+        metadata: {
+          providerCount: selectedProviders.length,
+          successfulCount: successful.length,
+          skippedCount: skipped.length,
+          successful: successful,
+          skipped: skipped,
+          operation: 'bulk_generation',
+          success: true
+        },
+      }));
+    } catch (auditError) {
+      console.error('Failed to log bulk generation:', auditError);
+    }
     
     // Set results and show modal
     console.log('Bulk generation completed:', { successful, skipped });
