@@ -208,7 +208,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
       group: 'setup'
     },
     {
-      title: 'Dynamic Blocks',
+      title: 'Advanced Templates',
       path: '/dynamic-blocks',
       group: 'setup'
     },
@@ -225,7 +225,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
     {
       title: 'Clauses',
       path: '/clauses',
-      group: 'content'
+      group: 'setup'
     },
     {
       title: 'Generate',
@@ -245,7 +245,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
     return acc;
   }, {} as Record<string, typeof navItems>);
 
-  const groupOrder = ['setup', 'content', 'action', 'review'];
+  const groupOrder = ['setup', 'action', 'review'];
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-200">

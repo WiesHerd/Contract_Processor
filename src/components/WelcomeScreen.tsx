@@ -18,7 +18,7 @@ const mainFeatures = [
     stats: '12 active'
   },
   {
-    title: 'Dynamic Blocks',
+    title: 'Advanced Templates',
     description: 'Create intelligent conditional content with advanced logic',
     icon: <Zap className="w-6 h-6" />,
     path: '/dynamic-blocks',
