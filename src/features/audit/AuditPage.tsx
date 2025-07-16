@@ -173,7 +173,9 @@ export default function AuditPage() {
       'BULK_TEMPLATE_ASSIGNMENT',
       'BULK_TEMPLATE_ASSIGNMENT_FAILED',
       'BULK_TEMPLATE_CLEAR',
-      'FMV_OVERRIDE'
+      'FMV_OVERRIDE',
+      'DYNAMIC_BLOCK_DELETED',
+      'BULK_DYNAMIC_BLOCKS_DELETED'
     ];
     if (!relevantActions.includes(log.action)) return false;
     
@@ -346,7 +348,9 @@ export default function AuditPage() {
         'BULK_TEMPLATE_ASSIGNMENT': 'Bulk Assignment',
         'BULK_TEMPLATE_ASSIGNMENT_FAILED': 'Bulk Assignment Failed',
         'BULK_TEMPLATE_CLEAR': 'Bulk Clear',
-        'FMV_OVERRIDE': 'FMV Override'
+        'FMV_OVERRIDE': 'FMV Override',
+        'DYNAMIC_BLOCK_DELETED': 'Dynamic Block Deleted',
+        'BULK_DYNAMIC_BLOCKS_DELETED': 'Bulk Dynamic Blocks Deleted'
       };
       const label = actionLabels[params.value] || params.value;
       return (
