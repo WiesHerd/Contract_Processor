@@ -59,17 +59,19 @@ export const fetchClausesIfNeeded = createAsyncThunk(
     const now = new Date().getTime();
     const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
     
-    // Fetch if:
-    // 1. There are no clauses loaded
-    // 2. The data is stale (older than 5 minutes)
+    // Always fetch if no clauses loaded or cache is stale
     if (clauses.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS)) {
       try {
+        console.log('Fetching clauses from DynamoDB...');
         const result = await awsClauses.list();
+        
         if (result?.items && result.items.length > 0) {
+          console.log(`Found ${result.items.length} clauses in DynamoDB`);
           // Transform API clauses to internal format
-          return result.items
+          const transformedClauses = result.items
             .filter(isValidAPIClause)
             .map(transformAPIClauseToClause);
+          return transformedClauses;
         } else {
           // If DynamoDB is empty, use the static clauses as fallback
           console.log('No clauses found in DynamoDB, using static fallback');
@@ -83,6 +85,7 @@ export const fetchClausesIfNeeded = createAsyncThunk(
     }
     
     // Return existing data if cache is still valid
+    console.log('Using cached clauses');
     return clauses;
   }
 );

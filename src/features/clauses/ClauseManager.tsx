@@ -7,7 +7,7 @@ import { CLAUSES as SHARED_CLAUSES } from '@/features/clauses/clausesData';
 import { awsClauses } from '@/utils/awsServices';
 import { Clause } from '@/types/clause';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { fetchClausesIfNeeded, addClause, updateClause, deleteClause, loadStaticClauses } from '@/store/slices/clauseSlice';
+import { fetchClausesIfNeeded, addClause, updateClause, deleteClause } from '@/store/slices/clauseSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -69,29 +69,8 @@ export default function ClauseManager() {
     dispatch(fetchClausesIfNeeded());
   }, [dispatch]);
 
-  // Force load static clauses immediately if Redux state is empty
-  useEffect(() => {
-    if (clauses.length === 0 && !loading) {
-      console.log('No clauses in Redux state, forcing load of static clauses');
-      dispatch(loadStaticClauses());
-    }
-  }, [clauses.length, loading, dispatch]);
-
-  // Force load static clauses if Redux state is empty after a delay
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (clauses.length === 0 && !loading) {
-        console.log('Forcing load of static clauses after timeout');
-        dispatch(loadStaticClauses());
-      }
-    }, 2000); // Wait 2 seconds for API call to complete
-
-    return () => clearTimeout(timer);
-  }, [clauses.length, loading, dispatch]);
-
-  // Fallback to static clauses if Redux state is empty and not loading
-  const displayClauses = clauses.length > 0 ? clauses : (!loading ? SHARED_CLAUSES : []);
-
+  // Use clauses from Redux state, with fallback to static clauses
+  const displayClauses = clauses.length > 0 ? clauses : SHARED_CLAUSES;
 
 
   // Filter clauses
