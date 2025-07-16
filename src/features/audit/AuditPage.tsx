@@ -127,16 +127,39 @@ export default function AuditPage() {
   // Get unique values for filters
   const uniqueTemplates = Array.from(new Set(logs.map(log => {
     const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
-    return parsed.templateId;
+    const meta = parsed.metadata || {};
+    // Check both parsed and metadata for templateId
+    return parsed.templateId || meta.templateId;
   }).filter(Boolean)));
 
   const uniqueYears = Array.from(new Set(logs.map(log => {
     const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
-    return parsed.contractYear;
+    const meta = parsed.metadata || {};
+    // Check both parsed and metadata for contractYear
+    return parsed.contractYear || meta.contractYear;
   }).filter(Boolean)));
 
   // Get unique users for filter
   const uniqueUsers = Array.from(new Set(logs.map(log => typeof log.user === 'string' ? log.user : '').filter((u): u is string => !!u)));
+
+  // Get unique statuses for filter
+  const uniqueStatuses = Array.from(new Set(logs.map(log => {
+    const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
+    const meta = parsed.metadata || {};
+    // Check both parsed and metadata for status, and also derive from action type
+    let status = parsed.status || meta.status;
+    if (!status) {
+      // Derive status from action type
+      if (log.action.includes('FAILED')) {
+        status = 'failed';
+      } else if (log.action.includes('GENERATION') || log.action.includes('ASSIGNED') || log.action.includes('CREATED')) {
+        status = 'success';
+      } else {
+        status = 'unknown';
+      }
+    }
+    return status;
+  }).filter(Boolean)));
 
   // Filter logs based on search and filters
   const filteredLogs = logs.filter((log) => {
@@ -153,45 +176,103 @@ export default function AuditPage() {
       'FMV_OVERRIDE'
     ];
     if (!relevantActions.includes(log.action)) return false;
+    
     const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
-    const templateInfo = getTemplateInfo(parsed.templateId || '');
-    const providerName = getProviderName(parsed.providerId || '', parsed);
-    const contractYear = parsed.contractYear || '';
-    const status = parsed.status || '';
-    // Search filter
+    const meta = parsed.metadata || {};
+    
+    // Extract data from both parsed and metadata
+    const templateId = parsed.templateId || meta.templateId;
+    const providerId = parsed.providerId || meta.providerId;
+    const providerName = meta.providerName || getProviderName(providerId || '', parsed);
+    const contractYear = parsed.contractYear || meta.contractYear || '';
+    const templateInfo = getTemplateInfo(templateId || '');
+    
+    // Derive status from action type if not explicitly set
+    let status = parsed.status || meta.status;
+    if (!status) {
+      if (log.action.includes('FAILED')) {
+        status = 'failed';
+      } else if (log.action.includes('GENERATION') || log.action.includes('ASSIGNED') || log.action.includes('CREATED')) {
+        status = 'success';
+      } else {
+        status = 'unknown';
+      }
+    }
+    
+    // Search filter - enhanced to search more fields
     const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch = searchTerm === '' || 
       providerName.toLowerCase().includes(searchLower) ||
       templateInfo.name.toLowerCase().includes(searchLower) ||
       log.user?.toLowerCase().includes(searchLower) ||
-      contractYear.includes(searchLower);
+      contractYear.includes(searchLower) ||
+      log.action.toLowerCase().includes(searchLower) ||
+      status.toLowerCase().includes(searchLower);
+    
     // Status filter
     const matchesStatus = statusFilter === 'all' || status === statusFilter;
+    
     // Template filter
-    const matchesTemplate = templateFilter === 'all' || parsed.templateId === templateFilter;
+    const matchesTemplate = templateFilter === 'all' || templateId === templateFilter;
+    
     // Year filter
     const matchesYear = yearFilter === 'all' || contractYear === yearFilter;
+    
     // User filter
     const matchesUser = userFilter === 'all' || log.user === userFilter;
+    
     return matchesSearch && matchesStatus && matchesTemplate && matchesYear && matchesUser;
   });
+
+  // Debug logging to help identify filter issues
+  useEffect(() => {
+    if (logs.length > 0) {
+      console.log('Audit logs loaded:', logs.length, 'total logs');
+      console.log('Unique templates found:', uniqueTemplates);
+      console.log('Unique years found:', uniqueYears);
+      console.log('Unique users found:', uniqueUsers);
+      console.log('Unique statuses found:', uniqueStatuses);
+      console.log('Filtered logs:', filteredLogs.length, 'of', logs.length);
+    }
+  }, [logs, uniqueTemplates, uniqueYears, uniqueUsers, uniqueStatuses, filteredLogs.length]);
 
   // Prepare row data for AG Grid
   const agGridRows = filteredLogs.map((log) => {
     const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
     const meta = parsed.metadata || {};
+    
+    // Extract data from both parsed and metadata
+    const templateId = parsed.templateId || meta.templateId;
+    const providerId = parsed.providerId || meta.providerId;
+    const contractYear = parsed.contractYear || meta.contractYear || '';
+    const outputType = meta.outputType || parsed.outputType || 'DOCX';
+    const fileUrl = meta.fileUrl || parsed.fileUrl || '';
+    
+    // Derive status from action type if not explicitly set
+    let status = meta.status || parsed.status;
+    if (!status) {
+      if (log.action.includes('FAILED')) {
+        status = 'failed';
+      } else if (log.action.includes('GENERATION') || log.action.includes('ASSIGNED') || log.action.includes('CREATED')) {
+        status = 'success';
+      } else {
+        status = 'unknown';
+      }
+    }
+    
     return {
       id: log.id,
       timestamp: log.timestamp,
       user: log.user || '-',
-      providerName: meta.providerName || getProviderName(meta.providerId || parsed.providerId || '', meta),
-      templateName: getTemplateInfo(meta.templateId || parsed.templateId || '').name,
-      templateVersion: getTemplateInfo(meta.templateId || parsed.templateId || '').version,
-      contractYear: meta.contractYear || parsed.contractYear || '',
-      status: (meta.status || parsed.status || ''),
-      outputType: meta.outputType || parsed.outputType || 'DOCX',
+      providerName: meta.providerName || getProviderName(providerId || '', meta),
+      templateName: getTemplateInfo(templateId || '').name,
+      templateVersion: getTemplateInfo(templateId || '').version,
+      contractYear: contractYear,
+      status: status,
+      outputType: outputType,
       action: log.action || '-',
-      fileUrl: meta.fileUrl || parsed.fileUrl || '',
+      fileUrl: fileUrl,
+      details: log.details, // Keep original details for download functionality
     };
   });
 
@@ -288,7 +369,7 @@ export default function AuditPage() {
                       window.open(params.value, '_blank', 'noopener,noreferrer');
                     } else {
                       // If it's just a filename, try to regenerate the download URL
-                      const parsed = params.data.id ? (() => { 
+                      const parsed = params.data.details ? (() => { 
                         try { 
                           return JSON.parse(params.data.details || '{}'); 
                         } catch { 
@@ -386,8 +467,11 @@ export default function AuditPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="success">Success</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
+                {uniqueStatuses.map(status => (
+                  <SelectItem key={status} value={status}>
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
