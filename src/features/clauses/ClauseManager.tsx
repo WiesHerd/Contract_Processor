@@ -11,20 +11,49 @@ import { fetchClausesIfNeeded, addClause, updateClause, deleteClause } from '@/s
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Info } from 'lucide-react';
+import { Info, Pencil, Trash2, ChevronDown, ChevronRight, Eye, Copy, Star, FileText, Calendar, Tag, ChevronUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Pencil, Trash2 } from 'lucide-react';
-import { AgGridReact } from 'ag-grid-react';
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-alpine.css';
-import { ColDef } from 'ag-grid-community';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { logSecurityEvent } from '@/store/slices/auditSlice';
 
 const clauseCategories: Clause['category'][] = ['compensation', 'benefits', 'termination', 'restrictive', 'other'];
 
 function generateId() {
   return Math.random().toString(36).substr(2, 9);
 }
+
+// Helper function to highlight placeholders in text
+const highlightPlaceholders = (text: string) => {
+  const placeholderRegex = /\{\{([^}]+)\}\}/g;
+  const parts = text.split(placeholderRegex);
+  
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      // This is a placeholder
+      return (
+        <span key={index} className="inline-block bg-blue-100 text-blue-800 px-1 rounded font-mono text-sm">
+          {`{{${part}}}`}
+        </span>
+      );
+    }
+    return part;
+  });
+};
+
+// Helper function to count placeholders
+const countPlaceholders = (text: string) => {
+  const matches = text.match(/\{\{([^}]+)\}\}/g);
+  return matches ? matches.length : 0;
+};
+
+// Helper function to truncate text
+const truncateText = (text: string, maxLength: number = 150) => {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+};
 
 export default function ClauseManager() {
   const dispatch: AppDispatch = useDispatch();
@@ -35,8 +64,10 @@ export default function ClauseManager() {
   const [errors, setErrors] = useState<{ title?: string; content?: string }>({});
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
   const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(12);
 
   // Load clauses with caching
   useEffect(() => {
@@ -46,12 +77,16 @@ export default function ClauseManager() {
   // Fallback to static clauses if Redux state is empty and not loading
   const displayClauses = clauses.length > 0 ? clauses : (!loading ? SHARED_CLAUSES : []);
 
-  // Filter and paginate clauses
-  const filteredClauses = displayClauses.filter(clause =>
-    clause.title.toLowerCase().includes(search.toLowerCase()) ||
-    clause.content.toLowerCase().includes(search.toLowerCase()) ||
-    clause.category.toLowerCase().includes(search.toLowerCase())
-  );
+  // Filter clauses
+  const filteredClauses = displayClauses.filter(clause => {
+    const matchesSearch = clause.title.toLowerCase().includes(search.toLowerCase()) ||
+                         clause.content.toLowerCase().includes(search.toLowerCase()) ||
+                         clause.category.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || clause.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  // Paginate clauses
   const paginatedClauses = filteredClauses.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
   const totalPages = Math.ceil(filteredClauses.length / pageSize);
 
@@ -70,125 +105,104 @@ export default function ClauseManager() {
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this clause?')) {
       try {
-        await awsClauses.delete({ id });
-        dispatch(deleteClause(id));
-        toast.success('Clause deleted successfully!');
-      } catch (err) {
-        console.error('Error deleting clause:', err);
-        toast.error('Failed to delete clause. Please try again.');
+        await dispatch(deleteClause(id));
+        toast.success('Clause deleted successfully');
+        
+        // Log the deletion
+        dispatch(logSecurityEvent({
+          action: 'clause_deleted',
+          details: `Deleted clause: ${clauses.find(c => c.id === id)?.title || 'Unknown'}`,
+          category: 'DATA',
+          resourceType: 'clause',
+          resourceId: id
+        }));
+      } catch (error) {
+        toast.error('Failed to delete clause');
       }
     }
   };
 
   const handleSave = async () => {
-    const newErrors: { title?: string; content?: string } = {};
-    if (!form.title.trim()) newErrors.title = 'Title is required.';
-    if (!form.content.trim()) newErrors.content = 'Content is required.';
-    setErrors(newErrors);
-    if (Object.keys(newErrors).length > 0) return;
+    setErrors({});
+    
+    if (!form.title.trim()) {
+      setErrors(prev => ({ ...prev, title: 'Title is required' }));
+      return;
+    }
+    
+    if (!form.content.trim()) {
+      setErrors(prev => ({ ...prev, content: 'Content is required' }));
+      return;
+    }
+
     setSaving(true);
-    const now = new Date().toISOString();
     try {
+      const clauseData: Clause = {
+        id: editClause?.id || generateId(),
+        title: form.title.trim(),
+        content: form.content.trim(),
+        type: 'custom',
+        category: form.category,
+        tags: editClause?.tags || [],
+        applicableProviderTypes: editClause?.applicableProviderTypes || ['physician'],
+        applicableCompensationModels: editClause?.applicableCompensationModels || ['base'],
+        conditions: editClause?.conditions || [],
+        createdAt: editClause?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: editClause?.version || '1.0.0',
+        metadata: editClause?.metadata || {}
+      };
+
       if (editClause) {
-        // Update existing clause in DynamoDB
-        const updateInput = {
-          id: editClause.id,
-          text: form.content,
-          tags: editClause.tags,
-          condition: editClause.conditions?.[0]?.value || undefined,
-        };
-        const updatedClause = await awsClauses.update(updateInput);
-        if (updatedClause) {
-          // Transform back to internal format and update Redux
-          const transformedClause: Clause = {
-            id: updatedClause.id,
-            title: form.title,
-            content: updatedClause.text,
-            type: 'custom',
-            category: form.category,
-            tags: updatedClause.tags?.filter((tag): tag is string => tag !== null) || [],
-            applicableProviderTypes: ['physician'],
-            applicableCompensationModels: ['base'],
-            createdAt: updatedClause.createdAt,
-            updatedAt: updatedClause.updatedAt,
-            version: '1.0.0',
-          };
-          dispatch(updateClause(transformedClause));
-          toast.success('Clause updated successfully!');
-        }
+        await dispatch(updateClause(clauseData));
+        toast.success('Clause updated successfully');
+        
+        // Log the update
+        dispatch(logSecurityEvent({
+          action: 'clause_updated',
+          details: `Updated clause: ${clauseData.title}`,
+          category: 'DATA',
+          resourceType: 'clause',
+          resourceId: clauseData.id
+        }));
       } else {
-        // Create new clause in DynamoDB
-        const createInput = {
-          text: form.content,
-          tags: [],
-          condition: undefined,
-        };
-        const createdClause = await awsClauses.create(createInput);
-        if (createdClause) {
-          // Transform back to internal format and add to Redux
-          const transformedClause: Clause = {
-            id: createdClause.id,
-            title: form.title,
-            content: createdClause.text,
-            type: 'custom',
-            category: form.category,
-            tags: createdClause.tags?.filter((tag): tag is string => tag !== null) || [],
-            applicableProviderTypes: ['physician'],
-            applicableCompensationModels: ['base'],
-            createdAt: createdClause.createdAt,
-            updatedAt: createdClause.updatedAt,
-            version: '1.0.0',
-          };
-          dispatch(addClause(transformedClause));
-          toast.success('Clause added successfully!');
-        }
+        await dispatch(addClause(clauseData));
+        toast.success('Clause added successfully');
+        
+        // Log the creation
+        dispatch(logSecurityEvent({
+          action: 'clause_created',
+          details: `Created clause: ${clauseData.title}`,
+          category: 'DATA',
+          resourceType: 'clause',
+          resourceId: clauseData.id
+        }));
       }
+      
       setModalOpen(false);
-    } catch (err) {
-      console.error('Error saving clause:', err);
-      toast.error('Failed to save clause. Please try again.');
+    } catch (error) {
+      toast.error(editClause ? 'Failed to update clause' : 'Failed to add clause');
     } finally {
       setSaving(false);
     }
   };
 
-  const renderActions = (clause: Clause) => (
-    <>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button size="icon" variant="ghost" className="mr-1" aria-label="Edit Clause" onClick={() => openEditModal(clause)}>
-              <Pencil className="w-4 h-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Edit</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button size="icon" variant="ghost" aria-label="Delete Clause" onClick={() => handleDelete(clause.id)}>
-              <Trash2 className="w-4 h-4 text-red-500" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Delete</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </>
-  );
+  const toggleExpanded = (clauseId: string) => {
+    setExpandedClauses(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(clauseId)) {
+        newSet.delete(clauseId);
+      } else {
+        newSet.add(clauseId);
+      }
+      return newSet;
+    });
+  };
 
-  const clauseColumnDefs: ColDef<any, any>[] = [
-    { headerName: 'Title', field: 'title', minWidth: 180, cellRenderer: (params: any) => (
-      <span className="font-medium text-gray-900 max-w-xs truncate" title={params.value}>{params.value}</span>
-    ), sortable: true },
-    { headerName: 'Category', field: 'category', minWidth: 120, cellRenderer: (params: any) => (
-      <span className="badge badge-outline capitalize">{params.value}</span>
-    ), sortable: true },
-    { headerName: 'Last Updated', field: 'updatedAt', minWidth: 140, cellRenderer: (params: any) => (
-      <span className="text-gray-700">{params.value ? new Date(params.value).toLocaleDateString() : '-'}</span>
-    ), sortable: true },
-    { headerName: 'Actions', field: 'actions', minWidth: 120, cellRenderer: (params: any) => renderActions(params.data) },
-  ];
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Clause content copied to clipboard');
+  };
 
   if (loading) {
     return (
@@ -240,28 +254,241 @@ export default function ClauseManager() {
           </div>
           <hr className="my-3 border-gray-100" />
         </div>
-        {/* Main Card: Filter, pagination, table */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-2">
-            <div className="flex flex-col">
-              <span className="mb-1 font-medium text-gray-700">Filter Clauses</span>
+
+        {/* Filters and Search */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 mb-4">
+          <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Search Clauses</label>
               <Input
-                placeholder="Search clauses by title, content, or category..."
+                placeholder="Search by title, content, or category..."
                 value={search}
                 onChange={e => {
                   setSearch(e.target.value);
                   setPageIndex(0);
                 }}
-                className="w-64"
+                className="w-full"
               />
             </div>
-            {/* Pagination Controls */}
-            <div className="flex gap-2 items-center mt-2 sm:mt-0">
-              <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
-              <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
-              <span className="text-sm">Page {pageIndex + 1} of {totalPages}</span>
-              <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(pageIndex + 1)}>&rsaquo;</Button>
-              <Button variant="outline" size="sm" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex(totalPages - 1)}>&raquo;</Button>
+            <div className="flex-shrink-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+              <Select value={selectedCategory} onValueChange={(value) => {
+                setSelectedCategory(value);
+                setPageIndex(0);
+              }}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {clauseCategories.map(cat => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Clauses Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          {paginatedClauses.map((clause) => {
+            const isExpanded = expandedClauses.has(clause.id);
+            const placeholderCount = countPlaceholders(clause.content);
+            const truncatedContent = truncateText(clause.content);
+            
+            return (
+              <Card key={clause.id} className="hover:shadow-md transition-shadow duration-200">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base font-semibold text-gray-900 truncate" title={clause.title}>
+                        {clause.title}
+                      </CardTitle>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline" className="text-xs capitalize">
+                          {clause.category}
+                        </Badge>
+                        {placeholderCount > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {placeholderCount} placeholder{placeholderCount !== 1 ? 's' : ''}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 ml-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyToClipboard(clause.content)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Copy content</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                </CardHeader>
+                
+                <CardContent className="pt-0">
+                  <div className="space-y-3">
+                    {/* Content Preview */}
+                    <div className="text-sm text-gray-600 leading-relaxed">
+                      {isExpanded ? (
+                        <div className="space-y-2">
+                          {highlightPlaceholders(clause.content)}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {highlightPlaceholders(truncatedContent)}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Expand/Collapse Button */}
+                    {clause.content.length > 150 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleExpanded(clause.id)}
+                        className="h-8 px-2 text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <ChevronUp className="h-3 w-3 mr-1" />
+                            Show Less
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-3 w-3 mr-1" />
+                            Show More
+                          </>
+                        )}
+                      </Button>
+                    )}
+
+                    {/* Metadata */}
+                    <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
+                      <div className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        <span>
+                          {clause.updatedAt ? new Date(clause.updatedAt).toLocaleDateString() : 'Unknown'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        <span>{clause.content.length} chars</span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditModal(clause)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Edit clause</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(clause.id)}
+                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete clause</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Empty State */}
+        {paginatedClauses.length === 0 && (
+          <Card className="text-center py-12">
+            <CardContent>
+              <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No clauses found</h3>
+              <p className="text-gray-500 mb-4">
+                {search || selectedCategory !== 'all' 
+                  ? 'Try adjusting your search or filter criteria.'
+                  : 'Get started by creating your first clause.'
+                }
+              </p>
+              {!search && selectedCategory === 'all' && (
+                <Button onClick={openAddModal}>Create First Clause</Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+            <div className="text-sm text-gray-700">
+              Showing {pageIndex * pageSize + 1} to {Math.min((pageIndex + 1) * pageSize, filteredClauses.length)} of {filteredClauses.length} clauses
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={pageIndex === 0} 
+                onClick={() => setPageIndex(0)}
+              >
+                &laquo;
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={pageIndex === 0} 
+                onClick={() => setPageIndex(pageIndex - 1)}
+              >
+                &lsaquo;
+              </Button>
+              <span className="text-sm px-3">Page {pageIndex + 1} of {totalPages}</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={pageIndex >= totalPages - 1} 
+                onClick={() => setPageIndex(pageIndex + 1)}
+              >
+                &rsaquo;
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={pageIndex >= totalPages - 1} 
+                onClick={() => setPageIndex(totalPages - 1)}
+              >
+                &raquo;
+              </Button>
               <select
                 className="ml-2 border rounded px-2 py-1 text-sm"
                 value={pageSize}
@@ -270,100 +497,86 @@ export default function ClauseManager() {
                   setPageIndex(0);
                 }}
               >
-                {[10, 20, 50, 100].map(size => (
-                  <option key={size} value={size}>{size} / page</option>
+                {[12, 24, 48, 96].map(size => (
+                  <option key={size} value={size}>{size} per page</option>
                 ))}
               </select>
             </div>
           </div>
-          {/* Clause Table with AG Grid */}
-          <div className="ag-theme-alpine w-full" style={{ fontSize: '14px', fontFamily: 'var(--font-sans, sans-serif)', fontWeight: 400, color: '#111827' }}>
-            <AgGridReact
-              rowData={filteredClauses}
-              columnDefs={clauseColumnDefs}
-              domLayout="autoHeight"
-              suppressRowClickSelection={true}
-              rowSelection="single"
-              pagination={false}
-              enableCellTextSelection={true}
-              headerHeight={40}
-              rowHeight={36}
-              suppressDragLeaveHidesColumns={true}
-              suppressScrollOnNewData={true}
-              suppressColumnVirtualisation={false}
-              suppressRowVirtualisation={false}
-              defaultColDef={{ tooltipValueGetter: params => params.value, resizable: true, sortable: true, filter: true, cellStyle: { fontSize: '14px', fontFamily: 'var(--font-sans, sans-serif)', fontWeight: 400, color: '#111827', display: 'flex', alignItems: 'center', height: '100%' } }}
-              enableBrowserTooltips={true}
-              enableRangeSelection={true}
-              suppressMovableColumns={false}
-            />
-          </div>
-        </div>
-        {/* Modal - Sectioned, Modern, Professional */}
-        {modalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-            <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-lg">
-              <h2 className="text-xl font-bold mb-4">{editClause ? 'Edit Clause' : 'Add Clause'}</h2>
-              <div className="space-y-6">
-                {/* Basic Info Section */}
+        )}
+
+        {/* Modal */}
+        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editClause ? 'Edit Clause' : 'Add Clause'}</DialogTitle>
+              <DialogDescription>
+                {editClause ? 'Update the clause details below.' : 'Create a new clause for use in contract templates.'}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              {/* Basic Info Section */}
+              <div className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">Basic Info</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Title</label>
-                      <input
-                        className={`w-full border rounded px-3 py-2 ${errors.title ? 'border-red-500' : ''}`}
-                        value={form.title}
-                        onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                        disabled={saving}
-                        placeholder="Enter clause title"
-                      />
-                      {errors.title && <p className="text-xs text-red-500 mt-1">{errors.title}</p>}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Category</label>
-                      <Select
-                        value={form.category}
-                        onValueChange={(value: Clause['category']) => setForm(f => ({ ...f, category: value }))}
-                        disabled={saving}
-                      >
-                        <SelectTrigger className="w-full border rounded px-3 py-2">
-                          <SelectValue placeholder="Select a category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {clauseCategories.map(cat => (
-                            <SelectItem key={cat} value={cat}>
-                              {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  <label className="block text-sm font-medium mb-2">Title</label>
+                  <Input
+                    value={form.title}
+                    onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                    disabled={saving}
+                    placeholder="Enter clause title"
+                    className={errors.title ? 'border-red-500' : ''}
+                  />
+                  {errors.title && <p className="text-xs text-red-500 mt-1">{errors.title}</p>}
                 </div>
-                {/* Clause Content Section */}
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">Clause Content</h3>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Content</label>
-                    <textarea
-                      className={`w-full border rounded px-3 py-2 min-h-[100px] ${errors.content ? 'border-red-500' : ''}`}
-                      value={form.content}
-                      onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
-                      disabled={saving}
-                      placeholder="Enter clause content"
-                    />
-                    {errors.content && <p className="text-xs text-red-500 mt-1">{errors.content}</p>}
-                  </div>
+                  <label className="block text-sm font-medium mb-2">Category</label>
+                  <Select
+                    value={form.category}
+                    onValueChange={(value: Clause['category']) => setForm(f => ({ ...f, category: value }))}
+                    disabled={saving}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clauseCategories.map(cat => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-              <div className="mt-6 flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setModalOpen(false)} disabled={saving}>Cancel</Button>
-                <Button variant="default" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : (editClause ? 'Save Changes' : 'Add Clause')}</Button>
+              
+              {/* Clause Content Section */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Content</label>
+                <Textarea
+                  value={form.content}
+                  onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+                  disabled={saving}
+                  placeholder="Enter clause content. Use {{placeholders}} for dynamic fields."
+                  className={`min-h-[200px] ${errors.content ? 'border-red-500' : ''}`}
+                />
+                {errors.content && <p className="text-xs text-red-500 mt-1">{errors.content}</p>}
+                <div className="mt-2 text-xs text-gray-500">
+                  {countPlaceholders(form.content)} placeholder{countPlaceholders(form.content) !== 1 ? 's' : ''} detected
+                </div>
               </div>
             </div>
-          </div>
-        )}
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setModalOpen(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : (editClause ? 'Save Changes' : 'Add Clause')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
