@@ -19,7 +19,7 @@ const mainFeatures = [
     badge: 'Core'
   },
   {
-    title: 'Advanced Templates',
+    title: 'Dynamic Blocks',
     description: 'Create intelligent conditional content with advanced logic',
     icon: <Zap className="w-6 h-6" />,
     path: '/dynamic-blocks',

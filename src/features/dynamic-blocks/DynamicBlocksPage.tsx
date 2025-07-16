@@ -309,7 +309,7 @@ const DynamicBlocksPage: React.FC = () => {
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-gray-800">Advanced Templates</h1>
+              <h1 className="text-lg font-bold text-gray-800">Dynamic Blocks</h1>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -318,7 +318,7 @@ const DynamicBlocksPage: React.FC = () => {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="right" align="start">
-                    Create advanced conditional content blocks for contract templates
+                    Create conditional content blocks for dynamic contract templates
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Avatar from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, Settings } from 'lucide-react';
+import { LogOut, User, Settings, BarChart3 } from 'lucide-react';
 import ProfilePage from './features/auth/ProfilePage';
 import PublicRoute from './components/PublicRoute';
 import { AuthLayout } from './components/AuthLayout';
@@ -182,6 +182,10 @@ function UserNav({ onSignOut }: { onSignOut: () => void }) {
             <User className="mr-2 h-4 w-4" />
             <span>Profile</span>
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/audit')}>
+            <BarChart3 className="mr-2 h-4 w-4" />
+            <span>Activity Log</span>
+          </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onSignOut}>
@@ -208,7 +212,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
       group: 'setup'
     },
     {
-      title: 'Advanced Templates',
+      title: 'Dynamic Blocks',
       path: '/dynamic-blocks',
       group: 'setup'
     },
@@ -231,11 +235,6 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
       title: 'Generate',
       path: '/generate',
       group: 'action'
-    },
-    {
-      title: 'Activity Log',
-      path: '/audit',
-      group: 'review'
     }
   ];
 
@@ -245,7 +244,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
     return acc;
   }, {} as Record<string, typeof navItems>);
 
-  const groupOrder = ['setup', 'action', 'review'];
+  const groupOrder = ['setup', 'action'];
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-200">

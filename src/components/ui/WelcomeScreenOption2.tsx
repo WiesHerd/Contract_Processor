@@ -19,7 +19,7 @@ const workflowSteps = [
   },
   {
     step: '02',
-    title: 'Advanced Templates',
+    title: 'Dynamic Blocks',
     description: 'Create conditional logic blocks',
     icon: <Zap className="w-5 h-5" />,
     path: '/dynamic-blocks',

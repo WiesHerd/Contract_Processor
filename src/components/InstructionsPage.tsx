@@ -32,7 +32,7 @@ const InstructionsPage: React.FC = () => {
     },
     {
       step: 2,
-      title: 'Advanced Templates',
+      title: 'Dynamic Blocks',
       description: 'Create intelligent conditional content with advanced logic',
       icon: <Zap className="w-6 h-6" />,
       path: '/dynamic-blocks',
@@ -44,7 +44,7 @@ const InstructionsPage: React.FC = () => {
         'Advanced logic for different provider types and models'
       ],
       tips: [
-        'Use advanced templates for complex compensation structures',
+        'Use dynamic blocks for complex compensation structures',
         'Create reusable blocks for common contract sections',
         'Test blocks with various provider data scenarios'
       ]
@@ -136,7 +136,7 @@ const InstructionsPage: React.FC = () => {
       color: 'text-blue-600 bg-blue-50'
     },
     {
-      title: 'Create Advanced Templates',
+      title: 'Create Dynamic Blocks',
       description: 'Build intelligent content blocks',
       icon: <Zap className="w-5 h-5" />,
       path: '/dynamic-blocks',
