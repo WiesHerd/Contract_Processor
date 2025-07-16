@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Logo from './Logo';
 import { 
   FileText, Users, FilePlus2, ClipboardList, LogOut, Zap, 
-  ArrowUpRight, Moon, Sun, Grid3X3, Layers, Sparkles,
+  Moon, Sun, Grid3X3, Layers, Sparkles,
   BarChart3, Shield, Workflow, Command, Gauge
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,8 +15,7 @@ const mainFeatures = [
     icon: <FileText className="w-6 h-6" />,
     path: '/templates',
     gradient: 'from-blue-600 via-blue-500 to-cyan-500',
-    stats: '12 active',
-    badge: 'Core'
+    stats: '12 active'
   },
   {
     title: 'Dynamic Blocks',
@@ -24,8 +23,7 @@ const mainFeatures = [
     icon: <Zap className="w-6 h-6" />,
     path: '/dynamic-blocks',
     gradient: 'from-amber-600 via-amber-500 to-yellow-500',
-    stats: '8 blocks',
-    badge: 'New'
+    stats: '8 blocks'
   },
   {
     title: 'Providers',
@@ -33,8 +31,7 @@ const mainFeatures = [
     icon: <Users className="w-6 h-6" />,
     path: '/providers',
     gradient: 'from-emerald-600 via-emerald-500 to-green-500',
-    stats: '1,247 records',
-    badge: 'Core'
+    stats: '1,247 records'
   },
   {
     title: 'Generate',
@@ -42,8 +39,7 @@ const mainFeatures = [
     icon: <FilePlus2 className="w-6 h-6" />,
     path: '/generate',
     gradient: 'from-purple-600 via-purple-500 to-indigo-500',
-    stats: '3,456 generated',
-    badge: 'Core'
+    stats: '3,456 generated'
   }
 ];
 
@@ -163,16 +159,6 @@ export const WelcomeScreen = () => {
               <div className="flex items-start justify-between mb-6">
                 <div className={`p-3 rounded-xl bg-gradient-to-r ${feature.gradient} text-white`}>
                   {feature.icon}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    feature.badge === 'New' 
-                      ? 'bg-amber-100 text-amber-800' 
-                      : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {feature.badge}
-                  </span>
-                  <ArrowUpRight className={`w-5 h-5 ${isDark ? 'text-gray-600' : 'text-gray-400'} group-hover:text-blue-500 transition-colors`} />
                 </div>
               </div>
               
