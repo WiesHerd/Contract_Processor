@@ -11,15 +11,14 @@ import { fetchClausesIfNeeded, addClause, updateClause, deleteClause } from '@/s
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Info, Pencil, Trash2, ChevronDown, ChevronRight, Eye, Copy, Star, FileText, Calendar, Tag, ChevronUp } from 'lucide-react';
+import { Info, Pencil, Trash2, ChevronDown, ChevronUp, Copy, FileText, Calendar, Tag } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { logSecurityEvent } from '@/store/slices/auditSlice';
 
-const clauseCategories: Clause['category'][] = ['compensation', 'benefits', 'termination', 'restrictive', 'other'];
+const defaultCategories: Clause['category'][] = ['compensation', 'benefits', 'termination', 'restrictive', 'other'];
 
 function generateId() {
   return Math.random().toString(36).substr(2, 9);
@@ -49,12 +48,6 @@ const countPlaceholders = (text: string) => {
   return matches ? matches.length : 0;
 };
 
-// Helper function to truncate text
-const truncateText = (text: string, maxLength: number = 150) => {
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength) + '...';
-};
-
 export default function ClauseManager() {
   const dispatch: AppDispatch = useDispatch();
   const { clauses, loading, error } = useSelector((state: RootState) => state.clauses);
@@ -65,9 +58,15 @@ export default function ClauseManager() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(12);
+  const [pageSize, setPageSize] = useState(10);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
+
+  // Get all categories (default + custom)
+  const allCategories = [...defaultCategories, ...customCategories];
 
   // Load clauses with caching
   useEffect(() => {
@@ -187,8 +186,8 @@ export default function ClauseManager() {
     }
   };
 
-  const toggleExpanded = (clauseId: string) => {
-    setExpandedClauses(prev => {
+  const toggleRowExpansion = (clauseId: string) => {
+    setExpandedRows(prev => {
       const newSet = new Set(prev);
       if (newSet.has(clauseId)) {
         newSet.delete(clauseId);
@@ -202,6 +201,19 @@ export default function ClauseManager() {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Clause content copied to clipboard');
+  };
+
+  const addCustomCategory = () => {
+    if (newCategory.trim() && !allCategories.includes(newCategory.trim().toLowerCase())) {
+      setCustomCategories(prev => [...prev, newCategory.trim().toLowerCase()]);
+      setNewCategory('');
+      setShowAddCategory(false);
+      toast.success(`Category "${newCategory.trim()}" added successfully`);
+    } else if (allCategories.includes(newCategory.trim().toLowerCase())) {
+      toast.error('Category already exists');
+    } else {
+      toast.error('Please enter a valid category name');
+    }
   };
 
   if (loading) {
@@ -271,169 +283,205 @@ export default function ClauseManager() {
               />
             </div>
             <div className="flex-shrink-0">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-              <Select value={selectedCategory} onValueChange={(value) => {
-                setSelectedCategory(value);
-                setPageIndex(0);
-              }}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {clauseCategories.map(cat => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-end gap-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                  <Select value={selectedCategory} onValueChange={(value) => {
+                    setSelectedCategory(value);
+                    setPageIndex(0);
+                  }}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {allCategories.map(cat => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddCategory(true)}
+                  className="h-10 px-3"
+                >
+                  Add Category
+                </Button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Clauses Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {paginatedClauses.map((clause) => {
-            const isExpanded = expandedClauses.has(clause.id);
-            const placeholderCount = countPlaceholders(clause.content);
-            const truncatedContent = truncateText(clause.content);
-            
-            return (
-              <Card key={clause.id} className="hover:shadow-md transition-shadow duration-200">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base font-semibold text-gray-900 truncate" title={clause.title}>
-                        {clause.title}
-                      </CardTitle>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="outline" className="text-xs capitalize">
-                          {clause.category}
-                        </Badge>
-                        {placeholderCount > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {placeholderCount} placeholder{placeholderCount !== 1 ? 's' : ''}
+        {/* Clauses Table - SharePoint Style */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
+                    {/* Expand/Collapse column */}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">
+                    Title
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/2">
+                    Content
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                    Category
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                    Last Updated
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {paginatedClauses.map((clause) => {
+                  const isExpanded = expandedRows.has(clause.id);
+                  const placeholderCount = countPlaceholders(clause.content);
+                  
+                  return (
+                    <React.Fragment key={clause.id}>
+                      {/* Main Row */}
+                      <tr className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleRowExpansion(clause.id)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="h-4 w-4" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate" title={clause.title}>
+                                {clause.title}
+                              </p>
+                              {placeholderCount > 0 && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {placeholderCount} placeholder{placeholderCount !== 1 ? 's' : ''}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900 max-w-md">
+                            <div className="line-clamp-2">
+                              {highlightPlaceholders(clause.content.substring(0, 200))}
+                              {clause.content.length > 200 && '...'}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {clause.category}
                           </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 ml-2">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyToClipboard(clause.content)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Copy content</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-                </CardHeader>
-                
-                <CardContent className="pt-0">
-                  <div className="space-y-3">
-                    {/* Content Preview */}
-                    <div className="text-sm text-gray-600 leading-relaxed">
-                      {isExpanded ? (
-                        <div className="space-y-2">
-                          {highlightPlaceholders(clause.content)}
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {highlightPlaceholders(truncatedContent)}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Expand/Collapse Button */}
-                    {clause.content.length > 150 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleExpanded(clause.id)}
-                        className="h-8 px-2 text-xs text-blue-600 hover:text-blue-700"
-                      >
-                        {isExpanded ? (
-                          <>
-                            <ChevronUp className="h-3 w-3 mr-1" />
-                            Show Less
-                          </>
-                        ) : (
-                          <>
-                            <ChevronDown className="h-3 w-3 mr-1" />
-                            Show More
-                          </>
-                        )}
-                      </Button>
-                    )}
-
-                    {/* Metadata */}
-                    <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        <span>
-                          {clause.updatedAt ? new Date(clause.updatedAt).toLocaleDateString() : 'Unknown'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <FileText className="h-3 w-3" />
-                        <span>{clause.content.length} chars</span>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center justify-end gap-2 pt-2">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEditModal(clause)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Edit clause</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            <span>
+                              {clause.updatedAt ? new Date(clause.updatedAt).toLocaleDateString() : 'Unknown'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex items-center gap-2">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => copyToClipboard(clause.content)}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Copy content</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openEditModal(clause)}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Edit clause</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDelete(clause.id)}
+                                    className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Delete clause</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
+                        </td>
+                      </tr>
                       
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(clause.id)}
-                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete clause</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Empty State */}
-        {paginatedClauses.length === 0 && (
-          <Card className="text-center py-12">
-            <CardContent>
+                      {/* Expanded Content Row */}
+                      {isExpanded && (
+                        <tr className="bg-gray-50">
+                          <td colSpan={6} className="px-6 py-4">
+                            <div className="bg-white border border-gray-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-sm font-medium text-gray-900">Full Content</h4>
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                  <FileText className="h-3 w-3" />
+                                  <span>{clause.content.length} characters</span>
+                                </div>
+                              </div>
+                              <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                {highlightPlaceholders(clause.content)}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Empty State */}
+          {paginatedClauses.length === 0 && (
+            <div className="text-center py-12">
               <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No clauses found</h3>
               <p className="text-gray-500 mb-4">
@@ -445,13 +493,13 @@ export default function ClauseManager() {
               {!search && selectedCategory === 'all' && (
                 <Button onClick={openAddModal}>Create First Clause</Button>
               )}
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
+        </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg shadow-sm p-4 mt-4">
             <div className="text-sm text-gray-700">
               Showing {pageIndex * pageSize + 1} to {Math.min((pageIndex + 1) * pageSize, filteredClauses.length)} of {filteredClauses.length} clauses
             </div>
@@ -497,7 +545,7 @@ export default function ClauseManager() {
                   setPageIndex(0);
                 }}
               >
-                {[12, 24, 48, 96].map(size => (
+                {[10, 20, 50, 100].map(size => (
                   <option key={size} value={size}>{size} per page</option>
                 ))}
               </select>
@@ -505,7 +553,40 @@ export default function ClauseManager() {
           </div>
         )}
 
-        {/* Modal */}
+        {/* Add Category Modal */}
+        <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add Custom Category</DialogTitle>
+              <DialogDescription>
+                Create a new category for organizing your clauses.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Category Name</label>
+                <Input
+                  value={newCategory}
+                  onChange={e => setNewCategory(e.target.value)}
+                  placeholder="Enter category name (e.g., compliance, quality, etc.)"
+                  onKeyPress={e => e.key === 'Enter' && addCustomCategory()}
+                />
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddCategory(false)}>
+                Cancel
+              </Button>
+              <Button onClick={addCustomCategory}>
+                Add Category
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit/Add Clause Modal */}
         <Dialog open={modalOpen} onOpenChange={setModalOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -540,7 +621,7 @@ export default function ClauseManager() {
                       <SelectValue placeholder="Select a category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {clauseCategories.map(cat => (
+                      {allCategories.map(cat => (
                         <SelectItem key={cat} value={cat}>
                           {cat.charAt(0).toUpperCase() + cat.slice(1)}
                         </SelectItem>
