@@ -287,6 +287,17 @@ export default function ClauseManager() {
                     className="w-48"
                   />
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    console.log('Force loading static clauses...');
+                    dispatch({ type: 'clauses/loadStaticClauses' });
+                  }}
+                  className="h-10 px-3"
+                >
+                  Force Load
+                </Button>
               </div>
             </div>
           </div>
