@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search, Eye, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search, Eye, RotateCcw, X, Trash2, FolderOpen, Download, Upload, Users } from 'lucide-react';
 import {
   setSelectedTemplate,
   setSelectedProvider,
@@ -15,11 +15,12 @@ import {
   clearGeneratedFiles,
   addGenerationLog,
   addGeneratedContract,
+  setGeneratedContracts,
   setGenerationLogs,
   clearGeneratedContracts,
 } from './generatorSlice';
 import { generateDocument, downloadDocument } from './utils/documentGenerator';
-import type { GeneratedFile } from './generatorSlice';
+import type { GeneratedFile, GeneratedContract } from './generatorSlice';
 import { Provider } from '@/types/provider';
 import { Template } from '@/types/template';
 import Docxtemplater from 'docxtemplater';
@@ -57,9 +58,12 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ContractPreviewModal from './components/ContractPreviewModal';
-import { BulkGenerationSummaryModal } from '@/features/providers/BulkGenerationSummaryModal';
+
 import { useGeneratorPreferences } from '@/hooks/useGeneratorPreferences';
-import { toast } from 'sonner';
+import { useProviderPreferences } from '@/hooks/useUserPreferences';
+import { useErrorHandler } from '@/components/ui/error-handler';
+import ProgressModal from '@/components/ui/ProgressModal';
+
 
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
@@ -121,7 +125,8 @@ export default function ContractGenerator() {
   const error = useSelector((state: RootState) => state.generator.error);
   const generatedFiles = useSelector((state: RootState) => state.generator.generatedFiles);
   const { generatedContracts } = useSelector((state: RootState) => state.generator);
-
+  const { showError, showSuccess, showWarning, showInfo } = useErrorHandler();
+  const { preferences: userPreferences } = useProviderPreferences();
 
   const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
@@ -135,6 +140,12 @@ export default function ContractGenerator() {
   const [gridScrollWidth, setGridScrollWidth] = useState(0);
   const [gridClientWidth, setGridClientWidth] = useState(0);
   const [activeTabView, setActiveTabView] = useState<'generator' | 'logs'>('generator');
+  
+  // Contract clearing progress state
+  const [clearingProgress, setClearingProgress] = useState(0);
+  const [isClearing, setIsClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [contractsToClear, setContractsToClear] = useState<ContractGenerationLog[]>([]);
 
 
   // Main page filter state (separate from modal)
@@ -151,18 +162,57 @@ export default function ContractGenerator() {
   const [selectedTemplateForFiltered, setSelectedTemplateForFiltered] = useState<string>("");
   const [bulkOpen, setBulkOpen] = useState(true);
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
-  const [alertError, setAlertError] = useState<string | null>(null);
+
   const [statusTab, setStatusTab] = useState<'notGenerated' | 'processed' | 'all'>('notGenerated');
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
-  const [bulkGenerationSummaryModalOpen, setBulkGenerationSummaryModalOpen] = useState(false);
-  const [bulkGenerationResults, setBulkGenerationResults] = useState<{ successful: any[], skipped: any[] }>({ successful: [], skipped: [] });
+
+  // Progress tracking state
+  const [progressModalOpen, setProgressModalOpen] = useState(false);
+  const [progressData, setProgressData] = useState({
+    currentStep: 0,
+    totalSteps: 0,
+    progress: 0,
+    steps: [] as Array<{
+      id: string;
+      label: string;
+      status: 'pending' | 'active' | 'completed' | 'error';
+      icon: React.ReactNode;
+      details?: string;
+    }>,
+    successCount: 0,
+    errorCount: 0,
+    skippedCount: 0,
+    currentOperation: '',
+    isCancelled: false
+  });
+  const [bulkProgress, setBulkProgress] = useState<{
+    current: number;
+    total: number;
+    currentProvider: string;
+    status: 'preparing' | 'generating' | 'saving' | 'uploading' | 'complete';
+  } | null>(null);
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false);
   const [clickedProvider, setClickedProvider] = useState<Provider | null>(null);
   const [bulkAssignmentModalOpen, setBulkAssignmentModalOpen] = useState(false);
   const [sameTemplateModalOpen, setSameTemplateModalOpen] = useState(false);
   const [showDetailedView, setShowDetailedView] = useState(false);
   const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
+  const [templateErrorModalOpen, setTemplateErrorModalOpen] = useState(false);
+  
+  // Simple highlight state for the assignment field
+  const [showAssignmentHint, setShowAssignmentHint] = useState(true);
+
+  // Auto-hide the assignment hint after 5 seconds or when user interacts
+  useEffect(() => {
+    if (showAssignmentHint && selectedProviderIds.length > 0) {
+      const timer = setTimeout(() => {
+        setShowAssignmentHint(false);
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [showAssignmentHint, selectedProviderIds.length]);
   
   // Template assignment state - maps provider ID to assigned template ID
   const [templateAssignments, setTemplateAssignments] = useState<Record<string, string>>({});
@@ -176,6 +226,39 @@ export default function ContractGenerator() {
   // State for bulk assignment loading
   const [bulkAssignmentLoading, setBulkAssignmentLoading] = useState(false);
   const [bulkAssignmentProgress, setBulkAssignmentProgress] = useState<{ completed: number; total: number } | null>(null);
+
+  // Progress update functions
+  const updateProgress = useCallback((updates: Partial<typeof progressData>) => {
+    setProgressData(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  const initializeProgress = useCallback((totalSteps: number) => {
+    const steps = [
+      { id: 'folder', label: 'Selecting folder', status: 'pending' as const, icon: <FolderOpen className="w-4 h-4" /> },
+      { id: 'generation', label: 'Generating contracts', status: 'pending' as const, icon: <FileText className="w-4 h-4" /> },
+      { id: 'saving', label: 'Saving files', status: 'pending' as const, icon: <Download className="w-4 h-4" /> },
+      { id: 'uploading', label: 'Uploading to cloud', status: 'pending' as const, icon: <Upload className="w-4 h-4" /> }
+    ];
+    
+    setProgressData({
+      currentStep: 0,
+      totalSteps,
+      progress: 0,
+      steps,
+      successCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      currentOperation: 'Preparing...',
+      isCancelled: false
+    });
+    setProgressModalOpen(true);
+  }, []);
+
+  const handleProgressCancel = useCallback(() => {
+    setProgressData(prev => ({ ...prev, isCancelled: true }));
+  }, []);
+
+
 
   // Filter logic for bulk assignment modal
   const getFilteredProviderIds = useMemo(() => {
@@ -299,10 +382,7 @@ export default function ContractGenerator() {
         setTemplateAssignments(sessionTemplateAssignments);
         // Show a subtle notification that session assignments were restored (only once per session)
         if (!sessionRestoredRef.current) {
-          toast.info(`Session assignments restored (${Object.keys(sessionTemplateAssignments).length} templates)`, {
-            duration: 3000,
-            position: 'bottom-right'
-          });
+          showInfo(`Session assignments restored (${Object.keys(sessionTemplateAssignments).length} templates)`);
           sessionRestoredRef.current = true;
         }
       }
@@ -318,6 +398,8 @@ export default function ContractGenerator() {
 
   // Add AG Grid ref for selection management
   const gridRef = useRef<AgGridReact>(null);
+
+
 
   // Handle window resize for AG Grid
   useEffect(() => {
@@ -343,7 +425,7 @@ export default function ContractGenerator() {
         setSessionTemplateAssignments({});
         sessionRestoredRef.current = false;
         setSelectedProviderIds([]);
-        toast.success('Complete reset: All assignments and selections cleared (Ctrl+R)');
+        showSuccess('Complete reset: All assignments and selections cleared (Ctrl+R)');
       }
       
       // Ctrl/Cmd + Shift + R for session-only reset
@@ -351,8 +433,10 @@ export default function ContractGenerator() {
         e.preventDefault();
         setSessionTemplateAssignments({});
         sessionRestoredRef.current = false;
-        toast.success('Session assignments cleared (Ctrl+Shift+R)');
+        showSuccess('Session assignments cleared (Ctrl+Shift+R)');
       }
+      
+
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -386,6 +470,8 @@ export default function ContractGenerator() {
     return null;
   };
 
+
+
   // Update template assignment for a provider
   const updateProviderTemplate = (providerId: string, templateId: string | null) => {
     const provider = providers.find(p => p.id === providerId);
@@ -397,7 +483,7 @@ export default function ContractGenerator() {
       setTemplateAssignments(newAssignments);
       // Also update session storage for tab navigation persistence
       setSessionTemplateAssignments(newAssignments);
-      toast.success(`Template "${template?.name}" assigned to ${provider?.name}`);
+      showSuccess(`Template "${template?.name}" assigned to ${provider?.name}`);
       
       // Log individual template assignment
       try {
@@ -446,7 +532,7 @@ export default function ContractGenerator() {
       setTemplateAssignments(newAssignments);
       // Also update session storage
       setSessionTemplateAssignments(newAssignments);
-      toast.success(`Template assignment cleared for ${provider?.name}`);
+      showSuccess(`Template assignment cleared for ${provider?.name}`);
       
       // Log template unassignment
       try {
@@ -489,13 +575,13 @@ export default function ContractGenerator() {
   // Bulk template assignment with progress
   const assignTemplateToFiltered = async (templateId: string) => {
     if (!templateId || templateId.trim() === '' || templateId === 'no-template') {
-      toast.error('Please select a template first');
+      showError({ message: 'Please select a template first', severity: 'error' });
       return;
     }
 
     const filteredIds = getFilteredProviderIds;
     if (filteredIds.length === 0) {
-      toast.error('No providers match the current filters');
+      showError({ message: 'No providers match the current filters', severity: 'error' });
       return;
     }
 
@@ -574,12 +660,12 @@ export default function ContractGenerator() {
         console.error('Failed to log bulk template assignment:', auditError);
       }
       
-      toast.success(`Assigned template "${template?.name}" to ${filteredIds.length} providers`);
+      showSuccess(`Assigned template "${template?.name}" to ${filteredIds.length} providers`);
       setSelectedTemplateForFiltered("");
       
     } catch (error) {
       console.error('Error during bulk assignment:', error);
-      toast.error('Failed to assign templates. Please try again.');
+      showError({ message: 'Failed to assign templates. Please try again.', severity: 'error' });
       
       // Log the failure
       try {
@@ -626,7 +712,7 @@ export default function ContractGenerator() {
   const clearFilteredAssignments = async () => {
     const filteredIds = getFilteredProviderIds;
     if (filteredIds.length === 0) {
-      toast.error('No providers match the current filters');
+      showWarning('No providers match the current filters');
       return;
     }
 
@@ -662,11 +748,11 @@ export default function ContractGenerator() {
         }
       }
       
-      toast.success(`Cleared assignments for ${filteredIds.length} providers`);
+      showSuccess(`Cleared assignments for ${filteredIds.length} providers`);
       
     } catch (error) {
       console.error('Error during bulk clear:', error);
-      toast.error('Failed to clear assignments. Please try again.');
+      showError({ message: 'Failed to clear assignments. Please try again.', severity: 'error' });
     } finally {
       setBulkAssignmentLoading(false);
       setBulkAssignmentProgress(null);
@@ -681,7 +767,7 @@ export default function ContractGenerator() {
     // Reset notification flag
     sessionRestoredRef.current = false;
     // Show success feedback
-    toast.success('All template assignments cleared successfully!');
+    showSuccess('All template assignments cleared successfully!');
     
     // Log bulk clear operation
     try {
@@ -772,9 +858,9 @@ export default function ContractGenerator() {
     setSessionTemplateAssignments(newAssignments);
     
     if (assignedCount > 0) {
-      toast.success(`Smart assigned templates to ${assignedCount} providers`);
+      showSuccess(`Smart assigned templates to ${assignedCount} providers`);
     } else {
-      toast.info('No new templates assigned. Some providers may already have templates or no suitable templates found.');
+      showInfo('No new templates assigned. Some providers may already have templates or no suitable templates found.');
     }
   };
 
@@ -835,16 +921,59 @@ export default function ContractGenerator() {
         new Date().toISOString().split('T')[0]
       );
       
-      // Try to get the contract file from S3
+      console.log('Attempting to download contract:', { contractId, fileName, provider: provider.name });
+      
+      // Try to get the contract file from immutable storage
       let downloadUrl: string;
       try {
-        const result = await getContractFile(contractId, fileName);
-        downloadUrl = result.url;
-      } catch (s3Error) {
-        console.log('Initial download failed, trying to regenerate URL...');
-        // If the initial download fails, try to regenerate the URL
-        const result = await regenerateContractDownloadUrl(contractId, fileName);
-        downloadUrl = result.url;
+        const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
+        
+        // Extract timestamp from contract ID or use current date as fallback
+        const timestamp = new Date().toISOString().split('T')[0]; // Use date part as timestamp
+        
+        downloadUrl = await immutableContractStorage.getPermanentDownloadUrl(contractId, timestamp, fileName);
+        console.log('Successfully retrieved permanent download URL:', downloadUrl.substring(0, 100) + '...');
+      } catch (immutableError) {
+        console.log('Immutable storage failed, trying S3 storage...', immutableError);
+        // Fallback to S3 storage
+        try {
+          const { getContractFile } = await import('@/utils/s3Storage');
+          const result = await getContractFile(contractId, fileName);
+          downloadUrl = result.url;
+          console.log('Successfully generated download URL via S3 storage:', downloadUrl.substring(0, 100) + '...');
+        } catch (s3StorageError) {
+          console.log('S3 storage failed, trying direct S3 access...', s3StorageError);
+          // Final fallback to direct S3 access
+          try {
+            const { getContractFile } = await import('@/utils/s3Storage');
+            const result = await getContractFile(contractId, fileName);
+            downloadUrl = result.url;
+            console.log('Successfully generated download URL via S3 fallback:', downloadUrl.substring(0, 100) + '...');
+          } catch (fallbackError) {
+            console.error('Failed to get download URL:', fallbackError);
+            
+            // Check if the file actually exists in S3
+            const { checkFileExists } = await import('@/utils/s3Storage');
+            const fileExists = await checkFileExists(`contracts/${contractId}/${fileName}`);
+            
+            if (!fileExists) {
+              setUserError(`Contract file not found in storage for ${provider.name}. The contract may have been generated but failed to upload to storage. Please regenerate the contract.`);
+              
+              // Offer to regenerate the contract
+              if (confirm(`The contract file for ${provider.name} was not found in storage. Would you like to regenerate it?`)) {
+                const assignedTemplate = getAssignedTemplate(provider);
+                if (assignedTemplate) {
+                  await generateAndDownloadDocx(provider, assignedTemplate);
+                } else {
+                  setUserError(`No template assigned to ${provider.name}. Please assign a template first.`);
+                }
+              }
+              return;
+            } else {
+              throw new Error(`File exists in S3 but download URL generation failed: ${fallbackError}`);
+            }
+          }
+        }
       }
       
       // Open download URL in new tab
@@ -852,16 +981,36 @@ export default function ContractGenerator() {
       
     } catch (error) {
       console.error('Failed to download contract:', error);
-      setUserError(`Failed to download contract for ${provider.name}. Contract files are stored permanently, but download links expire for security. The system will automatically regenerate the link.`);
+      setUserError(`Failed to download contract for ${provider.name}. Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
       // Try to regenerate the contract if download fails
       if (confirm(`Failed to download the contract. Would you like to regenerate it for ${provider.name}?`)) {
-        // Find the assigned template for this provider
-        const assignedTemplate = getAssignedTemplate(provider);
-        if (assignedTemplate) {
-          await generateAndDownloadDocx(provider, assignedTemplate);
-        } else {
-          setUserError(`No template assigned to ${provider.name}. Please assign a template first.`);
+        try {
+          // Use the template that's already assigned to this provider
+          const assignedTemplate = getAssignedTemplate(provider);
+          if (assignedTemplate) {
+            console.log(`Regenerating contract for ${provider.name} with assigned template ${assignedTemplate.name}`);
+            await generateAndDownloadDocx(provider, assignedTemplate);
+            setUserError(`✅ Contract regenerated successfully for ${provider.name}`);
+          } else {
+            // If no template is assigned, try to find one from the contract data
+            const contract = generatedContracts.find(c => c.providerId === provider.id && c.status === 'SUCCESS');
+            if (contract) {
+              const template = templates.find(t => t.id === contract.templateId);
+              if (template) {
+                console.log(`Regenerating contract for ${provider.name} with template from contract data: ${template.name}`);
+                await generateAndDownloadDocx(provider, template);
+                setUserError(`✅ Contract regenerated successfully for ${provider.name}`);
+              } else {
+                setUserError(`Template not found for ${provider.name}. Please assign a template first.`);
+              }
+            } else {
+              setUserError(`No template assigned to ${provider.name}. Please assign a template first.`);
+            }
+          }
+        } catch (regenerateError) {
+          console.error('Contract regeneration failed:', regenerateError);
+          setUserError(`Failed to regenerate contract for ${provider.name}: ${regenerateError instanceof Error ? regenerateError.message : 'Unknown error'}`);
         }
       }
     }
@@ -917,48 +1066,99 @@ b, strong { font-weight: bold !important; }
       const runDate = new Date().toISOString().split('T')[0];
       const fileName = getContractFileName(contractYear, provider.name, runDate);
       
-      // 1. Save to S3 with improved error handling
-      let s3Url = '';
-      let s3Key = '';
-      try {
-        // Convert Blob to File for saveContractFile
-        const docxFile = new File([docxBlob], fileName, { 
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
-        });
-        const contractId = provider.id + '-' + templateToUse.id + '-' + contractYear;
-        
-        // Save to S3
-        s3Key = await saveContractFile(docxFile, contractId, {
-          providerId: provider.id,
-          providerName: provider.name,
-          templateId: templateToUse.id,
-          templateName: templateToUse.name,
-          contractYear,
-          fileName: fileName,
-          fileSize: docxFile.size.toString(),
-          generatedAt: new Date().toISOString(),
-          generatedBy: 'user', // TODO: Get actual user ID
-        });
-        
-        // Get signed S3 download URL (valid for 1 hour)
-        const { url: signedUrl } = await getContractFile(contractId, fileName);
-        s3Url = signedUrl;
-        
-        console.log('Contract saved to S3:', { s3Key, contractId, fileName });
-      } catch (s3err) {
-        console.error('Failed to upload contract to S3:', s3err);
-        setUserError('Contract generated but failed to upload to S3. You can still download locally.');
+      // Use modern file picker for download location selection (if supported)
+      let fileSaved = false;
+      
+      if ('showDirectoryPicker' in window) {
+        try {
+          // Use directory picker to let user choose folder location
+          const dirHandle = await (window as any).showDirectoryPicker({
+            mode: 'readwrite'
+          });
+          
+          // Create the file in the selected directory
+          const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(docxBlob);
+          await writable.close();
+          
+          console.log('Contract saved to user-selected folder:', fileName);
+          showSuccess(`Contract saved to selected folder: ${fileName}`);
+          fileSaved = true;
+        } catch (error) {
+          // Only fallback if it's not a user cancellation
+          if (error instanceof Error && error.name !== 'AbortError') {
+            console.log('Directory picker failed, falling back to default download location');
+            const url = URL.createObjectURL(docxBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            fileSaved = true;
+          } else {
+            console.log('User cancelled folder selection');
+            return; // Don't save anywhere if user cancels
+          }
+        }
+      } else {
+        // Fallback for browsers that don't support showDirectoryPicker
+        const url = URL.createObjectURL(docxBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        fileSaved = true;
       }
       
-      // 2. Download locally for immediate access
-      const url = URL.createObjectURL(docxBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Only continue with S3 storage and logging if file was actually saved
+      if (!fileSaved) {
+        console.log('File not saved, skipping S3 storage and logging');
+        return;
+      }
+      
+      // 1. Store contract with immutable data and permanent URL
+      let permanentUrl = '';
+      let contractId = '';
+      let s3UploadSuccess = false;
+      try {
+        const contractId = provider.id + '-' + templateToUse.id + '-' + contractYear;
+        
+        // Convert Blob to Buffer for immutable storage
+        const arrayBuffer = await docxBlob.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        // Store with immutable data and permanent URL
+        const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
+        const immutableResult = await immutableContractStorage.storeImmutableContract(
+          contractId,
+          fileName,
+          buffer,
+          provider, // Snapshot of provider data at generation time
+          templateToUse // Snapshot of template data at generation time
+        );
+        
+        permanentUrl = immutableResult.permanentUrl;
+        s3UploadSuccess = true;
+        
+        console.log('✅ Contract stored with immutable data and permanent URL:', { 
+          contractId, 
+          fileName, 
+          permanentUrl: permanentUrl.substring(0, 100) + '...',
+          fileHash: immutableResult.fileHash
+        });
+      } catch (s3err) {
+        console.error('Failed to store contract with immutable data:', s3err);
+        setUserError(`Contract generated but failed to store permanently: ${s3err instanceof Error ? s3err.message : 'Unknown error'}. You can still download locally.`);
+        s3UploadSuccess = false;
+      }
+      
+
 
       // 3. Log the generation event with comprehensive details
       const logInput = {
@@ -968,9 +1168,9 @@ b, strong { font-weight: bold !important; }
         generatedAt: new Date().toISOString(),
         generatedBy: 'user', // TODO: Get actual user ID
         outputType: 'DOCX',
-        status: 'SUCCESS',
-        fileUrl: s3Url || fileName, // Prefer S3 URL if available
-        notes: `Generated contract for ${provider.name} using template ${templateToUse.name}${s3Key ? ` (S3 Key: ${s3Key})` : ''}`
+        status: s3UploadSuccess ? 'SUCCESS' : 'FAILED', // Only mark as SUCCESS if immutable storage succeeded
+        fileUrl: permanentUrl || fileName, // Prefer permanent URL if available
+        notes: `Generated contract for ${provider.name} using template ${templateToUse.name} with immutable data storage${!s3UploadSuccess ? ' - Immutable storage failed' : ''}`
       };
 
       try {
@@ -979,11 +1179,13 @@ b, strong { font-weight: bold !important; }
         dispatch(addGeneratedContract({
           providerId: provider.id,
           templateId: templateToUse.id,
-          status: 'SUCCESS',
+          status: s3UploadSuccess ? 'SUCCESS' : 'FAILED', // Only mark as SUCCESS if immutable storage succeeded
           generatedAt: new Date().toISOString(),
-          fileUrl: s3Url, // Store the S3 URL for later access
+          fileUrl: permanentUrl, // Store the permanent URL for later access
           fileName: fileName,
-          s3Key: s3Key,
+          s3Key: contractId, // Store contract ID instead of S3 key
+          error: !s3UploadSuccess ? 'Immutable storage failed - contract not stored permanently' : undefined,
+          dynamoDbId: logEntry?.id, // Store the DynamoDB ID from the log entry
         }));
         
         console.log('Contract generation logged successfully:', logEntry);
@@ -1001,9 +1203,9 @@ b, strong { font-weight: bold !important; }
           templateId: templateToUse.id,
           templateName: templateToUse.name,
           contractYear,
-          fileUrl: s3Url || fileName,
+          fileUrl: permanentUrl || fileName,
           fileName: fileName,
-          s3Key: s3Key,
+          contractId: contractId,
           status: 'SUCCESS',
           outputType: 'DOCX',
           generatedAt: new Date().toISOString(),
@@ -1013,9 +1215,9 @@ b, strong { font-weight: bold !important; }
             templateId: templateToUse.id,
             templateName: templateToUse.name,
             contractYear,
-            fileUrl: s3Url || fileName,
+            fileUrl: permanentUrl || fileName,
             fileName: fileName,
-            s3Key: s3Key,
+            contractId: contractId,
             status: 'SUCCESS',
             outputType: 'DOCX',
             generatedAt: new Date().toISOString(),
@@ -1035,9 +1237,9 @@ b, strong { font-weight: bold !important; }
             templateId: templateToUse.id,
             templateName: templateToUse.name,
             contractYear,
-            fileUrl: s3Url || fileName,
+            fileUrl: permanentUrl || fileName,
             fileName: fileName,
-            s3Key: s3Key,
+            contractId: contractId,
             status: 'SUCCESS',
             outputType: 'DOCX',
             generatedAt: new Date().toISOString(),
@@ -1045,6 +1247,7 @@ b, strong { font-weight: bold !important; }
         }));
         
         console.log('logSecurityEvent dispatched successfully:', result);
+        console.log('Audit log details:', auditDetails);
       } catch (auditLogError) {
         console.error('Error dispatching logSecurityEvent:', auditLogError);
       }
@@ -1060,6 +1263,7 @@ b, strong { font-weight: bold !important; }
         status: 'FAILED',
         generatedAt: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown error',
+        // Note: No dynamoDbId for failed contracts since they weren't logged to DynamoDB
       }));
     }
   };
@@ -1075,29 +1279,67 @@ b, strong { font-weight: bold !important; }
         }
         nextToken = result?.nextToken;
       } while (nextToken);
-      if (allLogs.length > 0) {
-        allLogs.forEach(log => {
-          if (log.providerId && log.templateId && log.status && log.generatedAt) {
-            dispatch(addGeneratedContract({
-              providerId: log.providerId,
-              templateId: log.templateId,
-              status: log.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-              generatedAt: log.generatedAt,
-            }));
+      
+      // Convert all logs to GeneratedContract format and set them all at once
+      const generatedContractsFromDb: GeneratedContract[] = allLogs
+        .filter(log => log.providerId && log.templateId && log.status && log.generatedAt)
+        .map(log => {
+          // Map DynamoDB status to Redux status, including PARTIAL_SUCCESS
+          let reduxStatus: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
+          if (log.status === 'SUCCESS') {
+            reduxStatus = 'SUCCESS';
+          } else if (log.status === 'PARTIAL_SUCCESS') {
+            reduxStatus = 'PARTIAL_SUCCESS';
+          } else {
+            reduxStatus = 'FAILED';
           }
+          
+          return {
+            providerId: log.providerId,
+            templateId: log.templateId,
+            status: reduxStatus,
+            generatedAt: log.generatedAt,
+            dynamoDbId: log.id, // Store the actual DynamoDB ID for deletion
+          };
         });
-      }
-      setAlertError(null);
+
+      // Debug the status mapping
+      console.log('🔍 Hydration Debug - Status mapping:', {
+        totalLogs: allLogs.length,
+        filteredLogs: generatedContractsFromDb.length,
+        statusBreakdown: allLogs.reduce((acc, log) => {
+          acc[log.status || 'undefined'] = (acc[log.status || 'undefined'] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        sampleLogs: allLogs.slice(0, 5).map(log => ({
+          id: log.id,
+          providerId: log.providerId,
+          status: log.status,
+          generatedAt: log.generatedAt
+        }))
+      });
+      
+      // Set all contracts at once to avoid race conditions
+      dispatch(setGeneratedContracts(generatedContractsFromDb));
+      
+      console.log('✅ Loaded contracts from DynamoDB:', allLogs.length, 'contracts');
+      console.log('🔍 Generated contracts after hydration:', generatedContractsFromDb);
+      // Clear any previous errors silently
     } catch (e) {
       // Only show error if it's not a benign 'no records found' error
       const err = e as Error;
       if (err && err.message && (err.message.includes('not found') || err.message.includes('No records'))) {
-        setAlertError(null); // treat as empty, not an error
+        // treat as empty, not an error - no need to show anything
       } else {
-        setAlertError('Could not load contract generation status from the backend. Please try again later.');
+        showError({ message: 'Could not load contract generation status from the backend. Please try again later.', severity: 'error' });
       }
     }
   }, [dispatch]);
+
+  // Load generated contracts on component mount
+  useEffect(() => {
+    hydrateGeneratedContracts();
+  }, [hydrateGeneratedContracts]);
 
   const handleGenerate = async () => {
     if (selectedProviderIds.length !== 1) return;
@@ -1120,13 +1362,17 @@ b, strong { font-weight: bold !important; }
   };
 
   const handleBulkGenerate = async () => {
+    console.log('🚀 handleBulkGenerate called');
+    console.log('Selected provider IDs:', selectedProviderIds);
+    console.log('Selected providers:', selectedProviderIds.map(id => providers.find(p => p.id === id)?.name));
+    
     setUserError(null);
     setIsBulkGenerating(true);
     
     // Use all filtered providers, not just paginated
     const selectedProviders = filteredProviders.filter(p => selectedProviderIds.includes(p.id));
-    if (selectedProviders.length < 2) {
-      setUserError('Please select at least two providers to use Generate All.');
+    if (selectedProviders.length === 0) {
+      setUserError('Please select at least one provider to generate contracts.');
       setIsBulkGenerating(false);
       return;
     }
@@ -1139,10 +1385,95 @@ b, strong { font-weight: bold !important; }
       return;
     }
 
+    // Initialize progress tracking
+    initializeProgress(selectedProviders.length);
+    updateProgress({ currentOperation: 'Opening folder selection dialog...' });
+
+    // Use File System Access API to select folder for saving contracts
+    console.log('Opening folder selection dialog for contract saving');
+    
+    let selectedFolderHandle: any = null;
+    let selectedFolderPath: string | null = null;
+    
+    try {
+      console.log('🔍 Starting folder selection process (main function)...');
+      console.log('🔍 File System Access API available:', 'showDirectoryPicker' in window);
+      
+      // Use the modern File System Access API - only call once
+      if ('showDirectoryPicker' in window) {
+        console.log('🔍 Attempting to use File System Access API...');
+        selectedFolderHandle = await (window as any).showDirectoryPicker({ 
+          mode: 'readwrite',
+          startIn: 'downloads'
+        });
+        selectedFolderPath = selectedFolderHandle.name;
+        console.log('✅ Folder selected via File System Access API:', selectedFolderPath);
+      } else {
+        // Fallback for browsers that don't support File System Access API
+        console.log('❌ File System Access API not available, showing error');
+        setUserError('Your browser does not support folder selection. Please use Chrome, Edge, or Firefox with the latest version.');
+        setIsBulkGenerating(false);
+        setProgressModalOpen(false);
+        return;
+      }
+    } catch (error) {
+      console.error('❌ Folder selection error:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('User cancelled folder selection');
+        setIsBulkGenerating(false);
+        setProgressModalOpen(false);
+        return;
+      } else {
+        console.error('Folder selection failed:', error);
+        setUserError('Failed to open folder selection dialog. Please ensure you are using a supported browser.');
+        setIsBulkGenerating(false);
+        setProgressModalOpen(false);
+        return;
+      }
+    }
+    
+    if (!selectedFolderPath) {
+      setUserError('No folder was selected. Please try again.');
+      setIsBulkGenerating(false);
+      setProgressModalOpen(false);
+      return;
+    }
+
+    console.log('🎯 Selected folder for contract generation:', selectedFolderPath);
+
+    // Update progress to generation phase
+    updateProgress({ 
+      currentStep: 2, 
+      progress: 15,
+      steps: progressData.steps.map(step => 
+        step.id === 'folder' ? { ...step, status: 'completed' } :
+        step.id === 'generation' ? { ...step, status: 'active' } : step
+      ),
+      currentOperation: 'Starting contract generation...'
+    });
+
     const successful: any[] = [];
     const skipped: any[] = [];
     
-    for (const provider of selectedProviders) {
+    for (let i = 0; i < selectedProviders.length; i++) {
+      // Check for cancellation
+      if (progressData.isCancelled) {
+        updateProgress({ currentOperation: 'Operation cancelled by user' });
+        setIsBulkGenerating(false);
+        return;
+      }
+
+      const provider = selectedProviders[i];
+      const currentIndex = i + 1;
+      const progressPercent = 15 + (currentIndex / selectedProviders.length) * 60; // 15% to 75%
+      
+      // Update progress
+      updateProgress({ 
+        currentStep: currentIndex,
+        progress: progressPercent,
+        currentOperation: `Generating contract for ${provider.name} (${currentIndex}/${selectedProviders.length})`
+      });
+      
       try {
         const assignedTemplate = getAssignedTemplate(provider);
         if (!assignedTemplate) {
@@ -1150,24 +1481,263 @@ b, strong { font-weight: bold !important; }
             providerName: provider.name,
             reason: 'No template assigned'
           });
+          updateProgress({ skippedCount: progressData.skippedCount + 1 });
           continue;
         }
-        // Generate with the assigned template
-        await generateAndDownloadDocx(provider, assignedTemplate);
+        
+        // Generate contract content
+        const html = assignedTemplate.editedHtmlContent || assignedTemplate.htmlPreviewContent || "";
+        const mapping = mappings[assignedTemplate.id]?.mappings;
+        
+        // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
+        const enhancedMapping = mapping?.map(m => {
+          if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
+            return {
+              ...m,
+              mappingType: 'dynamic' as const,
+              mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
+              mappedColumn: undefined,
+            };
+          }
+          return {
+            ...m,
+            mappingType: 'field' as const,
+          };
+        });
+        
+        const { content: mergedHtml } = await mergeTemplateWithData(assignedTemplate, provider, html, enhancedMapping);
+        const htmlClean = normalizeSmartQuotes(mergedHtml);
+        const aptosStyle = `<style>
+body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
+  font-family: Aptos, Arial, sans-serif !important;
+  font-size: 11pt !important;
+}
+h1 { font-size: 16pt !important; font-weight: bold !important; }
+h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
+b, strong { font-weight: bold !important; }
+</style>`;
+        const htmlWithFont = aptosStyle + htmlClean;
+
+        // @ts-ignore
+        if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+          skipped.push({
+            providerName: provider.name,
+            reason: 'DOCX generator not available'
+          });
+          updateProgress({ skippedCount: progressData.skippedCount + 1 });
+          continue;
+        }
+        
+        // @ts-ignore
+        const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+        const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
+        const runDate = new Date().toISOString().split('T')[0];
+        const fileName = getContractFileName(contractYear, provider.name, runDate);
+        
+        // Save file to the selected folder using the already selected folder handle
+        let fileSaved = false;
+        let localFilePath = '';
+        
+        try {
+          // Use the already selected folder handle instead of calling showDirectoryPicker again
+          if (selectedFolderHandle && selectedFolderPath) {
+            const fileHandle = await selectedFolderHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(docxBlob);
+            await writable.close();
+            fileSaved = true;
+            localFilePath = `${selectedFolderPath}/${fileName}`;
+            console.log('✅ File saved to selected folder:', localFilePath);
+          } else {
+            // Fallback: Download to default location
+            const url = URL.createObjectURL(docxBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            fileSaved = true;
+            localFilePath = `Downloads/${fileName}`;
+            console.log('✅ File downloaded to Downloads folder:', localFilePath);
+          }
+        } catch (error) {
+          console.error('Failed to save file:', error);
+          // Fallback to download
+          const url = URL.createObjectURL(docxBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          fileSaved = true;
+          localFilePath = `Downloads/${fileName}`;
+          console.log('✅ File downloaded to Downloads folder (fallback):', localFilePath);
+        }
+        
+        // Store contract with immutable data and permanent URL
+        console.log('🔍 Starting S3 upload process...');
+        let permanentUrl = '';
+        let contractId = '';
+        let s3UploadSuccess = false;
+        let dynamoDbSuccess = false;
+        let logEntryId: string | undefined;
+        
+        try {
+          contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
+          
+          console.log('🔍 Contract generation debug:', {
+            contractId,
+            fileName,
+            blobSize: docxBlob.size,
+            providerId: provider.id,
+            templateId: assignedTemplate.id,
+            contractYear
+          });
+          
+          // Convert Blob to Buffer for immutable storage
+          const arrayBuffer = await docxBlob.arrayBuffer();
+          console.log('🔍 ArrayBuffer created, size:', arrayBuffer.byteLength);
+          
+          // Use Uint8Array instead of Buffer for browser compatibility
+          const buffer = new Uint8Array(arrayBuffer);
+          console.log('🔍 Uint8Array created, length:', buffer.length);
+          
+          // Store with immutable data and permanent URL
+          console.log('🔍 About to import immutableContractStorage...');
+          const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
+          console.log('🔍 immutableContractStorage imported successfully');
+          
+          console.log('🔍 About to call storeImmutableContract...');
+          const immutableResult = await immutableContractStorage.storeImmutableContract(
+            contractId,
+            fileName,
+            buffer,
+            provider,
+            assignedTemplate
+          );
+          console.log('🔍 storeImmutableContract completed successfully');
+          
+          permanentUrl = immutableResult.permanentUrl;
+          s3UploadSuccess = true;
+          console.log('✅ Contract stored in S3 successfully');
+        } catch (s3err) {
+          console.error('❌ Failed to store contract in S3:', s3err);
+          console.error('S3 error details:', {
+            name: s3err.name,
+            message: s3err.message,
+            stack: s3err.stack
+          });
+          s3UploadSuccess = false;
+        }
+
+        // Log the generation event to DynamoDB
+        const logInput = {
+          providerId: provider.id,
+          contractYear: contractYear,
+          templateId: assignedTemplate.id,
+          generatedAt: new Date().toISOString(),
+          generatedBy: 'user',
+          outputType: 'DOCX',
+          status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS', // Store PARTIAL_SUCCESS in DynamoDB
+          fileUrl: permanentUrl || fileName,
+          localFilePath: localFilePath,
+          notes: `Generated contract for ${provider.name} using template ${assignedTemplate.name}. Local file: ${localFilePath}. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`
+        };
+
+        console.log('🔍 DynamoDB log input:', {
+          providerId: logInput.providerId,
+          templateId: logInput.templateId,
+          contractYear: logInput.contractYear,
+          status: logInput.status,
+          s3UploadSuccess,
+          permanentUrl: !!permanentUrl
+        });
+
+        // Add to Redux state for Processed tab
+        console.log('🚀 Adding contract to Redux state for provider:', provider.name, 'template:', assignedTemplate.name);
+        
+        try {
+          console.log('🔄 Attempting to log contract to DynamoDB:', {
+            providerId: provider.id,
+            templateId: assignedTemplate.id,
+            contractYear: contractYear,
+            status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS'
+          });
+          
+          const logEntry = await ContractGenerationLogService.createLog(logInput);
+          dispatch(addGenerationLog(logEntry));
+          dynamoDbSuccess = true;
+          logEntryId = logEntry?.id;
+          console.log('✅ Contract logged to DynamoDB successfully:', logEntry);
+          console.log('🔍 DynamoDB response details:', {
+            id: logEntry?.id,
+            status: logEntry?.status,
+            providerId: logEntry?.providerId,
+            templateId: logEntry?.templateId,
+            contractYear: logEntry?.contractYear
+          });
+        } catch (logError) {
+          console.error('❌ Failed to log contract to DynamoDB:', logError);
+          console.error('Log input that failed:', logInput);
+          dynamoDbSuccess = false;
+        }
+        
+        dispatch(addGeneratedContract({
+          providerId: provider.id,
+          templateId: assignedTemplate.id,
+          status: s3UploadSuccess && dynamoDbSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS',
+          generatedAt: new Date().toISOString(),
+          fileUrl: permanentUrl,
+          fileName: fileName,
+          s3Key: contractId,
+          localFilePath: localFilePath,
+          s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
+          dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED',
+          error: !s3UploadSuccess ? 'S3 storage failed' : !dynamoDbSuccess ? 'DynamoDB logging failed' : undefined,
+          dynamoDbId: logEntryId,
+        }));
+        console.log('✅ Contract added to Redux state successfully');
+        
         successful.push({
           providerName: provider.name,
-          templateName: assignedTemplate.name
+          templateName: assignedTemplate.name,
+          localFilePath: localFilePath,
+          s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
+          dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED'
         });
+        updateProgress({ successCount: progressData.successCount + 1 });
       } catch (err) {
         skipped.push({
           providerName: provider.name,
           reason: `Generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`
         });
+        updateProgress({ errorCount: progressData.errorCount + 1 });
       }
     }
     
+    // Update progress to completion
+    updateProgress({ 
+      progress: 100,
+      currentStep: selectedProviders.length + 1,
+      steps: progressData.steps.map(step => 
+        step.id === 'generation' ? { ...step, status: 'completed' } :
+        step.id === 'saving' ? { ...step, status: 'completed' } :
+        step.id === 'uploading' ? { ...step, status: 'completed' } : step
+      ),
+      currentOperation: 'Bulk generation completed successfully!'
+    });
+    
     setIsBulkGenerating(false);
+    setProgressModalOpen(false);
+    // Clear selected providers to hide the bottom menu
+    setSelectedProviderIds([]);
+    // Refresh contracts from database to ensure Processed tab shows correctly
     await hydrateGeneratedContracts();
+    console.log('Bulk generation completed. Contracts added to Redux state:', successful.length);
     
     // Log bulk generation operation
     try {
@@ -1211,15 +1781,18 @@ b, strong { font-weight: bold !important; }
       console.error('Failed to log bulk generation:', auditError);
     }
     
-    // Set results and show modal
-    console.log('Bulk generation completed:', { successful, skipped });
-    setBulkGenerationResults({ successful, skipped });
-    setBulkGenerationSummaryModalOpen(true);
-    toast.success(`Bulk generation completed! ${successful.length} succeeded, ${skipped.length} skipped.`);
+    // Show simple success message instead of modal
+    console.log('Contract generation completed:', { successful, skipped });
+    console.log('Generated contracts in Redux state:', generatedContracts);
+    showSuccess(`Success! ${successful.length} contracts generated successfully.`);
   };
 
   // Modal-specific bulk generation function
   const handleModalBulkGenerate = async () => {
+    console.log('🚀 handleModalBulkGenerate called');
+    console.log('Selected provider IDs:', selectedProviderIds);
+    console.log('Selected providers:', selectedProviderIds.map(id => providers.find(p => p.id === id)?.name));
+    
     setUserError(null);
     setIsBulkGenerating(true);
     
@@ -1240,41 +1813,399 @@ b, strong { font-weight: bold !important; }
       return;
     }
 
+    // Initialize progress tracking
+    initializeProgress(modalSelectedProviders.length);
+    updateProgress({ currentOperation: 'Opening folder selection dialog...' });
+
+    // Use File System Access API to select folder for saving contracts
+    console.log('Opening folder selection dialog for contract saving');
+    
+    let selectedFolderHandle: any = null;
+    let selectedFolderPath: string | null = null;
+    
+    // Try multiple approaches to get folder selection
+    try {
+      console.log('🔍 Starting folder selection process...');
+      console.log('🔍 File System Access API available:', 'showDirectoryPicker' in window);
+      
+      // Approach 1: Try the modern File System Access API with proper error handling
+      if ('showDirectoryPicker' in window) {
+        console.log('🔍 Attempting to use File System Access API...');
+        try {
+          const dirHandle = await (window as any).showDirectoryPicker({ 
+            mode: 'readwrite',
+            startIn: 'downloads'
+          });
+          console.log('✅ Folder selected via File System Access API:', dirHandle.name);
+          selectedFolderHandle = dirHandle;
+          selectedFolderPath = dirHandle.name;
+          
+          // Test if we can actually write to this folder
+          try {
+            console.log('🔍 Testing write permissions...');
+            const testFile = await dirHandle.getFileHandle('test-write-permission.txt', { create: true });
+            const writable = await testFile.createWritable();
+            await writable.write('test');
+            await writable.close();
+            await dirHandle.removeEntry('test-write-permission.txt');
+            console.log('✅ Write permission confirmed');
+          } catch (writeError) {
+            console.error('❌ No write permission to selected folder:', writeError);
+            setUserError('Selected folder does not have write permissions. Please select a different folder.');
+            setIsBulkGenerating(false);
+            setProgressModalOpen(false);
+            return;
+          }
+        } catch (error) {
+          console.error('❌ File System Access API error:', error);
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log('User cancelled folder selection');
+            setIsBulkGenerating(false);
+            setProgressModalOpen(false);
+            return;
+          } else {
+            console.error('File System Access API failed:', error);
+            // Fall through to alternative approach
+          }
+        }
+      } else {
+        console.log('❌ File System Access API not available in this browser');
+      }
+      
+      // Approach 2: If File System Access API failed or not available, show error
+      if (!selectedFolderPath) {
+        console.log('❌ No folder selected, showing error to user');
+        setUserError('Folder selection is not supported in this browser. Please use Chrome, Edge, or Firefox with the latest version.');
+        setIsBulkGenerating(false);
+        setProgressModalOpen(false);
+        return;
+      }
+      
+    } catch (error) {
+      console.error('❌ All folder selection methods failed:', error);
+      setUserError('Unable to open folder selection dialog. Please ensure you are using a supported browser (Chrome, Edge, or Firefox).');
+      setIsBulkGenerating(false);
+      setProgressModalOpen(false);
+      return;
+    }
+    
+    if (!selectedFolderPath) {
+      setUserError('No folder was selected. Please try again.');
+      setIsBulkGenerating(false);
+      setProgressModalOpen(false);
+      return;
+    }
+
+    console.log('🎯 Selected folder for contract generation:', selectedFolderPath);
+
+    // Update progress to generation phase
+    updateProgress({ 
+      currentStep: 2, 
+      progress: 15,
+      steps: progressData.steps.map(step => 
+        step.id === 'folder' ? { ...step, status: 'completed' } :
+        step.id === 'generation' ? { ...step, status: 'active' } : step
+      ),
+      currentOperation: 'Starting contract generation...'
+    });
+
     const successful: any[] = [];
     const skipped: any[] = [];
     
-    for (const provider of modalSelectedProviders) {
-      try {
-        const assignedTemplate = getAssignedTemplate(provider);
+    for (let i = 0; i < modalSelectedProviders.length; i++) {
+      // Check for cancellation
+      if (progressData.isCancelled) {
+        updateProgress({ currentOperation: 'Operation cancelled by user' });
+        setIsBulkGenerating(false);
+        return;
+      }
+
+      const provider = modalSelectedProviders[i];
+      const currentIndex = i + 1;
+      const progressPercent = 15 + (currentIndex / modalSelectedProviders.length) * 60; // 15% to 75%
+      
+      // Update progress
+      updateProgress({ 
+        currentStep: currentIndex,
+        progress: progressPercent,
+        currentOperation: `Generating contract for ${provider.name} (${currentIndex}/${modalSelectedProviders.length})`
+      });
+      
+             try {
+          const assignedTemplate = getAssignedTemplate(provider);
         if (!assignedTemplate) {
           skipped.push({
             providerName: provider.name,
             reason: 'No template assigned'
           });
+          updateProgress({ skippedCount: progressData.skippedCount + 1 });
           continue;
         }
-        // Generate with the assigned template
-        await generateAndDownloadDocx(provider, assignedTemplate);
+        
+        // Generate contract content
+        const html = assignedTemplate.editedHtmlContent || assignedTemplate.htmlPreviewContent || "";
+        const mapping = mappings[assignedTemplate.id]?.mappings;
+        
+        // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
+        const enhancedMapping = mapping?.map(m => {
+          if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
+            return {
+              ...m,
+              mappingType: 'dynamic' as const,
+              mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
+              mappedColumn: undefined,
+            };
+          }
+          return {
+            ...m,
+            mappingType: 'field' as const,
+          };
+        });
+        
+        const { content: mergedHtml } = await mergeTemplateWithData(assignedTemplate, provider, html, enhancedMapping);
+        const htmlClean = normalizeSmartQuotes(mergedHtml);
+        const aptosStyle = `<style>
+body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
+  font-family: Aptos, Arial, sans-serif !important;
+  font-size: 11pt !important;
+}
+h1 { font-size: 16pt !important; font-weight: bold !important; }
+h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
+b, strong { font-weight: bold !important; }
+</style>`;
+        const htmlWithFont = aptosStyle + htmlClean;
+
+        // @ts-ignore
+        if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
+          skipped.push({
+            providerName: provider.name,
+            reason: 'DOCX generator not available'
+          });
+          updateProgress({ skippedCount: progressData.skippedCount + 1 });
+          continue;
+        }
+        
+        // @ts-ignore
+        const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+        const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
+        const runDate = new Date().toISOString().split('T')[0];
+        const fileName = getContractFileName(contractYear, provider.name, runDate);
+        
+        // Save file to the selected folder using the already selected folder handle
+        let fileSaved = false;
+        let localFilePath = '';
+        
+        try {
+          // Use the already selected folder handle instead of calling showDirectoryPicker again
+          if (selectedFolderHandle && selectedFolderPath) {
+            const fileHandle = await selectedFolderHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(docxBlob);
+            await writable.close();
+            fileSaved = true;
+            localFilePath = `${selectedFolderPath}/${fileName}`;
+            console.log('✅ File saved to selected folder:', localFilePath);
+          } else {
+            // Fallback: Download to default location
+            const url = URL.createObjectURL(docxBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            fileSaved = true;
+            localFilePath = `Downloads/${fileName}`;
+            console.log('✅ File downloaded to Downloads folder:', localFilePath);
+          }
+        } catch (error) {
+          console.error('Failed to save file:', error);
+          // Fallback to download
+          const url = URL.createObjectURL(docxBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          fileSaved = true;
+          localFilePath = `Downloads/${fileName}`;
+          console.log('✅ File downloaded to Downloads folder (fallback):', localFilePath);
+        }
+        
+        // Store contract with immutable data and permanent URL
+        let permanentUrl = '';
+        let contractId = '';
+        let s3UploadSuccess = false;
+        let dynamoDbSuccess = false;
+        
+        if (fileSaved) {
+          
+          console.log('🔍 Modal: Starting S3 upload process...');
+          try {
+            contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
+            
+            console.log('🔍 Modal contract generation debug:', {
+              contractId,
+              fileName,
+              blobSize: docxBlob.size,
+              providerId: provider.id,
+              templateId: assignedTemplate.id,
+              contractYear
+            });
+            
+            // Convert Blob to Buffer for immutable storage
+            const arrayBuffer = await docxBlob.arrayBuffer();
+            console.log('🔍 Modal ArrayBuffer created, size:', arrayBuffer.byteLength);
+            
+            // Use Uint8Array instead of Buffer for browser compatibility
+            const buffer = new Uint8Array(arrayBuffer);
+            console.log('🔍 Modal Uint8Array created, length:', buffer.length);
+            
+            // Store with immutable data and permanent URL
+            console.log('🔍 Modal: About to import immutableContractStorage...');
+            const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
+            console.log('🔍 Modal: immutableContractStorage imported successfully');
+            
+            console.log('🔍 Modal: About to call storeImmutableContract...');
+            const immutableResult = await immutableContractStorage.storeImmutableContract(
+              contractId,
+              fileName,
+              buffer,
+              provider,
+              assignedTemplate
+            );
+            console.log('🔍 Modal: storeImmutableContract completed successfully');
+            
+            permanentUrl = immutableResult.permanentUrl;
+            s3UploadSuccess = true;
+            console.log('✅ Contract stored in S3 successfully');
+          } catch (s3err) {
+            console.error('❌ Failed to store contract in S3:', s3err);
+            console.error('Modal S3 error details:', {
+              name: s3err.name,
+              message: s3err.message,
+              stack: s3err.stack
+            });
+            s3UploadSuccess = false;
+          }
+
+          // Log the generation event to DynamoDB
+          const logInput = {
+            providerId: provider.id,
+            contractYear: contractYear,
+            templateId: assignedTemplate.id,
+            generatedAt: new Date().toISOString(),
+            generatedBy: 'user',
+            outputType: 'DOCX',
+            status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS', // Store PARTIAL_SUCCESS in DynamoDB
+            fileUrl: permanentUrl || fileName,
+            localFilePath: localFilePath,
+            notes: `Generated contract for ${provider.name} using template ${assignedTemplate.name}. Local file: ${localFilePath}. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`
+          };
+
+          console.log('🔍 Modal DynamoDB log input:', {
+            providerId: logInput.providerId,
+            templateId: logInput.templateId,
+            contractYear: logInput.contractYear,
+            status: logInput.status,
+            s3UploadSuccess,
+            permanentUrl: !!permanentUrl
+          });
+
+          // Add to Redux state for Processed tab
+          console.log('🚀 Adding contract to Redux state for provider:', provider.name, 'template:', assignedTemplate.name);
+          
+          let logEntryId: string | undefined;
+          try {
+            console.log('🔄 Attempting to log contract to DynamoDB:', {
+              providerId: provider.id,
+              templateId: assignedTemplate.id,
+              contractYear: contractYear,
+              status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS'
+            });
+            
+            const logEntry = await ContractGenerationLogService.createLog(logInput);
+            dispatch(addGenerationLog(logEntry));
+            dynamoDbSuccess = true;
+            logEntryId = logEntry?.id;
+            console.log('✅ Contract logged to DynamoDB successfully:', logEntry);
+            console.log('🔍 Modal DynamoDB response details:', {
+              id: logEntry?.id,
+              status: logEntry?.status,
+              providerId: logEntry?.providerId,
+              templateId: logEntry?.templateId,
+              contractYear: logEntry?.contractYear
+            });
+          } catch (logError) {
+            console.error('❌ Failed to log contract to DynamoDB:', logError);
+            console.error('Log input that failed:', logInput);
+            dynamoDbSuccess = false;
+          }
+          
+          dispatch(addGeneratedContract({
+            providerId: provider.id,
+            templateId: assignedTemplate.id,
+            status: s3UploadSuccess && dynamoDbSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS',
+            generatedAt: new Date().toISOString(),
+            fileUrl: permanentUrl,
+            fileName: fileName,
+            s3Key: contractId,
+            localFilePath: localFilePath,
+            s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
+            dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED',
+            error: !s3UploadSuccess ? 'S3 storage failed' : !dynamoDbSuccess ? 'DynamoDB logging failed' : undefined,
+            dynamoDbId: logEntryId,
+          }));
+          console.log('✅ Contract added to Redux state successfully');
+        }
+        
         successful.push({
           providerName: provider.name,
-          templateName: assignedTemplate.name
+          templateName: assignedTemplate.name,
+          localFilePath: localFilePath,
+          s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
+          dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED'
         });
+        updateProgress({ successCount: progressData.successCount + 1 });
       } catch (err) {
         skipped.push({
           providerName: provider.name,
           reason: `Generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`
         });
+        updateProgress({ errorCount: progressData.errorCount + 1 });
       }
     }
     
-    setIsBulkGenerating(false);
-    await hydrateGeneratedContracts();
+    // All contracts have been saved to the selected folder
+    console.log('✅ All contracts saved to selected folder:', selectedFolderPath);
     
-    // Set results and show modal
+    // Update progress to completion
+    updateProgress({ 
+      progress: 100,
+      currentStep: modalSelectedProviders.length + 1,
+      steps: progressData.steps.map(step => 
+        step.id === 'generation' ? { ...step, status: 'completed' } :
+        step.id === 'saving' ? { ...step, status: 'completed' } :
+        step.id === 'uploading' ? { ...step, status: 'completed' } : step
+      ),
+      currentOperation: 'Bulk generation completed successfully!'
+    });
+    
+    setIsBulkGenerating(false);
+    setProgressModalOpen(false);
+    // Clear selected providers to hide the bottom menu
+    setSelectedProviderIds([]);
+    // Refresh contracts from database to ensure Processed tab shows correctly
+    await hydrateGeneratedContracts();
+    console.log('Modal bulk generation completed. Contracts added to Redux state:', successful.length);
+    
+    // Show simple success message instead of modal
     console.log('Modal bulk generation completed:', { successful, skipped });
-    setBulkGenerationResults({ successful, skipped });
-    setBulkGenerationSummaryModalOpen(true);
-    toast.success(`Bulk generation completed! ${successful.length} succeeded, ${skipped.length} skipped.`);
+    console.log('Generated contracts in Redux state:', generatedContracts);
+    showSuccess(`Success! ${successful.length} contracts generated successfully.`);
   };
 
   const handlePreview = () => {
@@ -1323,9 +2254,9 @@ b, strong { font-weight: bold !important; }
       const assignedTemplate = getAssignedTemplate(clickedProvider);
       if (assignedTemplate) {
         await generateAndDownloadDocx(clickedProvider, assignedTemplate);
-        toast.success(`Generated contract for ${clickedProvider.name}`);
-      } else {
-        toast.error(`No template assigned to ${clickedProvider.name}`);
+              showSuccess(`Generated contract for ${clickedProvider.name}`);
+    } else {
+      showError({ message: `No template assigned to ${clickedProvider.name}`, severity: 'error' });
       }
     }
     setBottomActionMenuOpen(false);
@@ -1344,7 +2275,7 @@ b, strong { font-weight: bold !important; }
   const handleClearAssignments = () => {
     if (clickedProvider) {
       updateProviderTemplate(clickedProvider.id, null);
-      toast.success(`Cleared template assignment for ${clickedProvider.name}`);
+      showSuccess(`Cleared template assignment for ${clickedProvider.name}`);
     }
     setBottomActionMenuOpen(false);
   };
@@ -1455,6 +2386,7 @@ b, strong { font-weight: bold !important; }
           templateId: selectedTemplate.id,
           status: 'SUCCESS',
           generatedAt: new Date().toISOString(),
+          dynamoDbId: logEntry?.id, // Store the DynamoDB ID from the log entry
         }));
       } catch (logError) {
         console.error('Failed to log contract generation:', logError);
@@ -1468,6 +2400,7 @@ b, strong { font-weight: bold !important; }
         templateId: selectedTemplate.id,
         status: 'FAILED',
         generatedAt: new Date().toISOString(),
+        // Note: No dynamoDbId for failed contracts since they weren't logged to DynamoDB
       }));
     }
   };
@@ -1505,9 +2438,16 @@ b, strong { font-weight: bold !important; }
 
   // Compute generation status for each provider
   const getGenerationStatus = (providerId: string, templateId: string) => {
-    const contract = generatedContracts.find(
+    // First try to find exact match
+    let contract = generatedContracts.find(
       c => c.providerId === providerId && c.templateId === templateId
     );
+    
+    // If no exact match, check if any contract exists for this provider (for backward compatibility)
+    if (!contract) {
+      contract = generatedContracts.find(c => c.providerId === providerId);
+    }
+    
     if (!contract) return 'Not Generated';
     if (contract.status === 'SUCCESS') return 'Success';
     if (contract.status === 'FAILED') return 'Failed';
@@ -1532,7 +2472,7 @@ b, strong { font-weight: bold !important; }
   // Function to clear generated contracts for selected providers
   const handleClearGenerated = async () => {
     if (selectedProviderIds.length === 0) {
-      setAlertError('Please select providers to clear generated contracts.');
+      showWarning('Please select providers to clear generated contracts.');
       return;
     }
 
@@ -1545,13 +2485,118 @@ b, strong { font-weight: bold !important; }
       setSelectedProviderIds([]);
       
       // Show success message
-      setAlertError(null);
+      showSuccess('Generated contracts cleared successfully.');
       
     } catch (error) {
       console.error('Error clearing generated contracts:', error);
-      setAlertError('Failed to clear generated contracts. Please try again.');
+      showError({ message: 'Failed to clear generated contracts. Please try again.', severity: 'error' });
     }
   };
+
+  // Function to clear all processed contracts from database
+  const handleClearAllProcessed = async () => {
+    try {
+      setIsClearing(true);
+      setClearingProgress(0);
+      showInfo(`Fetching all processed contracts from database...`);
+      
+      // Fetch ALL processed contracts from the database, not just the ones in state
+      let allLogs: ContractGenerationLog[] = [];
+      let nextToken = undefined;
+      let fetchCount = 0;
+      
+      do {
+        const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
+        if (result && result.items) {
+          allLogs = allLogs.concat(result.items);
+          fetchCount += result.items.length;
+          setClearingProgress(Math.round((fetchCount / Math.max(fetchCount + 100, 1000)) * 30)); // First 30% for fetching
+        }
+        nextToken = result?.nextToken;
+      } while (nextToken);
+      
+      // Filter for only SUCCESS contracts
+      const processedLogs = allLogs.filter(log => log.status === 'SUCCESS');
+      
+      console.log('All contracts in database:', allLogs.length);
+      console.log('Processed contracts to clear:', processedLogs.length);
+      
+      if (processedLogs.length === 0) {
+        showWarning('No processed contracts found to clear.');
+        setIsClearing(false);
+        return;
+      }
+
+      // Show confirmation dialog instead of browser confirm
+      setShowClearConfirm(true);
+      setContractsToClear(processedLogs);
+      setIsClearing(false);
+      return;
+    } catch (error) {
+      console.error('Error fetching contracts for clearing:', error);
+      showError({ message: `Failed to fetch contracts: ${error instanceof Error ? error.message : 'Unknown error'}`, severity: 'error' });
+      setIsClearing(false);
+    }
+  };
+
+  // Function to actually clear the contracts (called after confirmation)
+  const confirmClearContracts = async () => {
+    try {
+      setIsClearing(true);
+      setClearingProgress(30); // Start clearing phase
+      showInfo(`Clearing ${contractsToClear.length} processed contracts...`);
+      
+      // Get the actual DynamoDB IDs from the database logs
+      const contractIds = contractsToClear.map(log => log.id);
+      
+      console.log('Found DynamoDB IDs to clear:', contractIds);
+      
+      // Call the backend script to clear contracts with progress
+      const response = await fetch('http://localhost:4000/api/clear-processed-contracts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contractIds: contractIds
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to clear contracts: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      setClearingProgress(90); // Almost done
+      
+      // Clear from local state
+      dispatch(clearGeneratedContracts());
+      setSelectedProviderIds([]);
+      
+      setClearingProgress(100); // Complete
+      
+      showSuccess(`Successfully cleared ${result.deletedCount} processed contracts! All contracts are now marked as "Not Generated".`);
+      
+      // Close confirmation dialog
+      setShowClearConfirm(false);
+      setContractsToClear([]);
+      
+      // Refresh the page to show updated status
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error clearing all processed contracts:', error);
+      showError({ message: `Failed to clear processed contracts: ${error instanceof Error ? error.message : 'Unknown error'}`, severity: 'error' });
+    } finally {
+      setIsClearing(false);
+      setClearingProgress(100);
+    }
+  };
+
+
 
   // Base columns that appear in all tabs
   const baseColumns = useMemo(() => {
@@ -1963,6 +3008,13 @@ b, strong { font-weight: bold !important; }
           </span>
         );
       }
+      if (status === 'Partial Success') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+            <AlertTriangle className="w-3 h-3" /> Partial
+          </span>
+        );
+      }
       if (status === 'Failed') {
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
@@ -2006,34 +3058,32 @@ b, strong { font-weight: bold !important; }
     minWidth: 140,
     cellRenderer: (params: any) => {
       const provider = params.data;
-      // Find any successful contract for this provider, regardless of template selection
+      // Find any contract for this provider (including failed ones so they show up in Processed tab)
       const contract = generatedContracts.find(
-        c => c.providerId === provider.id && c.status === 'SUCCESS'
+        c => c.providerId === provider.id
       );
       
       if (contract) {
+        const isPartialSuccess = contract.status === 'PARTIAL_SUCCESS';
         return (
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => downloadContract(provider, contract.templateId)}
-              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
+              className={`${isPartialSuccess ? 'text-orange-600' : 'text-blue-600'} hover:bg-blue-50 p-1 h-8 w-8`}
               title="Download Contract"
             >
-              <FileDown className="w-4 h-4" />
+              <FileText className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                setSelectedProviderIds([provider.id]);
-                setPreviewModalOpen(true);
-              }}
-              className="text-gray-600 hover:text-gray-700 hover:bg-gray-50 px-2"
+              onClick={() => handlePreviewGenerate(provider.id)}
+              className={`${isPartialSuccess ? 'text-orange-600' : 'text-blue-600'} hover:bg-blue-50 p-1 h-8 w-8`}
               title="Preview Contract"
             >
-              <Eye className="w-4 h-4" />
+              <Eye className="h-4 w-4" />
             </Button>
           </div>
         );
@@ -2065,14 +3115,28 @@ b, strong { font-weight: bold !important; }
 
   // Prepare row data for AG Grid - ONLY include the fields we have column definitions for
   const agGridRows = paginatedProviders.map((provider: Provider) => {
-    // Find the latest successful generated contract for this provider
-    const latestSuccessContract = generatedContracts
-      .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
-      .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+    // Find the latest generated contract for this provider (include all statuses)
+    const latestContract = generatedContracts
+      .filter(c => c.providerId === provider.id)
+      .sort((a, b) => {
+        // First sort by status (SUCCESS first, then PARTIAL_SUCCESS, then FAILED)
+        if (a.status === 'SUCCESS' && b.status !== 'SUCCESS') return -1;
+        if (a.status === 'PARTIAL_SUCCESS' && b.status === 'FAILED') return -1;
+        if (a.status === 'FAILED' && b.status === 'SUCCESS') return 1;
+        if (a.status === 'FAILED' && b.status === 'PARTIAL_SUCCESS') return 1;
+        // Then sort by date (newest first)
+        return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
+      })[0];
     
     let generationStatus = 'Not Generated';
-    if (latestSuccessContract) {
-      generationStatus = 'Success';
+    if (latestContract) {
+      if (latestContract.status === 'SUCCESS') {
+        generationStatus = 'Success';
+      } else if (latestContract.status === 'PARTIAL_SUCCESS') {
+        generationStatus = 'Partial Success';
+      } else {
+        generationStatus = 'Failed';
+      }
     } else {
       generationStatus = 'Not Generated';
     }
@@ -2102,12 +3166,7 @@ b, strong { font-weight: bold !important; }
     return filteredProvider;
   });
 
-  // Compute counts for progress bar and stats
-  const completedCount = agGridRows.filter(row => row.generationStatus === 'Success').length;
-  const failedCount = agGridRows.filter(row => row.generationStatus === 'Failed').length;
-  const notGeneratedCount = agGridRows.filter(row => row.generationStatus === 'Not Generated').length;
-
-  const totalCount = agGridRows.length;
+  // Progress tracking will be calculated using the existing allFilteredProvidersWithStatus logic below
 
   // CSV Export (async, robust download links)
   const [isExportingCSV, setIsExportingCSV] = useState(false);
@@ -2116,10 +3175,16 @@ b, strong { font-weight: bold !important; }
     try {
       // Use all filtered providers, not just paginated
       const allRows = await Promise.all(filteredProviders.map(async (provider: Provider) => {
-        // Find the latest successful generated contract for this provider
-        const latestSuccessContract = generatedContracts
-          .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
-          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        // Find the latest generated contract for this provider (prioritize SUCCESS over PARTIAL_SUCCESS)
+        const latestContract = generatedContracts
+          .filter(c => c.providerId === provider.id && (c.status === 'SUCCESS' || c.status === 'PARTIAL_SUCCESS'))
+          .sort((a, b) => {
+            // First sort by status (SUCCESS first, then PARTIAL_SUCCESS)
+            if (a.status === 'SUCCESS' && b.status !== 'SUCCESS') return -1;
+            if (a.status !== 'SUCCESS' && b.status === 'SUCCESS') return 1;
+            // Then sort by date (newest first)
+            return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
+          })[0];
         
         // Find assigned template
         const assignedTemplateId = templateAssignments[provider.id];
@@ -2130,12 +3195,18 @@ b, strong { font-weight: bold !important; }
         let generationStatus = 'Outstanding';
         let generationDate = '';
         let downloadLink = '';
-        if (latestSuccessContract && assignedTemplate) {
-          generationStatus = 'Generated';
-          generationDate = latestSuccessContract.generatedAt;
+        if (latestContract && assignedTemplate) {
+          if (latestContract.status === 'SUCCESS') {
+            generationStatus = 'Generated';
+          } else if (latestContract.status === 'PARTIAL_SUCCESS') {
+            generationStatus = 'Generated (S3 Failed)';
+          } else {
+            generationStatus = 'Failed';
+          }
+          generationDate = latestContract.generatedAt;
           // Try to use fileUrl if present and looks like a URL
-          if (latestSuccessContract.fileUrl && latestSuccessContract.fileUrl.startsWith('http')) {
-            downloadLink = latestSuccessContract.fileUrl;
+          if (latestContract.fileUrl && latestContract.fileUrl.startsWith('http')) {
+            downloadLink = latestContract.fileUrl;
           } else {
             // Reconstruct contractId and fileName
             const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
@@ -2237,35 +3308,7 @@ b, strong { font-weight: bold !important; }
     updateEditorContent();
   }, [selectedTemplate, selectedProviderIds, providers, mappings, templateAssignments]);
 
-  useEffect(() => {
-    async function hydrateGeneratedContracts() {
-      try {
-        const result = await ContractGenerationLogService.listLogs();
-        if (result && result.items) {
-          result.items.forEach(log => {
-            if (log.providerId && log.templateId && log.status && log.generatedAt) {
-              dispatch(addGeneratedContract({
-                providerId: log.providerId,
-                templateId: log.templateId,
-                status: log.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-                generatedAt: log.generatedAt,
-              }));
-            }
-          });
-        }
-        setAlertError(null); // Clear any previous error
-      } catch (e) {
-        // Only show error if it's not a benign 'no records found' error
-        const err = e as Error;
-        if (err && err.message && (err.message.includes('not found') || err.message.includes('No records'))) {
-          setAlertError(null); // treat as empty, not an error
-        } else {
-          setAlertError('Could not load contract generation status from the backend. Please try again later.');
-        }
-      }
-    }
-    hydrateGeneratedContracts();
-  }, [dispatch]);
+
 
 
 
@@ -2310,14 +3353,23 @@ b, strong { font-weight: bold !important; }
 
   // Compute tab counts from ALL filtered providers (not just paginated ones)
   const allFilteredProvidersWithStatus = filteredProviders.map((provider: Provider) => {
-    // Find the latest successful generated contract for this provider
-    const latestSuccessContract = generatedContracts
-      .filter(c => c.providerId === provider.id && c.status === 'SUCCESS')
+    // Find the latest processed contract (SUCCESS, PARTIAL_SUCCESS, or any contract that was generated)
+    const latestProcessedContract = generatedContracts
+      .filter(c => c.providerId === provider.id)
       .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
     
     let generationStatus = 'Not Generated';
-    if (latestSuccessContract) {
-      generationStatus = 'Success';
+    if (latestProcessedContract) {
+      if (latestProcessedContract.status === 'SUCCESS') {
+        generationStatus = 'Success';
+      } else if (latestProcessedContract.status === 'PARTIAL_SUCCESS') {
+        generationStatus = 'Partial Success';
+      } else if (latestProcessedContract.status === 'FAILED') {
+        // Show failed contracts as "Partial Success" so they appear in Processed tab
+        generationStatus = 'Partial Success';
+      } else {
+        generationStatus = 'Not Generated';
+      }
     } else {
       generationStatus = 'Not Generated';
     }
@@ -2327,16 +3379,111 @@ b, strong { font-weight: bold !important; }
       generationStatus,
     };
   });
+  
+  // Debug year filtering
+  console.log('🔍 Year Filtering Debug:', {
+    currentYear: new Date().getFullYear().toString(),
+    contractsByYear: generatedContracts.reduce((acc, contract) => {
+      const year = new Date(contract.generatedAt).getFullYear().toString();
+      acc[year] = (acc[year] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+    sampleContractYears: generatedContracts.slice(0, 10).map(c => ({
+      providerId: c.providerId,
+      generatedAt: c.generatedAt,
+      year: new Date(c.generatedAt).getFullYear().toString()
+    }))
+  });
 
-  const processedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Success');
+  const processedRows = allFilteredProvidersWithStatus.filter(
+    row => row.generationStatus === 'Success' || row.generationStatus === 'Partial Success'
+  );
   const notGeneratedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Not Generated');
   const allRows = allFilteredProvidersWithStatus;
+  
+  // Debug logging for tab counts
+  console.log('🔍 Tab Counts Debug:', {
+    totalProviders: filteredProviders.length,
+    generatedContractsInState: generatedContracts.length,
+    processedRows: processedRows.length,
+    notGeneratedRows: notGeneratedRows.length,
+    allRows: allRows.length,
+    generatedContractsDetails: generatedContracts.map(c => ({
+      providerId: c.providerId,
+      templateId: c.templateId,
+      status: c.status,
+      generatedAt: c.generatedAt
+    })),
+    sampleProviderStatus: allFilteredProvidersWithStatus.slice(0, 3).map(p => ({
+      id: p.id,
+      name: p.name,
+      generationStatus: p.generationStatus,
+      assignedTemplate: getAssignedTemplate(p)?.id
+    }))
+  });
+  
+  // Additional debug logging for processed contracts
+  console.log('🔍 Processed Contracts Debug:', {
+    statusTab,
+    processedRowsCount: processedRows.length,
+    processedRowsDetails: processedRows.slice(0, 5).map(p => ({
+      id: p.id,
+      name: p.name,
+      generationStatus: p.generationStatus,
+      matchingContracts: generatedContracts.filter(c => c.providerId === p.id)
+    }))
+  });
+  
+  // Debug the contract status matching logic
+  console.log('🔍 Contract Status Matching Debug:', {
+    totalGeneratedContracts: generatedContracts.length,
+    contractsWithSuccessStatus: generatedContracts.filter(c => c.status === 'SUCCESS').length,
+    contractsWithPartialSuccessStatus: generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS').length,
+    contractsWithFailedStatus: generatedContracts.filter(c => c.status === 'FAILED').length,
+    sampleContracts: generatedContracts.slice(0, 5).map(c => ({
+      providerId: c.providerId,
+      status: c.status,
+      generatedAt: c.generatedAt
+    })),
+    sampleProviderMatching: filteredProviders.slice(0, 3).map(p => {
+      const matchingContracts = generatedContracts.filter(c => c.providerId === p.id);
+      const latestContract = matchingContracts
+        .filter(c => c.status === 'SUCCESS' || c.status === 'PARTIAL_SUCCESS')
+        .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+      return {
+        providerId: p.id,
+        providerName: p.name,
+        matchingContractsCount: matchingContracts.length,
+        latestContractStatus: latestContract?.status || 'none',
+        generationStatus: latestContract ? (latestContract.status === 'SUCCESS' ? 'Success' : 'Partial Success') : 'Not Generated'
+      };
+    })
+  });
+
+  // Debug logging for column preferences
+  console.log('🔍 Column Preferences Debug:', {
+    userPreferences: userPreferences,
+    columnVisibility: userPreferences?.columnVisibility,
+    columnOrder: userPreferences?.columnOrder,
+    columnPinning: userPreferences?.columnPinning,
+    hasColumnPreferences: !!userPreferences?.columnVisibility,
+    columnVisibilityKeys: userPreferences?.columnVisibility ? Object.keys(userPreferences.columnVisibility) : [],
+    columnOrderLength: userPreferences?.columnOrder?.length || 0,
+    userPreferencesKeys: userPreferences ? Object.keys(userPreferences) : []
+  });
   
   const tabCounts = {
     notGenerated: notGeneratedRows.length,
     processed: processedRows.length,
     all: allRows.length,
   };
+
+  // Compute counts for progress bar and stats - use ALL filtered providers
+  const completedCount = processedRows.length;
+  const partialSuccessCount = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Partial Success').length;
+  const failedCount = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Failed').length;
+  const notGeneratedCount = notGeneratedRows.length;
+  const totalCount = allFilteredProvidersWithStatus.length;
   
   // For AG Grid display, use paginated providers with status
   const tabFilteredRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
@@ -2355,15 +3502,12 @@ b, strong { font-weight: bold !important; }
   // Sync AG Grid selection with selectedProviderIds state
 
 
+
+
   return (
     <div className="min-h-screen bg-gray-50/50 pt-0 pb-4 px-2 sm:px-4">
       <div className="max-w-7xl mx-auto">
-        {alertError && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertTitle>Error loading contract status</AlertTitle>
-            <AlertDescription>{alertError}</AlertDescription>
-          </Alert>
-        )}
+
         {/* Header Card - Consistent with Templates/Providers, now with Template Selector */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -2477,6 +3621,8 @@ b, strong { font-weight: bold !important; }
                       </Button>
 
 
+
+
                     </div>
                   </div>
                 </div>
@@ -2559,67 +3705,73 @@ b, strong { font-weight: bold !important; }
                         <div className="flex justify-center mb-3">
                           <span className="font-semibold text-blue-700 text-sm tracking-wide">Reset Filters</span>
                         </div>
-                        <div className="flex gap-2 justify-center">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedSpecialty("__ALL__");
-                              setSelectedSubspecialty("__ALL__");
-                              setSelectedProviderType("__ALL__");
-                              setPageIndex(0);
-                            }}
-                            className="flex items-center gap-2"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                            Clear All Filters
-                          </Button>
-                          
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={clearTemplateAssignments}
-                            disabled={isBulkGenerating || Object.keys(templateAssignments).length === 0}
-                            className="flex items-center gap-2"
-                            title="Clear all manual template assignments"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                            Clear Template Assignments
-                          </Button>
-                          
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setTemplateAssignments({});
-                              setSessionTemplateAssignments({});
-                              sessionRestoredRef.current = false;
-                              setSelectedProviderIds([]);
-                              toast.success('Complete reset: All assignments and selections cleared');
-                            }}
-                            disabled={isBulkGenerating}
-                            className="flex items-center gap-2 text-gray-600 hover:text-gray-700 hover:bg-gray-50 border-gray-300"
-                            title="Complete reset - clears all assignments, session data, and selections"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            Complete Reset
-                          </Button>
-
-                          {/* Clear Generated (only for processed tab) */}
-                          {statusTab === 'processed' && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleClearGenerated}
-                              disabled={selectedProviderIds.length === 0 || isBulkGenerating}
-                              className="flex items-center gap-2"
-                              title="Clear generated contracts for selected providers"
+                        <div className="flex items-center gap-1">
+                          {/* Microsoft/Google-style compact button group */}
+                          <div className="flex items-center border border-gray-300 rounded-md overflow-hidden">
+                            {/* Clear Filters - Primary Action */}
+                            <button
+                              onClick={() => {
+                                setSelectedSpecialty("__ALL__");
+                                setSelectedSubspecialty("__ALL__");
+                                setSelectedProviderType("__ALL__");
+                                setPageIndex(0);
+                              }}
+                              className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-r border-gray-300 flex items-center gap-1.5"
+                              title="Clear all filters"
                             >
-                              <RotateCcw className="w-4 h-4" />
-                              Clear Generated
-                            </Button>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Clear
+                            </button>
+                            
+                            {/* Template Assignments - Secondary Action */}
+                            <button
+                              onClick={clearTemplateAssignments}
+                              disabled={isBulkGenerating || Object.keys(templateAssignments).length === 0}
+                              className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-r border-gray-300 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Clear template assignments"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              Templates
+                            </button>
+                            
+                            {/* Complete Reset - Tertiary Action */}
+                            <button
+                              onClick={() => {
+                                setTemplateAssignments({});
+                                setSessionTemplateAssignments({});
+                                sessionRestoredRef.current = false;
+                                setSelectedProviderIds([]);
+                                showSuccess('Complete reset: All assignments and selections cleared');
+                              }}
+                              disabled={isBulkGenerating}
+                              className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Complete system reset"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              Reset
+                            </button>
+                          </div>
+                          
+                          {/* Destructive Action - Separated for safety (Epic EMR style) */}
+                          {statusTab === 'processed' && (
+                            <>
+                              <div className="w-px h-6 bg-gray-300 mx-2"></div>
+                              <button
+                                onClick={handleClearAllProcessed}
+                                disabled={isBulkGenerating}
+                                className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 border border-red-300 rounded-md flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Clear all processed contracts"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Clear All
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -2634,26 +3786,42 @@ b, strong { font-weight: bold !important; }
 
           {/* Tabs for Pending / Processed / All */}
           <div className="mb-2 flex justify-between items-center">
-            <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'processed' | 'all')} className="flex-1">
-              <TabsList className="flex gap-2 border-b-0 bg-transparent justify-start relative after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-[1.5px] after:bg-gray-200 after:z-10 overflow-visible">
-                <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                  Not Generated <span className="ml-1 text-xs">({tabCounts.notGenerated})</span>
-                </TabsTrigger>
+            <div className="flex items-center gap-4">
+              <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'processed' | 'all')} className="flex-1">
+                <TabsList className="flex gap-2 border-b-0 bg-transparent justify-start relative after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-[1.5px] after:bg-gray-200 after:z-10 overflow-visible">
+                  <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                    data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                    Not Generated <span className="ml-1 text-xs">({tabCounts.notGenerated})</span>
+                  </TabsTrigger>
 
-                <TabsTrigger value="processed" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                  Processed <span className="ml-1 text-xs">({tabCounts.processed})</span>
-                </TabsTrigger>
-                <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                  data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                  All <span className="ml-1 text-xs">({tabCounts.all})</span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+                  <TabsTrigger value="processed" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                    data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                    Processed <span className="ml-1 text-xs">({tabCounts.processed})</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                    data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                    All <span className="ml-1 text-xs">({tabCounts.all})</span>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              
+              {/* Refresh button for Processed tab */}
+              {statusTab === 'processed' && (
+                <Button
+                  onClick={hydrateGeneratedContracts}
+                  variant="outline"
+                  size="sm"
+                  className="px-3 flex items-center gap-2 text-blue-600 border-blue-300 hover:bg-blue-50"
+                  title="Refresh processed contracts from database"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Refresh
+                </Button>
+              )}
+            </div>
             
             {/* Status & Progress - Positioned on the right side of tabs */}
             <div className="bg-white border border-gray-200 rounded-lg px-4 py-2.5 shadow-sm hover:shadow-md transition-shadow duration-200">
@@ -2764,6 +3932,8 @@ b, strong { font-weight: bold !important; }
                   <FileDown className="w-4 h-4" />
                   Export CSV
                 </Button>
+                
+
                 <Button
                   onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
                   variant="default"
@@ -3577,7 +4747,7 @@ b, strong { font-weight: bold !important; }
                       // Close the sidebar and ensure preferences are saved
                       setIsColumnSidebarOpen(false);
                       // Show success message
-                      toast.success('Column preferences saved successfully!');
+                      showSuccess('Column preferences saved successfully!');
                     }}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
                     title="Close column manager (Esc)"
@@ -3602,13 +4772,7 @@ b, strong { font-weight: bold !important; }
           getAssignedTemplate={getAssignedTemplate}
         />
 
-        {/* Bulk Generation Summary Modal */}
-        <BulkGenerationSummaryModal
-          isOpen={bulkGenerationSummaryModalOpen}
-          onClose={() => setBulkGenerationSummaryModalOpen(false)}
-          successful={bulkGenerationResults.successful}
-          skipped={bulkGenerationResults.skipped}
-        />
+
 
         {/* Professional Bulk Template Assignment Modal */}
         {bulkAssignmentModalOpen && (
@@ -4008,6 +5172,18 @@ b, strong { font-weight: bold !important; }
                   </Button>
                   <Button 
                     onClick={async () => {
+                      // Check if all selected providers have templates assigned
+                      const providersWithoutTemplates = selectedProviderIds
+                        .map(id => providers.find(p => p.id === id))
+                        .filter(provider => provider && !getAssignedTemplate(provider));
+                      
+                      if (providersWithoutTemplates.length > 0) {
+                        // Close the modal and show template error
+                        setBulkAssignmentModalOpen(false);
+                        setTemplateErrorModalOpen(true);
+                        return;
+                      }
+                      
                       // Close the modal first
                       setBulkAssignmentModalOpen(false);
                       // Then trigger modal-specific bulk generation
@@ -4050,7 +5226,7 @@ b, strong { font-weight: bold !important; }
                       setTemplateAssignments(newAssignments);
                       setSessionTemplateAssignments(newAssignments);
                       setSameTemplateModalOpen(false);
-                      toast.success(`Template assigned to ${selectedProviderIds.length} providers`);
+                      showSuccess(`Template assigned to ${selectedProviderIds.length} providers`);
                     }
                   }}
                 >
@@ -4079,6 +5255,47 @@ b, strong { font-weight: bold !important; }
                     onClick={() => setSameTemplateModalOpen(false)}
                   >
                     Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Template Selection Error Modal */}
+        {templateErrorModalOpen && (
+          <Dialog open={templateErrorModalOpen} onOpenChange={setTemplateErrorModalOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="w-5 h-5" />
+                  Template Required
+                </DialogTitle>
+              </DialogHeader>
+              
+              <div className="space-y-4">
+                <div className="text-sm text-gray-600">
+                  Please select a template before generating contracts. You can either:
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="text-sm">
+                    <strong>Option 1:</strong> Use the "Same Template (All)" dropdown to assign one template to all selected providers
+                  </div>
+                  <div className="text-sm">
+                    <strong>Option 2:</strong> Use "Different Templates" to assign specific templates to each provider individually
+                  </div>
+                  <div className="text-sm">
+                    <strong>Option 3:</strong> Assign templates using the dropdown in each provider row
+                  </div>
+                </div>
+                
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setTemplateErrorModalOpen(false)}
+                  >
+                    OK
                   </Button>
                 </div>
               </div>
@@ -4135,15 +5352,15 @@ b, strong { font-weight: bold !important; }
                             if (option === 'clear-session') {
                               setSessionTemplateAssignments({});
                               sessionRestoredRef.current = false;
-                              toast.success('Session assignments cleared');
+                              showSuccess('Session assignments cleared');
                             } else if (option === 'clear-all') {
                               setTemplateAssignments({});
                               setSessionTemplateAssignments({});
                               sessionRestoredRef.current = false;
-                              toast.success('All template assignments cleared');
+                              showSuccess('All template assignments cleared');
                             } else if (option === 'save-to-session') {
                               setSessionTemplateAssignments(templateAssignments);
-                              toast.success('Current assignments saved to session');
+                              showSuccess('Current assignments saved to session');
                             }
                           }}
                         >
@@ -4193,6 +5410,7 @@ b, strong { font-weight: bold !important; }
                       <Select
                         value=""
                         onValueChange={(option) => {
+                          setShowAssignmentHint(false); // Hide hint when user interacts
                           if (option === 'same-template') {
                             setSameTemplateModalOpen(true);
                           } else if (option === 'bulk-different') {
@@ -4201,7 +5419,11 @@ b, strong { font-weight: bold !important; }
                         }}
                       >
                         <SelectTrigger 
-                          className="w-48 h-7 text-gray-900"
+                          className={`w-48 h-7 text-gray-900 transition-all duration-300 ${
+                            showAssignmentHint && selectedProviderIds.length > 0 
+                              ? 'ring-2 ring-blue-500 ring-opacity-50 bg-blue-50 border-blue-300 shadow-sm' 
+                              : ''
+                          }`}
                           title="Assignment Options:\nSame Template: Assign one template to all selected providers\nDifferent Templates: Choose different templates for each provider"
                         >
                           <SelectValue placeholder="Choose assignment..." />
@@ -4225,7 +5447,7 @@ b, strong { font-weight: bold !important; }
                   {/* Right side - Action Buttons */}
                   <div className="flex items-center gap-3">
                     <Button
-                      onClick={handleGenerateAll}
+                      onClick={handleBulkGenerate}
                       className="bg-blue-600 hover:bg-blue-700 text-white"
                       size="sm"
                     >
@@ -4435,6 +5657,63 @@ b, strong { font-weight: bold !important; }
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Clear Confirmation Dialog */}
+        <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                Clear All Processed Contracts
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to permanently delete ALL {contractsToClear.length} processed contracts from the database? This action cannot be undone.
+            </p>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowClearConfirm(false)}
+                disabled={isClearing}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={confirmClearContracts}
+                disabled={isClearing}
+                className="flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                {isClearing ? 'Clearing...' : `Clear All ${contractsToClear.length} Contracts`}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Progress Modal for Clearing Contracts */}
+        <ProgressModal
+          isOpen={isClearing}
+          title="Clearing Processed Contracts"
+          progress={clearingProgress}
+          message={
+            clearingProgress < 30 
+              ? 'Fetching all contracts from database...' 
+              : clearingProgress < 100 
+                ? 'Deleting contracts from database...' 
+                : 'Finishing up...'
+          }
+        />
+
+        {/* Progress Modal for Bulk Generation */}
+        <ProgressModal
+          isOpen={progressModalOpen}
+          title="Bulk Contract Generation"
+          progress={progressData.progress}
+          message={progressData.currentOperation}
+        />
+
+
 
       </div>
     </div>

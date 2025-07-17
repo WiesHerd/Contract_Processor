@@ -12,12 +12,16 @@ export interface GeneratedFile {
 export interface GeneratedContract {
   providerId: string;
   templateId: string;
-  status: 'SUCCESS' | 'FAILED';
+  status: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
   generatedAt: string;
   fileUrl?: string;
   fileName?: string;
   s3Key?: string;
+  localFilePath?: string;
+  s3Status?: 'SUCCESS' | 'FAILED';
+  dynamoDbStatus?: 'SUCCESS' | 'FAILED';
   error?: string;
+  dynamoDbId?: string; // Store the actual DynamoDB ID for deletion
 }
 
 interface GeneratorState {
@@ -84,6 +88,9 @@ const generatorSlice = createSlice({
       );
       state.generatedContracts.push(action.payload);
     },
+    setGeneratedContracts: (state, action: PayloadAction<GeneratedContract[]>) => {
+      state.generatedContracts = action.payload;
+    },
     clearGeneratedContracts: (state) => {
       state.generatedContracts = [];
     },
@@ -102,6 +109,7 @@ export const {
   setLogsError,
   addGenerationLog,
   addGeneratedContract,
+  setGeneratedContracts,
   clearGeneratedContracts,
 } = generatorSlice.actions;
 
