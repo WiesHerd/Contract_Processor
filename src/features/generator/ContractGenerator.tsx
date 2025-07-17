@@ -3415,9 +3415,12 @@ b, strong { font-weight: bold !important; }
   console.log('🔍 Tab Counts Debug:', {
     totalProviders: filteredProviders.length,
     generatedContractsInState: generatedContracts.length,
-    processedRows: processedRows.length,
-    notGeneratedRows: notGeneratedRows.length,
-    allRows: allRows.length,
+    realTabCounts: getRealTabCounts(),
+    oldTabCounts: {
+      processedRows: processedRows.length,
+      notGeneratedRows: notGeneratedRows.length,
+      allRows: allRows.length,
+    },
     generatedContractsDetails: generatedContracts.map(c => ({
       providerId: c.providerId,
       templateId: c.templateId,
@@ -3482,11 +3485,22 @@ b, strong { font-weight: bold !important; }
     userPreferencesKeys: userPreferences ? Object.keys(userPreferences) : []
   });
   
-  const tabCounts = {
-    notGenerated: notGeneratedRows.length,
-    processed: processedRows.length,
-    all: allRows.length,
+  // Get real counts from database contracts, not just filtered providers
+  const getRealTabCounts = () => {
+    const totalContracts = generatedContracts.length;
+    const successContracts = generatedContracts.filter(c => c.status === 'SUCCESS').length;
+    const partialSuccessContracts = generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS').length;
+    const failedContracts = generatedContracts.filter(c => c.status === 'FAILED').length;
+    const processedContracts = successContracts + partialSuccessContracts + failedContracts;
+    
+    return {
+      notGenerated: filteredProviders.length - processedContracts,
+      processed: processedContracts,
+      all: filteredProviders.length,
+    };
   };
+
+  const tabCounts = getRealTabCounts();
 
   // Compute counts for progress bar and stats - use ALL filtered providers
   const completedCount = processedRows.length;
