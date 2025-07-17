@@ -2515,8 +2515,12 @@ b, strong { font-weight: bold !important; }
         nextToken = result?.nextToken;
       } while (nextToken);
       
-      // Filter for only SUCCESS contracts
-      const processedLogs = allLogs.filter(log => log.status === 'SUCCESS');
+      // Filter for ALL processed contracts (SUCCESS, PARTIAL_SUCCESS, FAILED)
+      const processedLogs = allLogs.filter(log => 
+        log.status === 'SUCCESS' || 
+        log.status === 'PARTIAL_SUCCESS' || 
+        log.status === 'FAILED'
+      );
       
       console.log('All contracts in database:', allLogs.length);
       console.log('Processed contracts to clear:', processedLogs.length);
@@ -2582,7 +2586,7 @@ b, strong { font-weight: bold !important; }
       
       setClearingProgress(100); // Complete
       
-      showSuccess(`Successfully cleared ${deletedCount} processed contracts! All contracts are now marked as "Not Generated".`);
+      showSuccess(`Successfully cleared ${deletedCount} processed contracts (Success, Partial Success, and Failed)! All contracts are now marked as "Not Generated".`);
       
       // Close confirmation dialog
       setShowClearConfirm(false);
@@ -5674,7 +5678,7 @@ b, strong { font-weight: bold !important; }
               </DialogTitle>
             </DialogHeader>
             <p className="text-gray-600 mb-4">
-              Are you sure you want to permanently delete ALL {contractsToClear.length} processed contracts from the database? This action cannot be undone.
+              Are you sure you want to permanently delete ALL {contractsToClear.length} processed contracts (including Success, Partial Success, and Failed) from the database? This action cannot be undone.
             </p>
             <DialogFooter>
               <Button 
