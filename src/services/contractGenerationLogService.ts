@@ -76,6 +76,19 @@ export class ContractGenerationLogService {
     }
   }
 
+  static async deleteLog(id: string): Promise<ContractGenerationLog> {
+    try {
+      const result = await client.graphql({
+        query: deleteContractGenerationLog,
+        variables: { input: { id } }
+      });
+      return (result as any).data.deleteContractGenerationLog;
+    } catch (error) {
+      console.error('Error deleting contract generation log:', error);
+      throw error;
+    }
+  }
+
   static async getLogsByProvider(providerId: string): Promise<ContractGenerationLog[]> {
     try {
       const result = await this.listLogs({ providerId: { eq: providerId } });

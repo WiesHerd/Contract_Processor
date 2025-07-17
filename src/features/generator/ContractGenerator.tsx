@@ -2551,22 +2551,28 @@ b, strong { font-weight: bold !important; }
       
       console.log('Found DynamoDB IDs to clear:', contractIds);
       
-      // Call the backend script to clear contracts with progress
-      const response = await fetch('http://localhost:4000/api/clear-processed-contracts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contractIds: contractIds
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to clear contracts: ${response.statusText}`);
+      // Delete contracts from DynamoDB with progress tracking
+      let deletedCount = 0;
+      const totalContracts = contractIds.length;
+      
+      for (let i = 0; i < contractIds.length; i++) {
+        try {
+          await ContractGenerationLogService.deleteLog(contractIds[i]);
+          deletedCount++;
+          
+          // Update progress (30% to 90% for deletion phase)
+          const deletionProgress = 30 + Math.round((deletedCount / totalContracts) * 60);
+          setClearingProgress(deletionProgress);
+          
+          // Small delay to show progress
+          if (i < contractIds.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        } catch (deleteError) {
+          console.error(`Failed to delete contract ${contractIds[i]}:`, deleteError);
+          // Continue with other deletions even if one fails
+        }
       }
-
-      const result = await response.json();
       
       setClearingProgress(90); // Almost done
       
@@ -2576,16 +2582,16 @@ b, strong { font-weight: bold !important; }
       
       setClearingProgress(100); // Complete
       
-      showSuccess(`Successfully cleared ${result.deletedCount} processed contracts! All contracts are now marked as "Not Generated".`);
+      showSuccess(`Successfully cleared ${deletedCount} processed contracts! All contracts are now marked as "Not Generated".`);
       
       // Close confirmation dialog
       setShowClearConfirm(false);
       setContractsToClear([]);
       
-      // Refresh the page to show updated status
+      // Refresh the contracts data to show updated status
       setTimeout(() => {
-        window.location.reload();
-      }, 2000);
+        hydrateGeneratedContracts();
+      }, 1000);
       
     } catch (error) {
       console.error('Error clearing all processed contracts:', error);
