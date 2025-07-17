@@ -3408,6 +3408,21 @@ b, strong { font-weight: bold !important; }
   const processedRows = allFilteredProvidersWithStatus.filter(
     row => row.generationStatus === 'Success' || row.generationStatus === 'Partial Success'
   );
+  // Get real counts from database contracts, not just filtered providers
+  const getRealTabCounts = () => {
+    const totalContracts = generatedContracts.length;
+    const successContracts = generatedContracts.filter(c => c.status === 'SUCCESS').length;
+    const partialSuccessContracts = generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS').length;
+    const failedContracts = generatedContracts.filter(c => c.status === 'FAILED').length;
+    const processedContracts = successContracts + partialSuccessContracts + failedContracts;
+    
+    return {
+      notGenerated: filteredProviders.length - processedContracts,
+      processed: processedContracts,
+      all: filteredProviders.length,
+    };
+  };
+
   const notGeneratedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Not Generated');
   const allRows = allFilteredProvidersWithStatus;
   
@@ -3485,21 +3500,6 @@ b, strong { font-weight: bold !important; }
     userPreferencesKeys: userPreferences ? Object.keys(userPreferences) : []
   });
   
-  // Get real counts from database contracts, not just filtered providers
-  const getRealTabCounts = () => {
-    const totalContracts = generatedContracts.length;
-    const successContracts = generatedContracts.filter(c => c.status === 'SUCCESS').length;
-    const partialSuccessContracts = generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS').length;
-    const failedContracts = generatedContracts.filter(c => c.status === 'FAILED').length;
-    const processedContracts = successContracts + partialSuccessContracts + failedContracts;
-    
-    return {
-      notGenerated: filteredProviders.length - processedContracts,
-      processed: processedContracts,
-      all: filteredProviders.length,
-    };
-  };
-
   const tabCounts = getRealTabCounts();
 
   // Compute counts for progress bar and stats - use ALL filtered providers
