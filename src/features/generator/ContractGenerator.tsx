@@ -979,6 +979,9 @@ export default function ContractGenerator() {
       // Open download URL in new tab
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
       
+      // Show success message
+      showSuccess(`Downloading contract for ${provider.name}`);
+      
     } catch (error) {
       console.error('Failed to download contract:', error);
       setUserError(`Failed to download contract for ${provider.name}. Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1380,7 +1383,8 @@ b, strong { font-weight: bold !important; }
     // Check if all providers have templates assigned (either manually or using selected template)
     const providersWithoutTemplates = selectedProviders.filter(provider => !getAssignedTemplate(provider));
     if (providersWithoutTemplates.length > 0) {
-      setUserError(`Some providers don't have templates assigned. Please assign templates or select a default template.`);
+      const providerNames = providersWithoutTemplates.map(p => p.name).join(', ');
+      setUserError(`The following providers don't have templates assigned: ${providerNames}. Please assign templates or select a default template.`);
       setIsBulkGenerating(false);
       return;
     }
@@ -1473,6 +1477,11 @@ b, strong { font-weight: bold !important; }
         progress: progressPercent,
         currentOperation: `Generating contract for ${provider.name} (${currentIndex}/${selectedProviders.length})`
       });
+      
+      // Add small delay to prevent UI freezing
+      if (i < selectedProviders.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
       
       try {
         const assignedTemplate = getAssignedTemplate(provider);
@@ -2231,7 +2240,9 @@ b, strong { font-weight: bold !important; }
   const handlePreviewGenerate = (providerId: string) => {
     const provider = providers.find(p => p.id === providerId);
     if (provider) {
-      generateAndDownloadDocx(provider);
+      // Set the provider for preview and open the preview modal
+      setSelectedProviderIds([providerId]);
+      setPreviewModalOpen(true);
     }
   };
 
@@ -3416,8 +3427,11 @@ b, strong { font-weight: bold !important; }
     const failedContracts = generatedContracts.filter(c => c.status === 'FAILED').length;
     const processedContracts = successContracts + partialSuccessContracts + failedContracts;
     
+    // Ensure we don't return negative numbers
+    const notGenerated = Math.max(0, filteredProviders.length - processedContracts);
+    
     return {
-      notGenerated: filteredProviders.length - processedContracts,
+      notGenerated: notGenerated,
       processed: processedContracts,
       all: filteredProviders.length,
     };

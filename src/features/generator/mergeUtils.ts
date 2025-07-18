@@ -361,6 +361,12 @@ export const mergeTemplateWithData = async (
     );
   }
 
+  // Ensure content is not empty after all replacements
+  if (!content || content.trim().length === 0) {
+    warnings.push('Warning: Template content is empty after merging');
+    content = '<p>No content available</p>';
+  }
+
   // Patch: Convert any dash-based lists for bonuses/incentives to <ul><li>...</li></ul>
   content = content.replace(/((?:- .+\n?)+)/g, (match) => {
     const items = match.trim().split(/\n/).map(line => line.replace(/^- /, '').trim());

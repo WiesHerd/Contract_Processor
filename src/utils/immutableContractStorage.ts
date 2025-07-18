@@ -156,9 +156,14 @@ class ImmutableContractStorage {
       Key: key
     });
 
-    // Create URL that expires in 1 year (maximum allowed)
-    const url = await getSignedUrl(s3Client, command, { expiresIn: 31536000 });
-    return url;
+    try {
+      // Create URL that expires in 1 year (maximum allowed)
+      const url = await getSignedUrl(s3Client, command, { expiresIn: 31536000 });
+      return url;
+    } catch (error) {
+      console.error('Failed to create permanent URL:', error);
+      throw new Error('Failed to create download URL for contract');
+    }
   }
 
   /**
