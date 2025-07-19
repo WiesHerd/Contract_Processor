@@ -39,6 +39,17 @@ import { fetchTemplatesIfNeeded } from '@/features/templates/templatesSlice';
 import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import type { AppDispatch } from '@/store';
+import { normalizeSmartQuotes, formatCurrency, formatNumber, formatDate } from '@/utils/formattingUtils';
+import { useTemplateAssignment } from './hooks/useTemplateAssignment';
+import { useMultiSelect } from './hooks/useMultiSelect';
+import { useContractGeneration } from './hooks/useContractGeneration';
+import { useBulkGeneration } from './hooks/useBulkGeneration';
+import { useGeneratorEvents } from './hooks/useGeneratorEvents';
+import { useGeneratorStatus } from './hooks/useGeneratorStatus';
+import { useGeneratorUI } from './hooks/useGeneratorUI';
+import { useGeneratorDataManagement } from './hooks/useGeneratorDataManagement';
+import { useGeneratorGrid } from './hooks/useGeneratorGrid';
+import { useGeneratorRendering } from './hooks/useGeneratorRendering';
 
 
 import { ContractGenerationLogService, ContractGenerationLog } from '@/services/contractGenerationLogService';
@@ -52,6 +63,7 @@ import { PaginationModule } from 'ag-grid-community';
 import { Checkbox } from '@/components/ui/checkbox';
 import { saveAs } from 'file-saver';
 import { saveContractFile, getContractFile, regenerateContractDownloadUrl } from '@/utils/s3Storage';
+import { saveDocxFile, saveMultipleFilesAsZip } from '@/utils/fileUtils';
 import { Progress } from '@/components/ui/progress';
 import { Clause } from '@/types/clause';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -63,6 +75,8 @@ import { useGeneratorPreferences } from '@/hooks/useGeneratorPreferences';
 import { useProviderPreferences } from '@/hooks/useUserPreferences';
 import { useErrorHandler } from '@/components/ui/error-handler';
 import ProgressModal from '@/components/ui/ProgressModal';
+import { useYear } from '@/contexts/YearContext';
+import { fetchProvidersByYear } from '@/store/slices/providerSlice';
 
 
 ModuleRegistry.registerModules([
@@ -76,46 +90,16 @@ interface ExtendedProvider extends Provider {
   [key: string]: any;
 }
 
-// Utility to normalize smart quotes and special characters
-function normalizeSmartQuotes(text: string): string {
-  return text
-    .replace(/[\u201C\u201D]/g, '"') // " "
-    .replace(/[\u2018\u2019]/g, "'") // ' '
-    .replace(/\u2013/g, "-")         // –
-    .replace(/\u2014/g, "--")        // —
-    .replace(/\u2026/g, "...")       // ...
-    .replace(/\u00a0/g, " ")         // non-breaking space
-    .replace(/\u2022/g, "-");        // bullet to dash
-}
+// Utility functions have been extracted to @/utils/formattingUtils
 
-// Utility functions for formatting (matching provider screen)
-function formatCurrency(value: any) {
-  const num = Number(String(value).replace(/[^0-9.]/g, ''));
-  if (isNaN(num)) return value;
-  return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-}
 
-function formatNumber(value: any) {
-  const num = Number(value);
-  if (isNaN(num)) return value;
-  return num.toLocaleString('en-US');
-}
-
-// Only format YYYY-MM-DD to MM/DD/YYYY, otherwise return as-is
-function formatDate(value: any) {
-  if (!value || typeof value !== 'string') return '';
-  // Match YYYY-MM-DD
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (match) {
-    const [, y, m, d] = match;
-    return `${m}/${d}/${y}`;
-  }
-  return value;
-}
 
 export default function ContractGenerator() {
+  console.log('🔍 ContractGenerator: Component mounting/rendering');
+  
   const dispatch = useDispatch<AppDispatch>();
   const { providers, loading: providersLoading, error: providersError } = useSelector((state: RootState) => state.provider);
+  const lastSync = useSelector((state: RootState) => state.provider.lastSync);
   const { templates, status: templatesStatus, error: templatesError } = useSelector((state: RootState) => state.templates);
   const { clauses, loading: clausesLoading } = useSelector((state: RootState) => state.clauses);
   const { mappings } = useSelector((state: RootState) => state.mappings);
@@ -127,8 +111,34 @@ export default function ContractGenerator() {
   const { generatedContracts } = useSelector((state: RootState) => state.generator);
   const { showError, showSuccess, showWarning, showInfo } = useErrorHandler();
   const { preferences: userPreferences } = useProviderPreferences();
+  const { selectedYear } = useYear();
 
-  const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
+  console.log('🔍 ContractGenerator: State values', { 
+    selectedYear, 
+    providersCount: providers.length, 
+    lastSync,
+    providersLoading 
+  });
+
+  // Simple mount effect to verify component is working
+  useEffect(() => {
+    console.log('🔍 ContractGenerator: Component mounted successfully');
+  }, []);
+
+  // Load providers for the selected year with caching (same pattern as ProviderDataManager)
+  useEffect(() => {
+    console.log('🔍 ContractGenerator: useEffect triggered', { selectedYear, lastSync });
+    
+    // Force fetch every time for now to debug
+    if (selectedYear) {
+      console.log('🔍 ContractGenerator: Dispatching fetchProvidersByYear', selectedYear);
+      dispatch(fetchProvidersByYear(selectedYear));
+    } else {
+      console.log('🔍 ContractGenerator: No selectedYear, skipping fetch');
+    }
+  }, [dispatch, selectedYear]);
+
+  // Multi-select state will be managed by the hook
   const [search, setSearch] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(100);
@@ -164,8 +174,25 @@ export default function ContractGenerator() {
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
 
   const [statusTab, setStatusTab] = useState<'notGenerated' | 'processed' | 'all'>('notGenerated');
-  const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
+
+  // Create a temporary gridRef that will be updated by useGeneratorGrid
+  const tempGridRef = useRef<any>(null);
+
+  // Multi-select hook - must be called early to provide selectedProviderIds to other hooks
+  const {
+    selectedProviderIds,
+    allProviderIds,
+    allSelected,
+    someSelected,
+    toggleSelectAll,
+    toggleSelectProvider,
+    setSelectedProviderIds,
+  } = useMultiSelect({
+    providers,
+    visibleRows: [], // Will be updated after visibleRows is computed
+    gridRef: tempGridRef
+  });
 
   // Progress tracking state
   const [progressModalOpen, setProgressModalOpen] = useState(false);
@@ -192,16 +219,32 @@ export default function ContractGenerator() {
     currentProvider: string;
     status: 'preparing' | 'generating' | 'saving' | 'uploading' | 'complete';
   } | null>(null);
-  const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false);
-  const [clickedProvider, setClickedProvider] = useState<Provider | null>(null);
-  const [bulkAssignmentModalOpen, setBulkAssignmentModalOpen] = useState(false);
-  const [sameTemplateModalOpen, setSameTemplateModalOpen] = useState(false);
-  const [showDetailedView, setShowDetailedView] = useState(false);
-  const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
-  const [templateErrorModalOpen, setTemplateErrorModalOpen] = useState(false);
-  
-  // Simple highlight state for the assignment field
-  const [showAssignmentHint, setShowAssignmentHint] = useState(true);
+
+  // Generator UI hook - replaces all modal and UI state management
+  const {
+    previewModalOpen,
+    setPreviewModalOpen,
+    bulkAssignmentModalOpen,
+    setBulkAssignmentModalOpen,
+    sameTemplateModalOpen,
+    setSameTemplateModalOpen,
+    instructionsModalOpen,
+    setInstructionsModalOpen,
+    templateErrorModalOpen,
+    setTemplateErrorModalOpen,
+    bottomActionMenuOpen,
+    setBottomActionMenuOpen,
+    showDetailedView,
+    setShowDetailedView,
+    clickedProvider,
+    setClickedProvider,
+    showAssignmentHint,
+    setShowAssignmentHint,
+  } = useGeneratorUI();
+
+
+
+
 
   // Auto-hide the assignment hint after 5 seconds or when user interacts
   useEffect(() => {
@@ -214,18 +257,86 @@ export default function ContractGenerator() {
     }
   }, [showAssignmentHint, selectedProviderIds.length]);
   
-  // Template assignment state - maps provider ID to assigned template ID
-  const [templateAssignments, setTemplateAssignments] = useState<Record<string, string>>({});
+  // Template assignment hook - replaces all template assignment logic
+  const {
+    templateAssignments,
+    bulkAssignmentLoading,
+    bulkAssignmentProgress,
+    getAssignedTemplate,
+    updateProviderTemplate: updateProviderTemplateHook,
+    assignTemplateToFiltered,
+    clearFilteredAssignments,
+    clearTemplateAssignments: clearTemplateAssignmentsHook,
+    smartAssignTemplates,
+    setTemplateAssignments,
+    setBulkAssignmentLoading,
+    setBulkAssignmentProgress,
+  } = useTemplateAssignment({
+    templates,
+    providers,
+    selectedProviderIds,
+    selectedTemplate,
+    getFilteredProviderIds: () => getFilteredProviderIds,
+    showSuccess,
+    showError,
+    showWarning,
+    showInfo
+  });
+
+  // Wrapper functions to handle session storage
+  const updateProviderTemplate = (providerId: string, templateId: string | null) => {
+    updateProviderTemplateHook(providerId, templateId);
+    // Also update session storage for tab navigation persistence
+    if (templateId && templateId.trim() !== '' && templateId !== 'no-template') {
+      const newAssignments = { ...templateAssignments, [providerId]: templateId };
+      setSessionTemplateAssignments(newAssignments);
+    } else {
+      const newAssignments = { ...templateAssignments };
+      delete newAssignments[providerId];
+      setSessionTemplateAssignments(newAssignments);
+    }
+  };
+
+  const clearTemplateAssignments = () => {
+    clearTemplateAssignmentsHook();
+    // Also clear session storage
+    setSessionTemplateAssignments({});
+    // Reset notification flag
+    sessionRestoredRef.current = false;
+  };
+  
+  // Contract generation hook - replaces all contract generation logic
+  const {
+    downloadContract: downloadContractHook,
+    generateAndDownloadDocx: generateAndDownloadDocxHook,
+  } = useContractGeneration({
+    templates,
+    mappings,
+    generatedContracts,
+    selectedTemplate,
+    getAssignedTemplate,
+    setUserError,
+    showSuccess,
+    showWarning,
+    showError
+  });
+
+  // Wrapper functions to maintain existing interface
+  const downloadContract = async (provider: Provider, templateId: string) => {
+    return downloadContractHook(provider, templateId);
+  };
+
+  const generateAndDownloadDocx = async (provider: Provider, template?: Template) => {
+    return generateAndDownloadDocxHook(provider, template);
+  };
+
+
   
   // Session storage for template assignments (temporary persistence during tab navigation)
   const [sessionTemplateAssignments, setSessionTemplateAssignments] = useState<Record<string, string>>({});
   
   // Track if we've shown the session restoration notification to avoid spam
   const sessionRestoredRef = useRef(false);
-
-  // State for bulk assignment loading
-  const [bulkAssignmentLoading, setBulkAssignmentLoading] = useState(false);
-  const [bulkAssignmentProgress, setBulkAssignmentProgress] = useState<{ completed: number; total: number } | null>(null);
 
   // Progress update functions
   const updateProgress = useCallback((updates: Partial<typeof progressData>) => {
@@ -234,7 +345,6 @@ export default function ContractGenerator() {
 
   const initializeProgress = useCallback((totalSteps: number) => {
     const steps = [
-      { id: 'folder', label: 'Selecting folder', status: 'pending' as const, icon: <FolderOpen className="w-4 h-4" /> },
       { id: 'generation', label: 'Generating contracts', status: 'pending' as const, icon: <FileText className="w-4 h-4" /> },
       { id: 'saving', label: 'Saving files', status: 'pending' as const, icon: <Download className="w-4 h-4" /> },
       { id: 'uploading', label: 'Uploading to cloud', status: 'pending' as const, icon: <Upload className="w-4 h-4" /> }
@@ -335,11 +445,6 @@ export default function ContractGenerator() {
     dispatch(fetchTemplatesIfNeeded());
   }, [dispatch]);
 
-  // Load providers with caching
-  useEffect(() => {
-    dispatch(fetchProvidersIfNeeded());
-  }, [dispatch]);
-
   // Create filtered clauses for the sidebar
   const filteredClauses = clauses.filter((clause: { title: string; content: string }) =>
     clause.title.toLowerCase().includes(clauseSearch.toLowerCase()) ||
@@ -396,17 +501,12 @@ export default function ContractGenerator() {
     }
   }, [statusTab, sessionTemplateAssignments, templateAssignments]);
 
-  // Add AG Grid ref for selection management
-  const gridRef = useRef<AgGridReact>(null);
-
-
-
   // Handle window resize for AG Grid
   useEffect(() => {
     const handleResize = () => {
-      if (gridRef.current?.api) {
+      if (tempGridRef.current?.api) {
         setTimeout(() => {
-          gridRef.current?.api.sizeColumnsToFit();
+          tempGridRef.current?.api.sizeColumnsToFit();
         }, 100);
       }
     };
@@ -443,833 +543,11 @@ export default function ContractGenerator() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Smart template assignment logic
-  const getAssignedTemplate = (provider: Provider) => {
-    // Filter out templates with empty IDs or names
-    const validTemplates = templates.filter(t => 
-      t && 
-      t.id && 
-      t.id.trim() !== '' && 
-      t.name && 
-      t.name.trim() !== ''
-    );
-    
-    // 1. Check if manually assigned
-    if (templateAssignments[provider.id]) {
-      const assignedTemplate = validTemplates.find(t => t.id === templateAssignments[provider.id]);
-      if (assignedTemplate) {
-        return assignedTemplate;
-      }
-      return null;
-    }
-    
-    // 2. Fallback to selected template (original behavior)
-    if (selectedTemplate && selectedTemplate.id && selectedTemplate.id.trim() !== '') {
-      return selectedTemplate;
-    }
-    return null;
-  };
 
 
 
-  // Update template assignment for a provider
-  const updateProviderTemplate = (providerId: string, templateId: string | null) => {
-    const provider = providers.find(p => p.id === providerId);
-    const template = templates.find(t => t.id === templateId);
-    
-    // Safety check to prevent empty template IDs
-    if (templateId && templateId.trim() !== '' && templateId !== 'no-template') {
-      const newAssignments = { ...templateAssignments, [providerId]: templateId };
-      setTemplateAssignments(newAssignments);
-      // Also update session storage for tab navigation persistence
-      setSessionTemplateAssignments(newAssignments);
-      showSuccess(`Template "${template?.name}" assigned to ${provider?.name}`);
-      
-      // Log individual template assignment
-      try {
-        const auditDetails = JSON.stringify({
-          action: 'TEMPLATE_ASSIGNED',
-          providerId: providerId,
-          providerName: provider?.name,
-          templateId: templateId,
-          templateName: template?.name,
-          assignmentType: 'individual',
-          timestamp: new Date().toISOString(),
-          metadata: {
-            providerId: providerId,
-            providerName: provider?.name,
-            templateId: templateId,
-            templateName: template?.name,
-            assignmentType: 'individual',
-            operation: 'assign',
-            success: true
-          }
-        });
-        
-        dispatch(logSecurityEvent({
-          action: 'TEMPLATE_ASSIGNED',
-          details: auditDetails,
-          severity: 'LOW',
-          category: 'DATA',
-          resourceType: 'TEMPLATE_ASSIGNMENT',
-          resourceId: providerId,
-          metadata: {
-            providerId: providerId,
-            providerName: provider?.name,
-            templateId: templateId,
-            templateName: template?.name,
-            assignmentType: 'individual',
-            operation: 'assign',
-            success: true
-          },
-        }));
-      } catch (auditError) {
-        console.error('Failed to log template assignment:', auditError);
-      }
-    } else {
-      const newAssignments = { ...templateAssignments };
-      delete newAssignments[providerId];
-      setTemplateAssignments(newAssignments);
-      // Also update session storage
-      setSessionTemplateAssignments(newAssignments);
-      showSuccess(`Template assignment cleared for ${provider?.name}`);
-      
-      // Log template unassignment
-      try {
-        const auditDetails = JSON.stringify({
-          action: 'TEMPLATE_UNASSIGNED',
-          providerId: providerId,
-          providerName: provider?.name,
-          assignmentType: 'individual',
-          timestamp: new Date().toISOString(),
-          metadata: {
-            providerId: providerId,
-            providerName: provider?.name,
-            assignmentType: 'individual',
-            operation: 'unassign',
-            success: true
-          }
-        });
-        
-        dispatch(logSecurityEvent({
-          action: 'TEMPLATE_UNASSIGNED',
-          details: auditDetails,
-          severity: 'LOW',
-          category: 'DATA',
-          resourceType: 'TEMPLATE_ASSIGNMENT',
-          resourceId: providerId,
-          metadata: {
-            providerId: providerId,
-            providerName: provider?.name,
-            assignmentType: 'individual',
-            operation: 'unassign',
-            success: true
-          },
-        }));
-      } catch (auditError) {
-        console.error('Failed to log template unassignment:', auditError);
-      }
-    }
-  };
-
-  // Bulk template assignment with progress
-  const assignTemplateToFiltered = async (templateId: string) => {
-    if (!templateId || templateId.trim() === '' || templateId === 'no-template') {
-      showError({ message: 'Please select a template first', severity: 'error' });
-      return;
-    }
-
-    const filteredIds = getFilteredProviderIds;
-    if (filteredIds.length === 0) {
-      showError({ message: 'No providers match the current filters', severity: 'error' });
-      return;
-    }
-
-    setBulkAssignmentLoading(true);
-    setBulkAssignmentProgress({ completed: 0, total: filteredIds.length });
-
-    try {
-      const newAssignments = { ...templateAssignments };
-      const template = templates.find(t => t.id === templateId);
-      
-      // Process in batches for better UX
-      const batchSize = 10;
-      for (let i = 0; i < filteredIds.length; i += batchSize) {
-        const batch = filteredIds.slice(i, i + batchSize);
-        
-        // Update assignments for this batch
-        batch.forEach(providerId => {
-          newAssignments[providerId] = templateId;
-        });
-        
-        // Update state immediately for visual feedback
-        setTemplateAssignments(newAssignments);
-        setSessionTemplateAssignments(newAssignments);
-        
-        // Update progress
-        setBulkAssignmentProgress({ 
-          completed: Math.min(i + batchSize, filteredIds.length), 
-          total: filteredIds.length 
-        });
-        
-        // Small delay to show progress
-        if (i + batchSize < filteredIds.length) {
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
-      }
-      
-      // Log bulk template assignment operation
-      try {
-        const auditDetails = JSON.stringify({
-          action: 'BULK_TEMPLATE_ASSIGNMENT',
-          templateId: templateId,
-          templateName: template?.name,
-          providerCount: filteredIds.length,
-          providerIds: filteredIds,
-          assignmentType: 'filtered',
-          timestamp: new Date().toISOString(),
-          metadata: {
-            templateId: templateId,
-            templateName: template?.name,
-            providerCount: filteredIds.length,
-            providerIds: filteredIds,
-            assignmentType: 'filtered',
-            operation: 'bulk_assignment',
-            success: true
-          }
-        });
-        
-        await dispatch(logSecurityEvent({
-          action: 'BULK_TEMPLATE_ASSIGNMENT',
-          details: auditDetails,
-          severity: 'MEDIUM',
-          category: 'DATA',
-          resourceType: 'TEMPLATE_ASSIGNMENT',
-          resourceId: templateId,
-          metadata: {
-            templateId: templateId,
-            templateName: template?.name,
-            providerCount: filteredIds.length,
-            providerIds: filteredIds,
-            assignmentType: 'filtered',
-            operation: 'bulk_assignment',
-            success: true
-          },
-        }));
-      } catch (auditError) {
-        console.error('Failed to log bulk template assignment:', auditError);
-      }
-      
-      showSuccess(`Assigned template "${template?.name}" to ${filteredIds.length} providers`);
-      setSelectedTemplateForFiltered("");
-      
-    } catch (error) {
-      console.error('Error during bulk assignment:', error);
-      showError({ message: 'Failed to assign templates. Please try again.', severity: 'error' });
-      
-      // Log the failure
-      try {
-        const auditDetails = JSON.stringify({
-          action: 'BULK_TEMPLATE_ASSIGNMENT_FAILED',
-          templateId: templateId,
-          providerCount: filteredIds.length,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString(),
-          metadata: {
-            templateId: templateId,
-            providerCount: filteredIds.length,
-            error: error instanceof Error ? error.message : 'Unknown error',
-            operation: 'bulk_assignment',
-            success: false
-          }
-        });
-        
-        await dispatch(logSecurityEvent({
-          action: 'BULK_TEMPLATE_ASSIGNMENT_FAILED',
-          details: auditDetails,
-          severity: 'HIGH',
-          category: 'DATA',
-          resourceType: 'TEMPLATE_ASSIGNMENT',
-          resourceId: templateId,
-          metadata: {
-            templateId: templateId,
-            providerCount: filteredIds.length,
-            error: error instanceof Error ? error.message : 'Unknown error',
-            operation: 'bulk_assignment',
-            success: false
-          },
-        }));
-      } catch (auditError) {
-        console.error('Failed to log bulk template assignment failure:', auditError);
-      }
-    } finally {
-      setBulkAssignmentLoading(false);
-      setBulkAssignmentProgress(null);
-    }
-  };
-
-  // Clear filtered assignments with progress
-  const clearFilteredAssignments = async () => {
-    const filteredIds = getFilteredProviderIds;
-    if (filteredIds.length === 0) {
-      showWarning('No providers match the current filters');
-      return;
-    }
-
-    setBulkAssignmentLoading(true);
-    setBulkAssignmentProgress({ completed: 0, total: filteredIds.length });
-
-    try {
-      const newAssignments = { ...templateAssignments };
-      
-      // Process in batches for better UX
-      const batchSize = 10;
-      for (let i = 0; i < filteredIds.length; i += batchSize) {
-        const batch = filteredIds.slice(i, i + batchSize);
-        
-        // Clear assignments for this batch
-        batch.forEach(providerId => {
-          delete newAssignments[providerId];
-        });
-        
-        // Update state immediately for visual feedback
-        setTemplateAssignments(newAssignments);
-        setSessionTemplateAssignments(newAssignments);
-        
-        // Update progress
-        setBulkAssignmentProgress({ 
-          completed: Math.min(i + batchSize, filteredIds.length), 
-          total: filteredIds.length 
-        });
-        
-        // Small delay to show progress
-        if (i + batchSize < filteredIds.length) {
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
-      }
-      
-      showSuccess(`Cleared assignments for ${filteredIds.length} providers`);
-      
-    } catch (error) {
-      console.error('Error during bulk clear:', error);
-      showError({ message: 'Failed to clear assignments. Please try again.', severity: 'error' });
-    } finally {
-      setBulkAssignmentLoading(false);
-      setBulkAssignmentProgress(null);
-    }
-  };
-
-  const clearTemplateAssignments = () => {
-    const previousCount = Object.keys(templateAssignments).length;
-    setTemplateAssignments({});
-    // Also clear session storage
-    setSessionTemplateAssignments({});
-    // Reset notification flag
-    sessionRestoredRef.current = false;
-    // Show success feedback
-    showSuccess('All template assignments cleared successfully!');
-    
-    // Log bulk clear operation
-    try {
-      const auditDetails = JSON.stringify({
-        action: 'BULK_TEMPLATE_CLEAR',
-        clearedCount: previousCount,
-        assignmentType: 'all',
-        timestamp: new Date().toISOString(),
-        metadata: {
-          clearedCount: previousCount,
-          assignmentType: 'all',
-          operation: 'bulk_clear',
-          success: true
-        }
-      });
-      
-      dispatch(logSecurityEvent({
-        action: 'BULK_TEMPLATE_CLEAR',
-        details: auditDetails,
-        severity: 'MEDIUM',
-        category: 'DATA',
-        resourceType: 'TEMPLATE_ASSIGNMENT',
-        resourceId: 'bulk_clear',
-        metadata: {
-          clearedCount: previousCount,
-          assignmentType: 'all',
-          operation: 'bulk_clear',
-          success: true
-        },
-      }));
-    } catch (auditError) {
-      console.error('Failed to log bulk template clear:', auditError);
-    }
-  };
-
-  // Smart template assignment based on provider characteristics
-  const smartAssignTemplates = () => {
-    const selectedProviders = providers.filter(p => selectedProviderIds.includes(p.id));
-    const newAssignments = { ...templateAssignments };
-    let assignedCount = 0;
-
-    selectedProviders.forEach(provider => {
-      // Skip if already manually assigned
-      if (templateAssignments[provider.id]) {
-        return;
-      }
-
-      // Smart assignment logic based on provider characteristics
-      let bestTemplate = null;
-
-      // 1. Try to match by specialty
-      if (provider.specialty) {
-        bestTemplate = templates.find(t => 
-          t.name.toLowerCase().includes(provider.specialty.toLowerCase()) ||
-          t.tags?.some((tag: string) => tag.toLowerCase().includes(provider.specialty.toLowerCase()))
-        );
-      }
-
-      // 2. Try to match by provider type
-      if (!bestTemplate && provider.providerType) {
-        bestTemplate = templates.find(t => 
-          t.name.toLowerCase().includes(provider.providerType.toLowerCase()) ||
-          t.tags?.some((tag: string) => tag.toLowerCase().includes(provider.providerType.toLowerCase()))
-        );
-      }
-
-      // 3. Try to match by compensation model
-      if (!bestTemplate && provider.compensationModel) {
-        bestTemplate = templates.find(t => 
-          t.name.toLowerCase().includes(provider.compensationModel.toLowerCase()) ||
-          t.tags?.some((tag: string) => tag.toLowerCase().includes(provider.compensationModel.toLowerCase()))
-        );
-      }
-
-      // 4. Fallback to first available template
-      if (!bestTemplate && templates.length > 0) {
-        bestTemplate = templates[0];
-      }
-
-      if (bestTemplate) {
-        newAssignments[provider.id] = bestTemplate.id;
-        assignedCount++;
-      }
-    });
-
-    setTemplateAssignments(newAssignments);
-    // Also update session storage
-    setSessionTemplateAssignments(newAssignments);
-    
-    if (assignedCount > 0) {
-      showSuccess(`Smart assigned templates to ${assignedCount} providers`);
-    } else {
-      showInfo('No new templates assigned. Some providers may already have templates or no suitable templates found.');
-    }
-  };
 
 
-
-  // Multi-select handlers
-  const allProviderIds = providers.map((p: Provider) => p.id);
-  const allSelected = selectedProviderIds.length === allProviderIds.length && allProviderIds.length > 0;
-  const someSelected = selectedProviderIds.length > 0;
-
-  const toggleSelectAll = () => {
-    if (allSelected) {
-      setSelectedProviderIds([]);
-      gridRef.current?.api.deselectAll();
-    } else {
-      // Select all providers that are currently visible in the grid
-      const visibleProviderIds = visibleRows.map(row => row.id);
-      setSelectedProviderIds(visibleProviderIds);
-      // Manually select each visible row in the grid
-      visibleRows.forEach(row => {
-        const rowNode = gridRef.current?.api.getRowNode(row.id);
-        if (rowNode) {
-          rowNode.setSelected(true);
-        }
-      });
-    }
-  };
-
-  const toggleSelectProvider = (id: string) => {
-    setSelectedProviderIds(prev => 
-      prev.includes(id) 
-        ? prev.filter(pid => pid !== id)
-        : [...prev, id]
-    );
-  };
-
-  // Helper function to download a contract with error handling
-  const downloadContract = async (provider: Provider, templateId: string) => {
-    try {
-      // Find the actual generated contract to get the correct information
-      const contract = generatedContracts.find(
-        c => c.providerId === provider.id && c.templateId === templateId && c.status === 'SUCCESS'
-      );
-      
-      if (!contract) {
-        setUserError(`No generated contract found for ${provider.name} with template ${templateId}. Please regenerate the contract.`);
-        return;
-      }
-      
-      // Get the template to get the contract year
-      const template = templates.find(t => t.id === templateId);
-      const contractYear = template?.contractYear || new Date().getFullYear().toString();
-      
-      const contractId = provider.id + '-' + templateId + '-' + contractYear;
-      const fileName = getContractFileName(
-        contractYear,
-        provider.name,
-        new Date().toISOString().split('T')[0]
-      );
-      
-      console.log('Attempting to download contract:', { contractId, fileName, provider: provider.name });
-      
-      // Try to get the contract file from immutable storage
-      let downloadUrl: string;
-      try {
-        const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
-        
-        // Extract timestamp from contract ID or use current date as fallback
-        const timestamp = new Date().toISOString().split('T')[0]; // Use date part as timestamp
-        
-        downloadUrl = await immutableContractStorage.getPermanentDownloadUrl(contractId, timestamp, fileName);
-        console.log('Successfully retrieved permanent download URL:', downloadUrl.substring(0, 100) + '...');
-      } catch (immutableError) {
-        console.log('Immutable storage failed, trying S3 storage...', immutableError);
-        // Fallback to S3 storage
-        try {
-          const { getContractFile } = await import('@/utils/s3Storage');
-          const result = await getContractFile(contractId, fileName);
-          downloadUrl = result.url;
-          console.log('Successfully generated download URL via S3 storage:', downloadUrl.substring(0, 100) + '...');
-        } catch (s3StorageError) {
-          console.log('S3 storage failed, trying direct S3 access...', s3StorageError);
-          // Final fallback to direct S3 access
-          try {
-            const { getContractFile } = await import('@/utils/s3Storage');
-            const result = await getContractFile(contractId, fileName);
-            downloadUrl = result.url;
-            console.log('Successfully generated download URL via S3 fallback:', downloadUrl.substring(0, 100) + '...');
-          } catch (fallbackError) {
-            console.error('Failed to get download URL:', fallbackError);
-            
-            // Check if the file actually exists in S3
-            const { checkFileExists } = await import('@/utils/s3Storage');
-            const fileExists = await checkFileExists(`contracts/${contractId}/${fileName}`);
-            
-            if (!fileExists) {
-              setUserError(`Contract file not found in storage for ${provider.name}. The contract may have been generated but failed to upload to storage. Please regenerate the contract.`);
-              
-              // Offer to regenerate the contract
-              if (confirm(`The contract file for ${provider.name} was not found in storage. Would you like to regenerate it?`)) {
-                const assignedTemplate = getAssignedTemplate(provider);
-                if (assignedTemplate) {
-                  await generateAndDownloadDocx(provider, assignedTemplate);
-                } else {
-                  setUserError(`No template assigned to ${provider.name}. Please assign a template first.`);
-                }
-              }
-              return;
-            } else {
-              throw new Error(`File exists in S3 but download URL generation failed: ${fallbackError}`);
-            }
-          }
-        }
-      }
-      
-      // Open download URL in new tab
-      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-      
-      // Show success message
-      showSuccess(`Downloading contract for ${provider.name}`);
-      
-    } catch (error) {
-      console.error('Failed to download contract:', error);
-      setUserError(`Failed to download contract for ${provider.name}. Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
-      // Try to regenerate the contract if download fails
-      if (confirm(`Failed to download the contract. Would you like to regenerate it for ${provider.name}?`)) {
-        try {
-          // Use the template that's already assigned to this provider
-          const assignedTemplate = getAssignedTemplate(provider);
-          if (assignedTemplate) {
-            console.log(`Regenerating contract for ${provider.name} with assigned template ${assignedTemplate.name}`);
-            await generateAndDownloadDocx(provider, assignedTemplate);
-            setUserError(`✅ Contract regenerated successfully for ${provider.name}`);
-          } else {
-            // If no template is assigned, try to find one from the contract data
-            const contract = generatedContracts.find(c => c.providerId === provider.id && c.status === 'SUCCESS');
-            if (contract) {
-              const template = templates.find(t => t.id === contract.templateId);
-              if (template) {
-                console.log(`Regenerating contract for ${provider.name} with template from contract data: ${template.name}`);
-                await generateAndDownloadDocx(provider, template);
-                setUserError(`✅ Contract regenerated successfully for ${provider.name}`);
-              } else {
-                setUserError(`Template not found for ${provider.name}. Please assign a template first.`);
-              }
-            } else {
-              setUserError(`No template assigned to ${provider.name}. Please assign a template first.`);
-            }
-          }
-        } catch (regenerateError) {
-          console.error('Contract regeneration failed:', regenerateError);
-          setUserError(`Failed to regenerate contract for ${provider.name}: ${regenerateError instanceof Error ? regenerateError.message : 'Unknown error'}`);
-        }
-      }
-    }
-  };
-
-  // Helper to generate and download DOCX for a provider
-  const generateAndDownloadDocx = async (provider: Provider, template?: Template) => {
-    const templateToUse = template || selectedTemplate;
-    if (!templateToUse) return;
-    
-    try {
-      const html = templateToUse.editedHtmlContent || templateToUse.htmlPreviewContent || "";
-      const mapping = mappings[templateToUse.id]?.mappings;
-      
-      // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
-      const enhancedMapping = mapping?.map(m => {
-        // Check if this mapping has a dynamic block (stored in value field with dynamic: prefix)
-        if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
-          return {
-            ...m,
-            mappingType: 'dynamic' as const,
-            mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
-            mappedColumn: undefined, // Clear the mappedColumn since it's a dynamic block
-          };
-        }
-        return {
-          ...m,
-          mappingType: 'field' as const,
-        };
-      });
-      
-      const { content: mergedHtml } = await mergeTemplateWithData(templateToUse, provider, html, enhancedMapping);
-      const htmlClean = normalizeSmartQuotes(mergedHtml);
-      const aptosStyle = `<style>
-body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
-  font-family: Aptos, Arial, sans-serif !important;
-  font-size: 11pt !important;
-}
-h1 { font-size: 16pt !important; font-weight: bold !important; }
-h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
-b, strong { font-weight: bold !important; }
-</style>`;
-      const htmlWithFont = aptosStyle + htmlClean;
-
-      // @ts-ignore
-      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-        setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
-        return;
-      }
-      // @ts-ignore
-      const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-      const contractYear = templateToUse.contractYear || new Date().getFullYear().toString();
-      const runDate = new Date().toISOString().split('T')[0];
-      const fileName = getContractFileName(contractYear, provider.name, runDate);
-      
-      // Use modern file picker for download location selection (if supported)
-      let fileSaved = false;
-      
-      if ('showDirectoryPicker' in window) {
-        try {
-          // Use directory picker to let user choose folder location
-          const dirHandle = await (window as any).showDirectoryPicker({
-            mode: 'readwrite'
-          });
-          
-          // Create the file in the selected directory
-          const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-          const writable = await fileHandle.createWritable();
-          await writable.write(docxBlob);
-          await writable.close();
-          
-          console.log('Contract saved to user-selected folder:', fileName);
-          showSuccess(`Contract saved to selected folder: ${fileName}`);
-          fileSaved = true;
-        } catch (error) {
-          // Only fallback if it's not a user cancellation
-          if (error instanceof Error && error.name !== 'AbortError') {
-            console.log('Directory picker failed, falling back to default download location');
-            const url = URL.createObjectURL(docxBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            fileSaved = true;
-          } else {
-            console.log('User cancelled folder selection');
-            return; // Don't save anywhere if user cancels
-          }
-        }
-      } else {
-        // Fallback for browsers that don't support showDirectoryPicker
-        const url = URL.createObjectURL(docxBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        fileSaved = true;
-      }
-      
-      // Only continue with S3 storage and logging if file was actually saved
-      if (!fileSaved) {
-        console.log('File not saved, skipping S3 storage and logging');
-        return;
-      }
-      
-      // 1. Store contract with immutable data and permanent URL
-      let permanentUrl = '';
-      let contractId = '';
-      let s3UploadSuccess = false;
-      try {
-        const contractId = provider.id + '-' + templateToUse.id + '-' + contractYear;
-        
-        // Convert Blob to Buffer for immutable storage
-        const arrayBuffer = await docxBlob.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        
-        // Store with immutable data and permanent URL
-        const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
-        const immutableResult = await immutableContractStorage.storeImmutableContract(
-          contractId,
-          fileName,
-          buffer,
-          provider, // Snapshot of provider data at generation time
-          templateToUse // Snapshot of template data at generation time
-        );
-        
-        permanentUrl = immutableResult.permanentUrl;
-        s3UploadSuccess = true;
-        
-        console.log('✅ Contract stored with immutable data and permanent URL:', { 
-          contractId, 
-          fileName, 
-          permanentUrl: permanentUrl.substring(0, 100) + '...',
-          fileHash: immutableResult.fileHash
-        });
-      } catch (s3err) {
-        console.error('Failed to store contract with immutable data:', s3err);
-        setUserError(`Contract generated but failed to store permanently: ${s3err instanceof Error ? s3err.message : 'Unknown error'}. You can still download locally.`);
-        s3UploadSuccess = false;
-      }
-      
-
-
-      // 3. Log the generation event with comprehensive details
-      const logInput = {
-        providerId: provider.id,
-        contractYear: contractYear,
-        templateId: templateToUse.id,
-        generatedAt: new Date().toISOString(),
-        generatedBy: 'user', // TODO: Get actual user ID
-        outputType: 'DOCX',
-        status: s3UploadSuccess ? 'SUCCESS' : 'FAILED', // Only mark as SUCCESS if immutable storage succeeded
-        fileUrl: permanentUrl || fileName, // Prefer permanent URL if available
-        notes: `Generated contract for ${provider.name} using template ${templateToUse.name} with immutable data storage${!s3UploadSuccess ? ' - Immutable storage failed' : ''}`
-      };
-
-      try {
-        const logEntry = await ContractGenerationLogService.createLog(logInput);
-        dispatch(addGenerationLog(logEntry));
-        dispatch(addGeneratedContract({
-          providerId: provider.id,
-          templateId: templateToUse.id,
-          status: s3UploadSuccess ? 'SUCCESS' : 'FAILED', // Only mark as SUCCESS if immutable storage succeeded
-          generatedAt: new Date().toISOString(),
-          fileUrl: permanentUrl, // Store the permanent URL for later access
-          fileName: fileName,
-          s3Key: contractId, // Store contract ID instead of S3 key
-          error: !s3UploadSuccess ? 'Immutable storage failed - contract not stored permanently' : undefined,
-          dynamoDbId: logEntry?.id, // Store the DynamoDB ID from the log entry
-        }));
-        
-        console.log('Contract generation logged successfully:', logEntry);
-      } catch (logError) {
-        console.error('Failed to log contract generation:', logError);
-        // Continue to audit log even if contract generation log fails
-      }
-      
-      // 4. Always attempt to log to the main audit log
-      console.log('Dispatching logSecurityEvent for contract generation', {provider, templateToUse, fileName, contractYear});
-      try {
-        const auditDetails = JSON.stringify({
-          providerId: provider.id,
-          providerName: provider.name,
-          templateId: templateToUse.id,
-          templateName: templateToUse.name,
-          contractYear,
-          fileUrl: permanentUrl || fileName,
-          fileName: fileName,
-          contractId: contractId,
-          status: 'SUCCESS',
-          outputType: 'DOCX',
-          generatedAt: new Date().toISOString(),
-          metadata: {
-            providerId: provider.id,
-            providerName: provider.name,
-            templateId: templateToUse.id,
-            templateName: templateToUse.name,
-            contractYear,
-            fileUrl: permanentUrl || fileName,
-            fileName: fileName,
-            contractId: contractId,
-            status: 'SUCCESS',
-            outputType: 'DOCX',
-            generatedAt: new Date().toISOString(),
-          }
-        });
-        
-        const result = await dispatch(logSecurityEvent({
-          action: 'CONTRACT_GENERATED',
-          details: auditDetails,
-          severity: 'LOW',
-          category: 'DATA',
-          resourceType: 'CONTRACT',
-          resourceId: provider.id,
-          metadata: {
-            providerId: provider.id,
-            providerName: provider.name,
-            templateId: templateToUse.id,
-            templateName: templateToUse.name,
-            contractYear,
-            fileUrl: permanentUrl || fileName,
-            fileName: fileName,
-            contractId: contractId,
-            status: 'SUCCESS',
-            outputType: 'DOCX',
-            generatedAt: new Date().toISOString(),
-          },
-        }));
-        
-        console.log('logSecurityEvent dispatched successfully:', result);
-        console.log('Audit log details:', auditDetails);
-      } catch (auditLogError) {
-        console.error('Error dispatching logSecurityEvent:', auditLogError);
-      }
-      
-    } catch (error) {
-      console.error('Error generating document:', error);
-      setUserError('Failed to generate document. Please try again.');
-      
-      // Log the failure
-      dispatch(addGeneratedContract({
-        providerId: provider.id,
-        templateId: templateToUse.id,
-        status: 'FAILED',
-        generatedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error',
-        // Note: No dynamoDbId for failed contracts since they weren't logged to DynamoDB
-      }));
-    }
-  };
 
   const hydrateGeneratedContracts = React.useCallback(async () => {
     try {
@@ -1322,11 +600,23 @@ b, strong { font-weight: bold !important; }
         }))
       });
       
-      // Set all contracts at once to avoid race conditions
-      dispatch(setGeneratedContracts(generatedContractsFromDb));
+      // Only update Redux state if we actually have contracts from the database
+      // This prevents clearing locally generated contracts when DynamoDB is failing
+      if (generatedContractsFromDb.length > 0) {
+        console.log('🔍 Hydration: Found contracts in database, updating Redux state');
+        dispatch(setGeneratedContracts(generatedContractsFromDb));
+      } else {
+        console.log('🔍 Hydration: No contracts in database, keeping existing Redux state');
+      }
       
       console.log('✅ Loaded contracts from DynamoDB:', allLogs.length, 'contracts');
       console.log('🔍 Generated contracts after hydration:', generatedContractsFromDb);
+      console.log('🔍 Hydration: Contract status breakdown:', {
+        successContracts: generatedContractsFromDb.filter(c => c.status === 'SUCCESS').length,
+        partialSuccessContracts: generatedContractsFromDb.filter(c => c.status === 'PARTIAL_SUCCESS').length,
+        failedContracts: generatedContractsFromDb.filter(c => c.status === 'FAILED').length,
+        totalContracts: generatedContractsFromDb.length
+      });
       // Clear any previous errors silently
     } catch (e) {
       // Only show error if it's not a benign 'no records found' error
@@ -1344,1078 +634,6 @@ b, strong { font-weight: bold !important; }
     hydrateGeneratedContracts();
   }, [hydrateGeneratedContracts]);
 
-  const handleGenerate = async () => {
-    if (selectedProviderIds.length !== 1) return;
-    const provider = providers.find(p => p.id === selectedProviderIds[0]);
-    if (!provider) return;
-    
-    // Use assigned template or fallback to selected template
-    const assignedTemplate = getAssignedTemplate(provider);
-    if (!assignedTemplate) {
-      setUserError("No template assigned to this provider. Please assign a template first.");
-      return;
-    }
-    
-    try {
-      await generateAndDownloadDocx(provider, assignedTemplate);
-      await hydrateGeneratedContracts();
-    } catch (e) {
-      setUserError("Failed to generate contract. Please try again.");
-    }
-  };
-
-  const handleBulkGenerate = async () => {
-    console.log('🚀 handleBulkGenerate called');
-    console.log('Selected provider IDs:', selectedProviderIds);
-    console.log('Selected providers:', selectedProviderIds.map(id => providers.find(p => p.id === id)?.name));
-    
-    setUserError(null);
-    setIsBulkGenerating(true);
-    
-    // Use all filtered providers, not just paginated
-    const selectedProviders = filteredProviders.filter(p => selectedProviderIds.includes(p.id));
-    if (selectedProviders.length === 0) {
-      setUserError('Please select at least one provider to generate contracts.');
-      setIsBulkGenerating(false);
-      return;
-    }
-
-    // Check if all providers have templates assigned (either manually or using selected template)
-    const providersWithoutTemplates = selectedProviders.filter(provider => !getAssignedTemplate(provider));
-    if (providersWithoutTemplates.length > 0) {
-      const providerNames = providersWithoutTemplates.map(p => p.name).join(', ');
-      setUserError(`The following providers don't have templates assigned: ${providerNames}. Please assign templates or select a default template.`);
-      setIsBulkGenerating(false);
-      return;
-    }
-
-    // Initialize progress tracking
-    initializeProgress(selectedProviders.length);
-    updateProgress({ currentOperation: 'Opening folder selection dialog...' });
-
-    // Use File System Access API to select folder for saving contracts
-    console.log('Opening folder selection dialog for contract saving');
-    
-    let selectedFolderHandle: any = null;
-    let selectedFolderPath: string | null = null;
-    
-    try {
-      console.log('🔍 Starting folder selection process (main function)...');
-      console.log('🔍 File System Access API available:', 'showDirectoryPicker' in window);
-      
-      // Use the modern File System Access API - only call once
-      if ('showDirectoryPicker' in window) {
-        console.log('🔍 Attempting to use File System Access API...');
-        selectedFolderHandle = await (window as any).showDirectoryPicker({ 
-          mode: 'readwrite',
-          startIn: 'downloads'
-        });
-        selectedFolderPath = selectedFolderHandle.name;
-        console.log('✅ Folder selected via File System Access API:', selectedFolderPath);
-      } else {
-        // Fallback for browsers that don't support File System Access API
-        console.log('❌ File System Access API not available, showing error');
-        setUserError('Your browser does not support folder selection. Please use Chrome, Edge, or Firefox with the latest version.');
-        setIsBulkGenerating(false);
-        setProgressModalOpen(false);
-        return;
-      }
-    } catch (error) {
-      console.error('❌ Folder selection error:', error);
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.log('User cancelled folder selection');
-        setIsBulkGenerating(false);
-        setProgressModalOpen(false);
-        return;
-      } else {
-        console.error('Folder selection failed:', error);
-        setUserError('Failed to open folder selection dialog. Please ensure you are using a supported browser.');
-        setIsBulkGenerating(false);
-        setProgressModalOpen(false);
-        return;
-      }
-    }
-    
-    if (!selectedFolderPath) {
-      setUserError('No folder was selected. Please try again.');
-      setIsBulkGenerating(false);
-      setProgressModalOpen(false);
-      return;
-    }
-
-    console.log('🎯 Selected folder for contract generation:', selectedFolderPath);
-
-    // Update progress to generation phase
-    updateProgress({ 
-      currentStep: 2, 
-      progress: 15,
-      steps: progressData.steps.map(step => 
-        step.id === 'folder' ? { ...step, status: 'completed' } :
-        step.id === 'generation' ? { ...step, status: 'active' } : step
-      ),
-      currentOperation: 'Starting contract generation...'
-    });
-
-    const successful: any[] = [];
-    const skipped: any[] = [];
-    
-    for (let i = 0; i < selectedProviders.length; i++) {
-      // Check for cancellation
-      if (progressData.isCancelled) {
-        updateProgress({ currentOperation: 'Operation cancelled by user' });
-        setIsBulkGenerating(false);
-        return;
-      }
-
-      const provider = selectedProviders[i];
-      const currentIndex = i + 1;
-      const progressPercent = 15 + (currentIndex / selectedProviders.length) * 60; // 15% to 75%
-      
-      // Update progress
-      updateProgress({ 
-        currentStep: currentIndex,
-        progress: progressPercent,
-        currentOperation: `Generating contract for ${provider.name} (${currentIndex}/${selectedProviders.length})`
-      });
-      
-      // Add small delay to prevent UI freezing
-      if (i < selectedProviders.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
-      
-      try {
-        const assignedTemplate = getAssignedTemplate(provider);
-        if (!assignedTemplate) {
-          skipped.push({
-            providerName: provider.name,
-            reason: 'No template assigned'
-          });
-          updateProgress({ skippedCount: progressData.skippedCount + 1 });
-          continue;
-        }
-        
-        // Generate contract content
-        const html = assignedTemplate.editedHtmlContent || assignedTemplate.htmlPreviewContent || "";
-        const mapping = mappings[assignedTemplate.id]?.mappings;
-        
-        // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
-        const enhancedMapping = mapping?.map(m => {
-          if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
-            return {
-              ...m,
-              mappingType: 'dynamic' as const,
-              mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
-              mappedColumn: undefined,
-            };
-          }
-          return {
-            ...m,
-            mappingType: 'field' as const,
-          };
-        });
-        
-        const { content: mergedHtml } = await mergeTemplateWithData(assignedTemplate, provider, html, enhancedMapping);
-        const htmlClean = normalizeSmartQuotes(mergedHtml);
-        const aptosStyle = `<style>
-body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
-  font-family: Aptos, Arial, sans-serif !important;
-  font-size: 11pt !important;
-}
-h1 { font-size: 16pt !important; font-weight: bold !important; }
-h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
-b, strong { font-weight: bold !important; }
-</style>`;
-        const htmlWithFont = aptosStyle + htmlClean;
-
-        // @ts-ignore
-        if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-          skipped.push({
-            providerName: provider.name,
-            reason: 'DOCX generator not available'
-          });
-          updateProgress({ skippedCount: progressData.skippedCount + 1 });
-          continue;
-        }
-        
-        // @ts-ignore
-        const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-        const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
-        const runDate = new Date().toISOString().split('T')[0];
-        const fileName = getContractFileName(contractYear, provider.name, runDate);
-        
-        // Save file to the selected folder using the already selected folder handle
-        let fileSaved = false;
-        let localFilePath = '';
-        
-        try {
-          // Use the already selected folder handle instead of calling showDirectoryPicker again
-          if (selectedFolderHandle && selectedFolderPath) {
-            const fileHandle = await selectedFolderHandle.getFileHandle(fileName, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(docxBlob);
-            await writable.close();
-            fileSaved = true;
-            localFilePath = `${selectedFolderPath}/${fileName}`;
-            console.log('✅ File saved to selected folder:', localFilePath);
-          } else {
-            // Fallback: Download to default location
-            const url = URL.createObjectURL(docxBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            fileSaved = true;
-            localFilePath = `Downloads/${fileName}`;
-            console.log('✅ File downloaded to Downloads folder:', localFilePath);
-          }
-        } catch (error) {
-          console.error('Failed to save file:', error);
-          // Fallback to download
-          const url = URL.createObjectURL(docxBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          fileSaved = true;
-          localFilePath = `Downloads/${fileName}`;
-          console.log('✅ File downloaded to Downloads folder (fallback):', localFilePath);
-        }
-        
-        // Store contract with immutable data and permanent URL
-        console.log('🔍 Starting S3 upload process...');
-        let permanentUrl = '';
-        let contractId = '';
-        let s3UploadSuccess = false;
-        let dynamoDbSuccess = false;
-        let logEntryId: string | undefined;
-        
-        try {
-          contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
-          
-          console.log('🔍 Contract generation debug:', {
-            contractId,
-            fileName,
-            blobSize: docxBlob.size,
-            providerId: provider.id,
-            templateId: assignedTemplate.id,
-            contractYear
-          });
-          
-          // Convert Blob to Buffer for immutable storage
-          const arrayBuffer = await docxBlob.arrayBuffer();
-          console.log('🔍 ArrayBuffer created, size:', arrayBuffer.byteLength);
-          
-          // Use Uint8Array instead of Buffer for browser compatibility
-          const buffer = new Uint8Array(arrayBuffer);
-          console.log('🔍 Uint8Array created, length:', buffer.length);
-          
-          // Store with immutable data and permanent URL
-          console.log('🔍 About to import immutableContractStorage...');
-          const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
-          console.log('🔍 immutableContractStorage imported successfully');
-          
-          console.log('🔍 About to call storeImmutableContract...');
-          const immutableResult = await immutableContractStorage.storeImmutableContract(
-            contractId,
-            fileName,
-            buffer,
-            provider,
-            assignedTemplate
-          );
-          console.log('🔍 storeImmutableContract completed successfully');
-          
-          permanentUrl = immutableResult.permanentUrl;
-          s3UploadSuccess = true;
-          console.log('✅ Contract stored in S3 successfully');
-        } catch (s3err) {
-          console.error('❌ Failed to store contract in S3:', s3err);
-          console.error('S3 error details:', {
-            name: s3err.name,
-            message: s3err.message,
-            stack: s3err.stack
-          });
-          s3UploadSuccess = false;
-        }
-
-        // Log the generation event to DynamoDB
-        const logInput = {
-          providerId: provider.id,
-          contractYear: contractYear,
-          templateId: assignedTemplate.id,
-          generatedAt: new Date().toISOString(),
-          generatedBy: 'user',
-          outputType: 'DOCX',
-          status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS', // Store PARTIAL_SUCCESS in DynamoDB
-          fileUrl: permanentUrl || fileName,
-          localFilePath: localFilePath,
-          notes: `Generated contract for ${provider.name} using template ${assignedTemplate.name}. Local file: ${localFilePath}. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`
-        };
-
-        console.log('🔍 DynamoDB log input:', {
-          providerId: logInput.providerId,
-          templateId: logInput.templateId,
-          contractYear: logInput.contractYear,
-          status: logInput.status,
-          s3UploadSuccess,
-          permanentUrl: !!permanentUrl
-        });
-
-        // Add to Redux state for Processed tab
-        console.log('🚀 Adding contract to Redux state for provider:', provider.name, 'template:', assignedTemplate.name);
-        
-        try {
-          console.log('🔄 Attempting to log contract to DynamoDB:', {
-            providerId: provider.id,
-            templateId: assignedTemplate.id,
-            contractYear: contractYear,
-            status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS'
-          });
-          
-          const logEntry = await ContractGenerationLogService.createLog(logInput);
-          dispatch(addGenerationLog(logEntry));
-          dynamoDbSuccess = true;
-          logEntryId = logEntry?.id;
-          console.log('✅ Contract logged to DynamoDB successfully:', logEntry);
-          console.log('🔍 DynamoDB response details:', {
-            id: logEntry?.id,
-            status: logEntry?.status,
-            providerId: logEntry?.providerId,
-            templateId: logEntry?.templateId,
-            contractYear: logEntry?.contractYear
-          });
-        } catch (logError) {
-          console.error('❌ Failed to log contract to DynamoDB:', logError);
-          console.error('Log input that failed:', logInput);
-          dynamoDbSuccess = false;
-        }
-        
-        dispatch(addGeneratedContract({
-          providerId: provider.id,
-          templateId: assignedTemplate.id,
-          status: s3UploadSuccess && dynamoDbSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS',
-          generatedAt: new Date().toISOString(),
-          fileUrl: permanentUrl,
-          fileName: fileName,
-          s3Key: contractId,
-          localFilePath: localFilePath,
-          s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
-          dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED',
-          error: !s3UploadSuccess ? 'S3 storage failed' : !dynamoDbSuccess ? 'DynamoDB logging failed' : undefined,
-          dynamoDbId: logEntryId,
-        }));
-        console.log('✅ Contract added to Redux state successfully');
-        
-        successful.push({
-          providerName: provider.name,
-          templateName: assignedTemplate.name,
-          localFilePath: localFilePath,
-          s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
-          dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED'
-        });
-        updateProgress({ successCount: progressData.successCount + 1 });
-      } catch (err) {
-        skipped.push({
-          providerName: provider.name,
-          reason: `Generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`
-        });
-        updateProgress({ errorCount: progressData.errorCount + 1 });
-      }
-    }
-    
-    // Update progress to completion
-    updateProgress({ 
-      progress: 100,
-      currentStep: selectedProviders.length + 1,
-      steps: progressData.steps.map(step => 
-        step.id === 'generation' ? { ...step, status: 'completed' } :
-        step.id === 'saving' ? { ...step, status: 'completed' } :
-        step.id === 'uploading' ? { ...step, status: 'completed' } : step
-      ),
-      currentOperation: 'Bulk generation completed successfully!'
-    });
-    
-    setIsBulkGenerating(false);
-    setProgressModalOpen(false);
-    // Clear selected providers to hide the bottom menu
-    setSelectedProviderIds([]);
-    // Refresh contracts from database to ensure Processed tab shows correctly
-    await hydrateGeneratedContracts();
-    console.log('Bulk generation completed. Contracts added to Redux state:', successful.length);
-    
-    // Log bulk generation operation
-    try {
-      const auditDetails = JSON.stringify({
-        action: 'BULK_CONTRACT_GENERATION',
-        providerCount: selectedProviders.length,
-        successfulCount: successful.length,
-        skippedCount: skipped.length,
-        successful: successful,
-        skipped: skipped,
-        timestamp: new Date().toISOString(),
-        metadata: {
-          providerCount: selectedProviders.length,
-          successfulCount: successful.length,
-          skippedCount: skipped.length,
-          successful: successful,
-          skipped: skipped,
-          operation: 'bulk_generation',
-          success: true
-        }
-      });
-      
-      await dispatch(logSecurityEvent({
-        action: 'BULK_CONTRACT_GENERATION',
-        details: auditDetails,
-        severity: 'MEDIUM',
-        category: 'DATA',
-        resourceType: 'CONTRACT_GENERATION',
-        resourceId: 'bulk',
-        metadata: {
-          providerCount: selectedProviders.length,
-          successfulCount: successful.length,
-          skippedCount: skipped.length,
-          successful: successful,
-          skipped: skipped,
-          operation: 'bulk_generation',
-          success: true
-        },
-      }));
-    } catch (auditError) {
-      console.error('Failed to log bulk generation:', auditError);
-    }
-    
-    // Show simple success message instead of modal
-    console.log('Contract generation completed:', { successful, skipped });
-    console.log('Generated contracts in Redux state:', generatedContracts);
-    showSuccess(`Success! ${successful.length} contracts generated successfully.`);
-  };
-
-  // Modal-specific bulk generation function
-  const handleModalBulkGenerate = async () => {
-    console.log('🚀 handleModalBulkGenerate called');
-    console.log('Selected provider IDs:', selectedProviderIds);
-    console.log('Selected providers:', selectedProviderIds.map(id => providers.find(p => p.id === id)?.name));
-    
-    setUserError(null);
-    setIsBulkGenerating(true);
-    
-    // Use the providers that were selected for the modal (not filtered providers from main page)
-    const modalSelectedProviders = providers.filter(p => selectedProviderIds.includes(p.id));
-    if (modalSelectedProviders.length === 0) {
-      setUserError('No providers selected for generation.');
-      setIsBulkGenerating(false);
-      return;
-    }
-
-    // Check if all providers have templates assigned
-    const providersWithoutTemplates = modalSelectedProviders.filter(provider => !getAssignedTemplate(provider));
-    if (providersWithoutTemplates.length > 0) {
-      const providerNames = providersWithoutTemplates.map(p => p.name).join(', ');
-      setUserError(`Some providers don't have templates assigned: ${providerNames}. Please assign templates first.`);
-      setIsBulkGenerating(false);
-      return;
-    }
-
-    // Initialize progress tracking
-    initializeProgress(modalSelectedProviders.length);
-    updateProgress({ currentOperation: 'Opening folder selection dialog...' });
-
-    // Use File System Access API to select folder for saving contracts
-    console.log('Opening folder selection dialog for contract saving');
-    
-    let selectedFolderHandle: any = null;
-    let selectedFolderPath: string | null = null;
-    
-    // Try multiple approaches to get folder selection
-    try {
-      console.log('🔍 Starting folder selection process...');
-      console.log('🔍 File System Access API available:', 'showDirectoryPicker' in window);
-      
-      // Approach 1: Try the modern File System Access API with proper error handling
-      if ('showDirectoryPicker' in window) {
-        console.log('🔍 Attempting to use File System Access API...');
-        try {
-          const dirHandle = await (window as any).showDirectoryPicker({ 
-            mode: 'readwrite',
-            startIn: 'downloads'
-          });
-          console.log('✅ Folder selected via File System Access API:', dirHandle.name);
-          selectedFolderHandle = dirHandle;
-          selectedFolderPath = dirHandle.name;
-          
-          // Test if we can actually write to this folder
-          try {
-            console.log('🔍 Testing write permissions...');
-            const testFile = await dirHandle.getFileHandle('test-write-permission.txt', { create: true });
-            const writable = await testFile.createWritable();
-            await writable.write('test');
-            await writable.close();
-            await dirHandle.removeEntry('test-write-permission.txt');
-            console.log('✅ Write permission confirmed');
-          } catch (writeError) {
-            console.error('❌ No write permission to selected folder:', writeError);
-            setUserError('Selected folder does not have write permissions. Please select a different folder.');
-            setIsBulkGenerating(false);
-            setProgressModalOpen(false);
-            return;
-          }
-        } catch (error) {
-          console.error('❌ File System Access API error:', error);
-          if (error instanceof Error && error.name === 'AbortError') {
-            console.log('User cancelled folder selection');
-            setIsBulkGenerating(false);
-            setProgressModalOpen(false);
-            return;
-          } else {
-            console.error('File System Access API failed:', error);
-            // Fall through to alternative approach
-          }
-        }
-      } else {
-        console.log('❌ File System Access API not available in this browser');
-      }
-      
-      // Approach 2: If File System Access API failed or not available, show error
-      if (!selectedFolderPath) {
-        console.log('❌ No folder selected, showing error to user');
-        setUserError('Folder selection is not supported in this browser. Please use Chrome, Edge, or Firefox with the latest version.');
-        setIsBulkGenerating(false);
-        setProgressModalOpen(false);
-        return;
-      }
-      
-    } catch (error) {
-      console.error('❌ All folder selection methods failed:', error);
-      setUserError('Unable to open folder selection dialog. Please ensure you are using a supported browser (Chrome, Edge, or Firefox).');
-      setIsBulkGenerating(false);
-      setProgressModalOpen(false);
-      return;
-    }
-    
-    if (!selectedFolderPath) {
-      setUserError('No folder was selected. Please try again.');
-      setIsBulkGenerating(false);
-      setProgressModalOpen(false);
-      return;
-    }
-
-    console.log('🎯 Selected folder for contract generation:', selectedFolderPath);
-
-    // Update progress to generation phase
-    updateProgress({ 
-      currentStep: 2, 
-      progress: 15,
-      steps: progressData.steps.map(step => 
-        step.id === 'folder' ? { ...step, status: 'completed' } :
-        step.id === 'generation' ? { ...step, status: 'active' } : step
-      ),
-      currentOperation: 'Starting contract generation...'
-    });
-
-    const successful: any[] = [];
-    const skipped: any[] = [];
-    
-    for (let i = 0; i < modalSelectedProviders.length; i++) {
-      // Check for cancellation
-      if (progressData.isCancelled) {
-        updateProgress({ currentOperation: 'Operation cancelled by user' });
-        setIsBulkGenerating(false);
-        return;
-      }
-
-      const provider = modalSelectedProviders[i];
-      const currentIndex = i + 1;
-      const progressPercent = 15 + (currentIndex / modalSelectedProviders.length) * 60; // 15% to 75%
-      
-      // Update progress
-      updateProgress({ 
-        currentStep: currentIndex,
-        progress: progressPercent,
-        currentOperation: `Generating contract for ${provider.name} (${currentIndex}/${modalSelectedProviders.length})`
-      });
-      
-             try {
-          const assignedTemplate = getAssignedTemplate(provider);
-        if (!assignedTemplate) {
-          skipped.push({
-            providerName: provider.name,
-            reason: 'No template assigned'
-          });
-          updateProgress({ skippedCount: progressData.skippedCount + 1 });
-          continue;
-        }
-        
-        // Generate contract content
-        const html = assignedTemplate.editedHtmlContent || assignedTemplate.htmlPreviewContent || "";
-        const mapping = mappings[assignedTemplate.id]?.mappings;
-        
-        // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
-        const enhancedMapping = mapping?.map(m => {
-          if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
-            return {
-              ...m,
-              mappingType: 'dynamic' as const,
-              mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
-              mappedColumn: undefined,
-            };
-          }
-          return {
-            ...m,
-            mappingType: 'field' as const,
-          };
-        });
-        
-        const { content: mergedHtml } = await mergeTemplateWithData(assignedTemplate, provider, html, enhancedMapping);
-        const htmlClean = normalizeSmartQuotes(mergedHtml);
-        const aptosStyle = `<style>
-body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
-  font-family: Aptos, Arial, sans-serif !important;
-  font-size: 11pt !important;
-}
-h1 { font-size: 16pt !important; font-weight: bold !important; }
-h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
-b, strong { font-weight: bold !important; }
-</style>`;
-        const htmlWithFont = aptosStyle + htmlClean;
-
-        // @ts-ignore
-        if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-          skipped.push({
-            providerName: provider.name,
-            reason: 'DOCX generator not available'
-          });
-          updateProgress({ skippedCount: progressData.skippedCount + 1 });
-          continue;
-        }
-        
-        // @ts-ignore
-        const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-        const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
-        const runDate = new Date().toISOString().split('T')[0];
-        const fileName = getContractFileName(contractYear, provider.name, runDate);
-        
-        // Save file to the selected folder using the already selected folder handle
-        let fileSaved = false;
-        let localFilePath = '';
-        
-        try {
-          // Use the already selected folder handle instead of calling showDirectoryPicker again
-          if (selectedFolderHandle && selectedFolderPath) {
-            const fileHandle = await selectedFolderHandle.getFileHandle(fileName, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(docxBlob);
-            await writable.close();
-            fileSaved = true;
-            localFilePath = `${selectedFolderPath}/${fileName}`;
-            console.log('✅ File saved to selected folder:', localFilePath);
-          } else {
-            // Fallback: Download to default location
-            const url = URL.createObjectURL(docxBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            fileSaved = true;
-            localFilePath = `Downloads/${fileName}`;
-            console.log('✅ File downloaded to Downloads folder:', localFilePath);
-          }
-        } catch (error) {
-          console.error('Failed to save file:', error);
-          // Fallback to download
-          const url = URL.createObjectURL(docxBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          fileSaved = true;
-          localFilePath = `Downloads/${fileName}`;
-          console.log('✅ File downloaded to Downloads folder (fallback):', localFilePath);
-        }
-        
-        // Store contract with immutable data and permanent URL
-        let permanentUrl = '';
-        let contractId = '';
-        let s3UploadSuccess = false;
-        let dynamoDbSuccess = false;
-        
-        if (fileSaved) {
-          
-          console.log('🔍 Modal: Starting S3 upload process...');
-          try {
-            contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
-            
-            console.log('🔍 Modal contract generation debug:', {
-              contractId,
-              fileName,
-              blobSize: docxBlob.size,
-              providerId: provider.id,
-              templateId: assignedTemplate.id,
-              contractYear
-            });
-            
-            // Convert Blob to Buffer for immutable storage
-            const arrayBuffer = await docxBlob.arrayBuffer();
-            console.log('🔍 Modal ArrayBuffer created, size:', arrayBuffer.byteLength);
-            
-            // Use Uint8Array instead of Buffer for browser compatibility
-            const buffer = new Uint8Array(arrayBuffer);
-            console.log('🔍 Modal Uint8Array created, length:', buffer.length);
-            
-            // Store with immutable data and permanent URL
-            console.log('🔍 Modal: About to import immutableContractStorage...');
-            const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
-            console.log('🔍 Modal: immutableContractStorage imported successfully');
-            
-            console.log('🔍 Modal: About to call storeImmutableContract...');
-            const immutableResult = await immutableContractStorage.storeImmutableContract(
-              contractId,
-              fileName,
-              buffer,
-              provider,
-              assignedTemplate
-            );
-            console.log('🔍 Modal: storeImmutableContract completed successfully');
-            
-            permanentUrl = immutableResult.permanentUrl;
-            s3UploadSuccess = true;
-            console.log('✅ Contract stored in S3 successfully');
-          } catch (s3err) {
-            console.error('❌ Failed to store contract in S3:', s3err);
-            console.error('Modal S3 error details:', {
-              name: s3err.name,
-              message: s3err.message,
-              stack: s3err.stack
-            });
-            s3UploadSuccess = false;
-          }
-
-          // Log the generation event to DynamoDB
-          const logInput = {
-            providerId: provider.id,
-            contractYear: contractYear,
-            templateId: assignedTemplate.id,
-            generatedAt: new Date().toISOString(),
-            generatedBy: 'user',
-            outputType: 'DOCX',
-            status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS', // Store PARTIAL_SUCCESS in DynamoDB
-            fileUrl: permanentUrl || fileName,
-            localFilePath: localFilePath,
-            notes: `Generated contract for ${provider.name} using template ${assignedTemplate.name}. Local file: ${localFilePath}. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`
-          };
-
-          console.log('🔍 Modal DynamoDB log input:', {
-            providerId: logInput.providerId,
-            templateId: logInput.templateId,
-            contractYear: logInput.contractYear,
-            status: logInput.status,
-            s3UploadSuccess,
-            permanentUrl: !!permanentUrl
-          });
-
-          // Add to Redux state for Processed tab
-          console.log('🚀 Adding contract to Redux state for provider:', provider.name, 'template:', assignedTemplate.name);
-          
-          let logEntryId: string | undefined;
-          try {
-            console.log('🔄 Attempting to log contract to DynamoDB:', {
-              providerId: provider.id,
-              templateId: assignedTemplate.id,
-              contractYear: contractYear,
-              status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS'
-            });
-            
-            const logEntry = await ContractGenerationLogService.createLog(logInput);
-            dispatch(addGenerationLog(logEntry));
-            dynamoDbSuccess = true;
-            logEntryId = logEntry?.id;
-            console.log('✅ Contract logged to DynamoDB successfully:', logEntry);
-            console.log('🔍 Modal DynamoDB response details:', {
-              id: logEntry?.id,
-              status: logEntry?.status,
-              providerId: logEntry?.providerId,
-              templateId: logEntry?.templateId,
-              contractYear: logEntry?.contractYear
-            });
-          } catch (logError) {
-            console.error('❌ Failed to log contract to DynamoDB:', logError);
-            console.error('Log input that failed:', logInput);
-            dynamoDbSuccess = false;
-          }
-          
-          dispatch(addGeneratedContract({
-            providerId: provider.id,
-            templateId: assignedTemplate.id,
-            status: s3UploadSuccess && dynamoDbSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS',
-            generatedAt: new Date().toISOString(),
-            fileUrl: permanentUrl,
-            fileName: fileName,
-            s3Key: contractId,
-            localFilePath: localFilePath,
-            s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
-            dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED',
-            error: !s3UploadSuccess ? 'S3 storage failed' : !dynamoDbSuccess ? 'DynamoDB logging failed' : undefined,
-            dynamoDbId: logEntryId,
-          }));
-          console.log('✅ Contract added to Redux state successfully');
-        }
-        
-        successful.push({
-          providerName: provider.name,
-          templateName: assignedTemplate.name,
-          localFilePath: localFilePath,
-          s3Status: s3UploadSuccess ? 'SUCCESS' : 'FAILED',
-          dynamoDbStatus: dynamoDbSuccess ? 'SUCCESS' : 'FAILED'
-        });
-        updateProgress({ successCount: progressData.successCount + 1 });
-      } catch (err) {
-        skipped.push({
-          providerName: provider.name,
-          reason: `Generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`
-        });
-        updateProgress({ errorCount: progressData.errorCount + 1 });
-      }
-    }
-    
-    // All contracts have been saved to the selected folder
-    console.log('✅ All contracts saved to selected folder:', selectedFolderPath);
-    
-    // Update progress to completion
-    updateProgress({ 
-      progress: 100,
-      currentStep: modalSelectedProviders.length + 1,
-      steps: progressData.steps.map(step => 
-        step.id === 'generation' ? { ...step, status: 'completed' } :
-        step.id === 'saving' ? { ...step, status: 'completed' } :
-        step.id === 'uploading' ? { ...step, status: 'completed' } : step
-      ),
-      currentOperation: 'Bulk generation completed successfully!'
-    });
-    
-    setIsBulkGenerating(false);
-    setProgressModalOpen(false);
-    // Clear selected providers to hide the bottom menu
-    setSelectedProviderIds([]);
-    // Refresh contracts from database to ensure Processed tab shows correctly
-    await hydrateGeneratedContracts();
-    console.log('Modal bulk generation completed. Contracts added to Redux state:', successful.length);
-    
-    // Show simple success message instead of modal
-    console.log('Modal bulk generation completed:', { successful, skipped });
-    console.log('Generated contracts in Redux state:', generatedContracts);
-    showSuccess(`Success! ${successful.length} contracts generated successfully.`);
-  };
-
-  const handlePreview = () => {
-    if (selectedProviderIds.length === 0) {
-      setUserError("Please select at least one provider to preview.");
-      return;
-    }
-    
-    // Check if all selected providers have templates assigned
-    const providersWithoutTemplates = selectedProviderIds
-      .map(id => providers.find(p => p.id === id))
-      .filter(provider => provider && !getAssignedTemplate(provider));
-    
-    if (providersWithoutTemplates.length > 0) {
-      const providerNames = providersWithoutTemplates.map(p => p?.name).filter(Boolean).join(', ');
-      setUserError(`Some selected providers don't have templates assigned: ${providerNames}. Please assign templates first.`);
-      return;
-    }
-    
-    setPreviewModalOpen(true);
-  };
-
-  const handlePreviewGenerate = (providerId: string) => {
-    const provider = providers.find(p => p.id === providerId);
-    if (provider) {
-      // Set the provider for preview and open the preview modal
-      setSelectedProviderIds([providerId]);
-      setPreviewModalOpen(true);
-    }
-  };
-
-  // Handle row click to toggle selection (primary interaction method)
-  const handleRowClick = (event: any) => {
-    const provider = event.data;
-    if (provider) {
-      // Toggle selection of this provider
-      setSelectedProviderIds(prev => 
-        prev.includes(provider.id) 
-          ? prev.filter(id => id !== provider.id)
-          : [...prev, provider.id]
-      );
-    }
-  };
-
-  // Quick action handlers for bottom menu
-  const handleGenerateOne = async () => {
-    if (clickedProvider) {
-      const assignedTemplate = getAssignedTemplate(clickedProvider);
-      if (assignedTemplate) {
-        await generateAndDownloadDocx(clickedProvider, assignedTemplate);
-              showSuccess(`Generated contract for ${clickedProvider.name}`);
-    } else {
-      showError({ message: `No template assigned to ${clickedProvider.name}`, severity: 'error' });
-      }
-    }
-    setBottomActionMenuOpen(false);
-  };
-
-  const handleGenerateAll = async () => {
-    if (clickedProvider) {
-      // Select this provider and all others, then generate all
-      const allProviderIds = filteredProviders.map(p => p.id);
-      setSelectedProviderIds(allProviderIds);
-      await handleBulkGenerate();
-    }
-    setBottomActionMenuOpen(false);
-  };
-
-  const handleClearAssignments = () => {
-    if (clickedProvider) {
-      updateProviderTemplate(clickedProvider.id, null);
-      showSuccess(`Cleared template assignment for ${clickedProvider.name}`);
-    }
-    setBottomActionMenuOpen(false);
-  };
-
-  const handleAssignTemplate = (templateId: string) => {
-    if (clickedProvider) {
-      updateProviderTemplate(clickedProvider.id, templateId);
-    }
-    setBottomActionMenuOpen(false);
-  };
-
-
-
-  const handleGenerateDOCX = async () => {
-    setUserError(null);
-    if (!selectedTemplate) {
-      setUserError("No template selected. Please select a template before generating.");
-      return;
-    }
-    if (selectedProviderIds.length !== 1) {
-      setUserError("Please select exactly one provider before generating.");
-      return;
-    }
-    const provider = providers.find(p => p.id === selectedProviderIds[0]);
-    if (!provider) {
-      setUserError("Selected provider not found. Please check your provider selection.");
-      return;
-    }
-    const html = selectedTemplate.editedHtmlContent || selectedTemplate.htmlPreviewContent || "";
-    if (!html) {
-      setUserError("Template content is missing or not loaded. Please check your template.");
-      return;
-    }
-    const mapping = mappings[selectedTemplate.id]?.mappings;
-    
-    // Convert FieldMapping to EnhancedFieldMapping for dynamic block support
-    const enhancedMapping = mapping?.map(m => {
-      // Check if this mapping has a dynamic block (stored in value field with dynamic: prefix)
-      if (m.mappedColumn && m.mappedColumn.startsWith('dynamic:')) {
-        return {
-          ...m,
-          mappingType: 'dynamic' as const,
-          mappedDynamicBlock: m.mappedColumn.replace('dynamic:', ''),
-          mappedColumn: undefined, // Clear the mappedColumn since it's a dynamic block
-        };
-      }
-      return {
-        ...m,
-        mappingType: 'field' as const,
-      };
-    });
-    
-    const { content: mergedHtml } = await mergeTemplateWithData(selectedTemplate, provider, html, enhancedMapping);
-    if (!mergedHtml || typeof mergedHtml !== 'string' || mergedHtml.trim().length === 0) {
-      setUserError("No contract content available to export after merging. Please check your template and provider data.");
-      return;
-    }
-    try {
-      // Normalize mergedHtml
-      const htmlClean = normalizeSmartQuotes(mergedHtml);
-      // Prepend Aptos font style
-      const aptosStyle = `<style>
-body, p, span, td, th, div, h1, h2, h3, h4, h5, h6 {
-  font-family: Aptos, Arial, sans-serif !important;
-  font-size: 11pt !important;
-}
-h1 { font-size: 16pt !important; font-weight: bold !important; }
-h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
-b, strong { font-weight: bold !important; }
-</style>`;
-      const htmlWithFont = aptosStyle + htmlClean;
-      // @ts-ignore
-      if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
-        setUserError('Failed to generate document. DOCX generator not available. Please ensure html-docx-js is loaded via CDN and try refreshing the page.');
-        return;
-      }
-      // @ts-ignore
-      const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
-      const fileName = `ScheduleA_${String(provider.name).replace(/\s+/g, '')}.docx`;
-      const url = URL.createObjectURL(docxBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Log the generation event
-      const contractYear = selectedTemplate.contractYear || new Date().getFullYear().toString();
-      const logInput = {
-        providerId: provider.id,
-        contractYear: contractYear,
-        templateId: selectedTemplate.id,
-        generatedAt: new Date().toISOString(),
-        generatedBy: 'user', // TODO: Get actual user ID
-        outputType: 'DOCX',
-        status: 'SUCCESS',
-        fileUrl: fileName,
-        notes: `Generated contract for ${provider.name} using template ${selectedTemplate.name}`
-      };
-
-      try {
-        const logEntry = await ContractGenerationLogService.createLog(logInput);
-        dispatch(addGenerationLog(logEntry));
-        dispatch(addGeneratedContract({
-          providerId: provider.id,
-          templateId: selectedTemplate.id,
-          status: 'SUCCESS',
-          generatedAt: new Date().toISOString(),
-          dynamoDbId: logEntry?.id, // Store the DynamoDB ID from the log entry
-        }));
-      } catch (logError) {
-        console.error('Failed to log contract generation:', logError);
-        // Don't fail the generation if logging fails
-      }
-    } catch (error) {
-      setUserError("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
-      console.error("DOCX Generation Error:", error);
-      dispatch(addGeneratedContract({
-        providerId: provider.id,
-        templateId: selectedTemplate.id,
-        status: 'FAILED',
-        generatedAt: new Date().toISOString(),
-        // Note: No dynamoDbId for failed contracts since they weren't logged to DynamoDB
-      }));
-    }
-  };
-
   // Filtering logic (by name or specialty)
   const filteredProviders = providers.filter((provider) => {
     const name = provider.name?.toLowerCase() || '';
@@ -2428,711 +646,207 @@ b, strong { font-weight: bold !important; }
     return matchesSearch && matchesSpecialty && matchesSubspecialty && matchesProviderType;
   });
 
+  // Bulk generation hook - replaces all bulk generation logic
+  const {
+    handleBulkGenerate: handleBulkGenerateHook,
+    handleModalBulkGenerate: handleModalBulkGenerateHook,
+  } = useBulkGeneration({
+    providers,
+    templates,
+    mappings,
+    selectedProviderIds,
+    filteredProviders,
+    generatedContracts,
+    getAssignedTemplate,
+    setIsBulkGenerating,
+    setProgressModalOpen,
+    setSelectedProviderIds,
+    setUserError,
+    showSuccess,
+    showWarning,
+    showError,
+    initializeProgress,
+    updateProgress,
+    progressData,
+    hydrateGeneratedContracts,
+  });
+
+  // Wrapper functions to maintain existing interface
+  const handleBulkGenerate = async () => {
+    return handleBulkGenerateHook();
+  };
+
+  const handleModalBulkGenerate = async () => {
+    return handleModalBulkGenerateHook();
+  };
+
+  // Generator events hook - replaces all UI event handlers
+  const {
+    handleGenerate: handleGenerateHook,
+    handlePreview: handlePreviewHook,
+    handlePreviewGenerate: handlePreviewGenerateHook,
+    handleRowClick: handleRowClickHook,
+    handleGenerateOne: handleGenerateOneHook,
+    handleGenerateAll: handleGenerateAllHook,
+    handleClearAssignments: handleClearAssignmentsHook,
+    handleAssignTemplate: handleAssignTemplateHook,
+    handleGenerateDOCX: handleGenerateDOCXHook,
+  } = useGeneratorEvents({
+    providers,
+    templates,
+    mappings,
+    selectedProviderIds,
+    filteredProviders,
+    selectedTemplate,
+    clickedProvider,
+    getAssignedTemplate,
+    generateAndDownloadDocx,
+    handleBulkGenerate,
+    updateProviderTemplate,
+    setSelectedProviderIds,
+    setPreviewModalOpen,
+    setBottomActionMenuOpen,
+    setUserError,
+    showSuccess,
+    showError,
+    hydrateGeneratedContracts,
+  });
+
+  // Wrapper functions to maintain existing interface
+  const handleGenerate = async () => {
+    return handleGenerateHook();
+  };
+
+  const handlePreview = () => {
+    return handlePreviewHook();
+  };
+
+  const handlePreviewGenerate = (providerId: string) => {
+    return handlePreviewGenerateHook(providerId);
+  };
+
+  const handleRowClick = (event: any) => {
+    return handleRowClickHook(event);
+  };
+
+  const handleGenerateOne = async () => {
+    return handleGenerateOneHook();
+  };
+
+  const handleGenerateAll = async () => {
+    return handleGenerateAllHook();
+  };
+
+  const handleClearAssignments = () => {
+    return handleClearAssignmentsHook();
+  };
+
+  const handleAssignTemplate = (templateId: string) => {
+    return handleAssignTemplateHook(templateId);
+  };
+
+  const handleGenerateDOCX = async () => {
+    return handleGenerateDOCXHook();
+  };
+
+  // Generator status hook - replaces all status checking and utility functions
+  const {
+    getContractStatus: getContractStatusHook,
+    getLatestGeneratedContract: getLatestGeneratedContractHook,
+    getGenerationStatus: getGenerationStatusHook,
+    getGenerationDate: getGenerationDateHook,
+    scanPlaceholders: scanPlaceholdersHook,
+  } = useGeneratorStatus({
+    generatedContracts,
+  });
+
+  // Wrapper functions to maintain existing interface
+  const getContractStatus = (providerId: string, templateId: string) => {
+    return getContractStatusHook(providerId, templateId);
+  };
+
+  const getLatestGeneratedContract = (providerId: string) => {
+    return getLatestGeneratedContractHook(providerId);
+  };
+
+  const getGenerationStatus = (providerId: string, templateId: string) => {
+    return getGenerationStatusHook(providerId, templateId);
+  };
+
+  const getGenerationDate = (providerId: string, templateId: string) => {
+    return getGenerationDateHook(providerId, templateId);
+  };
+
+  const scanPlaceholders = (templateContent: string): string[] => {
+    return scanPlaceholdersHook(templateContent);
+  };
+
+  // Generator data management hook - replaces all data management functions
+  const {
+    handleClearGenerated: handleClearGeneratedHook,
+    handleClearAllProcessed: handleClearAllProcessedHook,
+    confirmClearContracts: confirmClearContractsHook,
+    handleExportCSV: handleExportCSVHook,
+    getRealTabCounts: getRealTabCountsHook,
+  } = useGeneratorDataManagement({
+    selectedProviderIds,
+    setSelectedProviderIds,
+    generatedContracts,
+    filteredProviders,
+    templates,
+    templateAssignments,
+    mappings,
+    agGridColumnDefs: [], // Will be updated after agGridColumnDefs is computed
+    hiddenColumns: new Set(), // Will be updated after hiddenColumns is computed
+    setUserError,
+    showSuccess,
+    showWarning,
+    showError,
+    showInfo,
+    setIsClearing,
+    setClearingProgress,
+    setShowClearConfirm,
+    setContractsToClear,
+    hydrateGeneratedContracts,
+    getAssignedTemplate,
+  });
+
+  // Wrapper functions to maintain existing interface
+  const handleClearGenerated = async () => {
+    return handleClearGeneratedHook();
+  };
+
+  const handleClearAllProcessed = async () => {
+    return handleClearAllProcessedHook();
+  };
+
+  const confirmClearContracts = async () => {
+    return confirmClearContractsHook(contractsToClear);
+  };
+
+  const handleExportCSV = async () => {
+    return handleExportCSVHook();
+  };
+
+  const getRealTabCounts = () => {
+    return getRealTabCountsHook();
+  };
+
+
+
   // Pagination logic - apply to ALL filtered providers, not just tab-filtered ones
   const paginatedProviders = filteredProviders.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
   const totalPages = Math.ceil(filteredProviders.length / pageSize);
 
-  const getContractStatus = (providerId: string, templateId: string) => {
-    return generatedContracts.find(
-      c => c.providerId === providerId && c.templateId === templateId
-    )?.status;
-  };
-
-  // Helper to get the most recent generated contract for a provider
-  const getLatestGeneratedContract = (providerId: string) => {
-    const contracts = generatedContracts.filter(c => c.providerId === providerId);
-    if (contracts.length === 0) return null;
-    return contracts.reduce((latest, curr) =>
-      new Date(curr.generatedAt) > new Date(latest.generatedAt) ? curr : latest
-    );
-  };
-
-  // Compute generation status for each provider
-  const getGenerationStatus = (providerId: string, templateId: string) => {
-    // First try to find exact match
-    let contract = generatedContracts.find(
-      c => c.providerId === providerId && c.templateId === templateId
-    );
-    
-    // If no exact match, check if any contract exists for this provider (for backward compatibility)
-    if (!contract) {
-      contract = generatedContracts.find(c => c.providerId === providerId);
-    }
-    
-    if (!contract) return 'Not Generated';
-    if (contract.status === 'SUCCESS') return 'Success';
-    if (contract.status === 'FAILED') return 'Failed';
-    return 'Needs Review';
-  };
-
-  // Helper to get generation date for display
-  const getGenerationDate = (providerId: string, templateId: string) => {
-    const contract = generatedContracts.find(
-      c => c.providerId === providerId && c.templateId === templateId
-    );
-    return contract?.generatedAt ? new Date(contract.generatedAt) : null;
-  };
-
-  // Helper to scan template for placeholders
-  const scanPlaceholders = (templateContent: string): string[] => {
-    const matches = templateContent.match(/{{(.*?)}}/g);
-    if (!matches) return [];
-    return Array.from(new Set(matches.map(m => m.replace(/{{|}}/g, ''))));
-  };
-
-  // Function to clear generated contracts for selected providers
-  const handleClearGenerated = async () => {
-    if (selectedProviderIds.length === 0) {
-      showWarning('Please select providers to clear generated contracts.');
-      return;
-    }
-
-    try {
-      // Clear generated contracts from state for selected providers
-      // We need to clear the generatedContracts array, not generatedFiles
-      dispatch(clearGeneratedContracts());
-
-      // Clear the selection
-      setSelectedProviderIds([]);
-      
-      // Show success message
-      showSuccess('Generated contracts cleared successfully.');
-      
-    } catch (error) {
-      console.error('Error clearing generated contracts:', error);
-      showError({ message: 'Failed to clear generated contracts. Please try again.', severity: 'error' });
-    }
-  };
-
-  // Function to clear all processed contracts from database
-  const handleClearAllProcessed = async () => {
-    try {
-      setIsClearing(true);
-      setClearingProgress(0);
-      showInfo(`Fetching all processed contracts from database...`);
-      
-      // Fetch ALL processed contracts from the database, not just the ones in state
-      let allLogs: ContractGenerationLog[] = [];
-      let nextToken = undefined;
-      let fetchCount = 0;
-      
-      do {
-        const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
-        if (result && result.items) {
-          allLogs = allLogs.concat(result.items);
-          fetchCount += result.items.length;
-          setClearingProgress(Math.round((fetchCount / Math.max(fetchCount + 100, 1000)) * 30)); // First 30% for fetching
-        }
-        nextToken = result?.nextToken;
-      } while (nextToken);
-      
-      // Filter for ALL processed contracts (SUCCESS, PARTIAL_SUCCESS, FAILED)
-      const processedLogs = allLogs.filter(log => 
-        log.status === 'SUCCESS' || 
-        log.status === 'PARTIAL_SUCCESS' || 
-        log.status === 'FAILED'
-      );
-      
-      console.log('All contracts in database:', allLogs.length);
-      console.log('Processed contracts to clear:', processedLogs.length);
-      
-      if (processedLogs.length === 0) {
-        showWarning('No processed contracts found to clear.');
-        setIsClearing(false);
-        return;
-      }
-
-      // Show confirmation dialog instead of browser confirm
-      setShowClearConfirm(true);
-      setContractsToClear(processedLogs);
-      setIsClearing(false);
-      return;
-    } catch (error) {
-      console.error('Error fetching contracts for clearing:', error);
-      showError({ message: `Failed to fetch contracts: ${error instanceof Error ? error.message : 'Unknown error'}`, severity: 'error' });
-      setIsClearing(false);
-    }
-  };
-
-  // Function to actually clear the contracts (called after confirmation)
-  const confirmClearContracts = async () => {
-    try {
-      setIsClearing(true);
-      setClearingProgress(30); // Start clearing phase
-      showInfo(`Clearing ${contractsToClear.length} processed contracts...`);
-      
-      // Get the actual DynamoDB IDs from the database logs
-      const contractIds = contractsToClear.map(log => log.id);
-      
-      console.log('Found DynamoDB IDs to clear:', contractIds);
-      
-      // Delete contracts from DynamoDB with progress tracking
-      let deletedCount = 0;
-      const totalContracts = contractIds.length;
-      
-      for (let i = 0; i < contractIds.length; i++) {
-        try {
-          await ContractGenerationLogService.deleteLog(contractIds[i]);
-          deletedCount++;
-          
-          // Update progress (30% to 90% for deletion phase)
-          const deletionProgress = 30 + Math.round((deletedCount / totalContracts) * 60);
-          setClearingProgress(deletionProgress);
-          
-          // Small delay to show progress
-          if (i < contractIds.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-          }
-        } catch (deleteError) {
-          console.error(`Failed to delete contract ${contractIds[i]}:`, deleteError);
-          // Continue with other deletions even if one fails
-        }
-      }
-      
-      setClearingProgress(90); // Almost done
-      
-      // Clear from local state
-      dispatch(clearGeneratedContracts());
-      setSelectedProviderIds([]);
-      
-      setClearingProgress(100); // Complete
-      
-      showSuccess(`Successfully cleared ${deletedCount} processed contracts (Success, Partial Success, and Failed)! All contracts are now marked as "Not Generated".`);
-      
-      // Close confirmation dialog
-      setShowClearConfirm(false);
-      setContractsToClear([]);
-      
-      // Refresh the contracts data to show updated status
-      setTimeout(() => {
-        hydrateGeneratedContracts();
-      }, 1000);
-      
-    } catch (error) {
-      console.error('Error clearing all processed contracts:', error);
-      showError({ message: `Failed to clear processed contracts: ${error instanceof Error ? error.message : 'Unknown error'}`, severity: 'error' });
-    } finally {
-      setIsClearing(false);
-      setClearingProgress(100);
-    }
-  };
 
 
 
-  // Base columns that appear in all tabs
-  const baseColumns = useMemo(() => {
-    const leftPinned = columnPreferences?.columnPinning?.left || [];
-    const rightPinned = columnPreferences?.columnPinning?.right || [];
-    
-    // Selection indicator column (visual only, no interaction)
-    const selectColumn = {
-      headerName: '',
-      field: 'selected',
-      width: 40,
-      minWidth: 40,
-      maxWidth: 40,
-      pinned: 'left',
-      suppressMenu: true,
-      sortable: false,
-      filter: false,
-      resizable: false,
-      suppressSizeToFit: true,
-      suppressRowClickSelection: true,
-      cellRenderer: (params: any) => {
-        const isSelected = selectedProviderIds.includes(params.data.id);
-        return (
-          <div className="flex items-center justify-center h-full">
-            {isSelected ? (
-              <div className="w-3 h-3 bg-blue-600 rounded-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-              </div>
-            ) : (
-              <div className="w-3 h-3 border-2 border-gray-300 rounded-full"></div>
-            )}
-          </div>
-        );
-      },
-      headerComponent: () => {
-        const visibleRowIds = visibleRows.map(row => row.id);
-        const allVisibleSelected = visibleRowIds.length > 0 && 
-          visibleRowIds.every(id => selectedProviderIds.includes(id));
-        const someVisibleSelected = visibleRowIds.some(id => selectedProviderIds.includes(id));
-        
-        return (
-          <div 
-            className="flex items-center justify-center h-full cursor-pointer hover:bg-gray-100 rounded transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (allVisibleSelected) {
-                // Deselect all visible
-                setSelectedProviderIds(prev => prev.filter(id => !visibleRowIds.includes(id)));
-              } else {
-                // Select all visible
-                setSelectedProviderIds(prev => {
-                   const newSelection = [...prev];
-                   visibleRowIds.forEach(id => {
-                     if (!newSelection.includes(id)) {
-                       newSelection.push(id);
-                     }
-                   });
-                   return newSelection;
-                 });
-              }
-            }}
-          >
-            {allVisibleSelected ? (
-              <div className="w-3 h-3 bg-blue-600 rounded-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-              </div>
-            ) : someVisibleSelected ? (
-              <div className="w-3 h-3 bg-blue-600 rounded-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 bg-white rounded-full opacity-50"></div>
-              </div>
-            ) : (
-              <div className="w-3 h-3 border-2 border-gray-300 rounded-full"></div>
-            )}
-          </div>
-        );
-      },
-    };
 
-    // Define all possible columns
-    const allColumnDefs = {
-      name: {
-        headerName: 'Provider Name',
-        field: 'name',
-        width: 220,
-        minWidth: 180,
-        filter: 'agTextColumnFilter',
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
-      },
-      employeeId: {
-        headerName: 'Employee ID',
-        field: 'employeeId',
-        width: 130,
-        minWidth: 100,
-        filter: 'agTextColumnFilter',
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
-      },
-      specialty: {
-        headerName: 'Specialty',
-        field: 'specialty',
-        width: 180,
-        minWidth: 140,
-        filter: 'agTextColumnFilter',
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
-      },
-      subspecialty: {
-        headerName: 'Subspecialty',
-        field: 'subspecialty',
-        width: 180,
-        minWidth: 140,
-        filter: 'agTextColumnFilter',
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
-      },
-      providerType: {
-        headerName: 'Provider Type',
-        field: 'providerType',
-        width: 140,
-        minWidth: 120,
-        filter: 'agTextColumnFilter',
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
-      },
-      administrativeRole: {
-        headerName: 'Administrative Role',
-        field: 'administrativeRole',
-        width: 180,
-        minWidth: 150,
-        filter: 'agTextColumnFilter',
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
-      },
-      baseSalary: {
-        headerName: 'Base Salary',
-        field: 'baseSalary',
-        width: 140,
-        minWidth: 120,
-        valueFormatter: (params: any) => formatCurrency(params.value),
-        filter: 'agNumberColumnFilter',
-        tooltipValueGetter: (params: any) => formatCurrency(params.value),
-        cellStyle: { 
-          textAlign: 'right',
-          fontFamily: 'monospace'
-        },
-      },
-      fte: {
-        headerName: 'FTE',
-        field: 'fte',
-        width: 100,
-        minWidth: 80,
-        valueGetter: (params: any) => {
-          const provider = params.data;
-          // Check for totalFTE first (new field), then fallback to fte (old field)
-          if (provider.totalFTE !== undefined && provider.totalFTE !== null) {
-            return Number(provider.totalFTE);
-          }
-          if (provider.TotalFTE !== undefined && provider.TotalFTE !== null) {
-            return Number(provider.TotalFTE);
-          }
-          if (provider.fte !== undefined && provider.fte !== null) {
-            return Number(provider.fte);
-          }
-          // Check dynamicFields as fallback
-          if (provider.dynamicFields) {
-            try {
-              const dynamicFields = typeof provider.dynamicFields === 'string' 
-                ? JSON.parse(provider.dynamicFields) 
-                : provider.dynamicFields;
-              if (dynamicFields.totalFTE !== undefined && dynamicFields.totalFTE !== null) {
-                return Number(dynamicFields.totalFTE);
-              }
-              if (dynamicFields.TotalFTE !== undefined && dynamicFields.TotalFTE !== null) {
-                return Number(dynamicFields.TotalFTE);
-              }
-              if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
-                return Number(dynamicFields.fte);
-              }
-            } catch (e) {
-              // Ignore parsing errors
-            }
-          }
-          return 0;
-        },
-        valueFormatter: (params: any) => formatNumber(params.value),
-        filter: 'agNumberColumnFilter',
-        tooltipValueGetter: (params: any) => formatNumber(params.value),
-        cellStyle: { 
-          textAlign: 'right',
-          fontFamily: 'monospace'
-        },
-      },
-      startDate: {
-        headerName: 'Start Date',
-        field: 'startDate',
-        width: 140,
-        minWidth: 120,
-        valueFormatter: (params: any) => formatDate(params.value),
-        filter: 'agDateColumnFilter',
-        tooltipValueGetter: (params: any) => formatDate(params.value),
-        cellStyle: { 
-          textAlign: 'center',
-          fontFamily: 'monospace'
-        },
-      },
-      compensationModel: {
-        field: 'compensationModel',
-        headerName: 'Compensation Model',
-        width: 200,
-        minWidth: 150,
-        maxWidth: 250,
-        valueGetter: (params: any) => {
-          const provider = params.data;
-          const model = provider.compensationModel || provider.compensationType || provider.CompensationModel || '';
-          return model || 'Not specified';
-        },
-        cellRenderer: (params: any) => {
-          const value = params.value;
-          if (!value || value === 'Not specified') {
-            return (
-              <div className="flex items-center gap-2">
-                <XCircle className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <span className="text-sm text-gray-400 italic">Not specified</span>
-              </div>
-            );
-          }
-          return (
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <span className="text-sm font-medium truncate" title={value}>
-                {value}
-              </span>
-            </div>
-          );
-        },
-        filter: 'agTextColumnFilter',
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap',
-          padding: '8px 12px'
-        },
-      },
-      assignedTemplate: {
-        headerName: 'Template',
-        field: 'assignedTemplate',
-        width: 180,
-        minWidth: 150,
-        maxWidth: 220,
-        valueGetter: (params: any) => {
-          const provider = params.data;
-          const assignedTemplate = getAssignedTemplate(provider);
-          return assignedTemplate ? assignedTemplate.name : 'No template';
-        },
-        cellRenderer: (params: any) => {
-          const provider = params.data;
-          
-          // For Processed tab: Show the template that was actually used
-          if (statusTab === 'processed') {
-            const contract = generatedContracts.find(
-              c => c.providerId === provider.id && c.status === 'SUCCESS'
-            );
-            
-            if (contract) {
-              const usedTemplate = templates.find(t => t.id === contract.templateId);
-              return (
-                <div className="w-full h-full flex items-center px-2" style={{ position: 'relative', overflow: 'hidden' }}>
-                  <div className="flex items-center gap-2 w-full">
-                    <FileText className="w-4 h-4 text-green-600 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-900 truncate" title={usedTemplate?.name || 'Unknown template'}>
-                      {usedTemplate?.name || 'Unknown template'}
-                    </span>
-                  </div>
-                </div>
-              );
-            } else {
-              return (
-                <div className="w-full h-full flex items-center px-2" style={{ position: 'relative', overflow: 'hidden' }}>
-                  <span className="text-sm text-gray-400 italic">No contract found</span>
-                </div>
-              );
-            }
-          }
-          
-          // For Not Generated and All tabs: Show template selection dropdown
-          const assignedTemplate = getAssignedTemplate(provider);
-          
-          return (
-            <div className="w-full h-full flex items-center justify-center px-1" style={{ position: 'relative', overflow: 'hidden' }}>
-              <div className="w-full">
-                <Select
-                  value={assignedTemplate?.id || 'no-template'}
-                  onValueChange={(templateId) => {
-                    if (templateId === 'no-template') {
-                      updateProviderTemplate(provider.id, null);
-                    } else {
-                      updateProviderTemplate(provider.id, templateId);
-                    }
-                  }}
-                >
-                  <SelectTrigger 
-                    className="h-6 px-2 text-xs bg-white hover:bg-gray-50 border border-gray-300 rounded transition-colors" 
-                    style={{ position: 'relative', zIndex: 1, maxWidth: '140px' }}
-                    title={assignedTemplate ? `${assignedTemplate.name} v${assignedTemplate.version || '1.0.0'}` : 'Select Template'}
-                  >
-                    <SelectValue>
-                      {assignedTemplate ? (
-                        <span className="truncate text-gray-700 font-medium">
-                          {assignedTemplate.name}
-                        </span>
-                      ) : (
-                        <span className="text-gray-500 text-xs">Select</span>
-                      )}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no-template">
-                      <span className="text-gray-500">No template</span>
-                    </SelectItem>
-                    {templates
-                      .filter(t => t?.id && t?.name)
-                      .map(template => (
-                        <SelectItem key={template.id} value={template.id}>
-                          <div>
-                            <div className="font-medium">{template.name}</div>
-                            <div className="text-xs text-gray-500">v{template.version || '1'}</div>
-                          </div>
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          );
-        },
-        sortable: true,
-        filter: 'agTextColumnFilter',
-        suppressSizeToFit: false,
-        suppressAutoSize: false,
-        resizable: true,
-        cellStyle: { 
-          padding: '0',
-          overflow: 'hidden'
-        },
-      },
-    };
 
-    // Build columns based on columnOrder
-    const orderedColumns = columnOrder.map(field => {
-      const colDef = allColumnDefs[field as keyof typeof allColumnDefs];
-      if (!colDef) return null;
 
-      // Apply pinning from preferences
-      let pinned: 'left' | 'right' | undefined;
-      if (leftPinned.includes(field)) {
-        pinned = 'left';
-      } else if (rightPinned.includes(field)) {
-        pinned = 'right';
-      }
 
-      return {
-        ...colDef,
-        pinned,
-        hide: hiddenColumns.has(field),
-      };
-    }).filter(Boolean);
 
-    return [selectColumn, ...orderedColumns];
-  }, [columnOrder, hiddenColumns, columnPreferences?.columnPinning, selectedProviderIds, templateAssignments, templates, getAssignedTemplate, updateProviderTemplate, statusTab, generatedContracts]);
 
-  // Generation Status column (only for All tab)
-  const generationStatusColumn = {
-    headerName: 'Generation Status',
-    field: 'generationStatus',
-    width: 160,
-    minWidth: 140,
-    cellRenderer: (params: any) => {
-      const status = params.value;
-      if (status === 'Success') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            <CheckCircle className="w-3 h-3" /> Generated
-          </span>
-        );
-      }
-      if (status === 'Partial Success') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-            <AlertTriangle className="w-3 h-3" /> Partial
-          </span>
-        );
-      }
-      if (status === 'Failed') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            <XCircle className="w-3 h-3" /> Failed
-          </span>
-        );
-      }
-      if (status === 'Needs Review') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-            <AlertTriangle className="w-3 h-3" /> Review
-          </span>
-        );
-      }
-      if (status === 'Not Generated') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-            <span className="w-3 h-3 text-center">—</span> Ready
-          </span>
-        );
-      }
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-          <Loader2 className="w-3 h-3 animate-spin" /> Processing
-        </span>
-      );
-    },
-    sortable: true,
-    filter: 'agTextColumnFilter',
-    tooltipValueGetter: (params: any) => {
-      const generationDate = getGenerationDate(params.data.id, selectedTemplate?.id || '');
-      return generationDate ? `Last generated: ${formatDate(generationDate.toISOString())}` : 'Not generated yet';
-    },
-  };
-
-  // Contract Actions column (only for Processed tab)
-  const contractActionsColumn = {
-    headerName: 'Contract Actions',
-    field: 'actions',
-    width: 160,
-    minWidth: 140,
-    cellRenderer: (params: any) => {
-      const provider = params.data;
-      // Find any contract for this provider (including failed ones so they show up in Processed tab)
-      const contract = generatedContracts.find(
-        c => c.providerId === provider.id
-      );
-      
-      if (contract) {
-        const isPartialSuccess = contract.status === 'PARTIAL_SUCCESS';
-        return (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => downloadContract(provider, contract.templateId)}
-              className={`${isPartialSuccess ? 'text-orange-600' : 'text-blue-600'} hover:bg-blue-50 p-1 h-8 w-8`}
-              title="Download Contract"
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handlePreviewGenerate(provider.id)}
-              className={`${isPartialSuccess ? 'text-orange-600' : 'text-blue-600'} hover:bg-blue-50 p-1 h-8 w-8`}
-              title="Preview Contract"
-            >
-              <Eye className="h-4 w-4" />
-            </Button>
-          </div>
-        );
-      }
-      
-      return (
-        <span className="text-gray-400 text-sm">Not Generated</span>
-      );
-    },
-    sortable: false,
-    filter: false,
-    resizable: false,
-    pinned: null, // Explicitly set to null to prevent any pinning
-  };
-
-  // Comprehensive column definitions for all tabs - column manager will handle visibility
-  const allPossibleColumns = useMemo(() => [
-    ...baseColumns,
-    generationStatusColumn,
-    contractActionsColumn
-  ], [baseColumns, generationStatusColumn, contractActionsColumn]);
-
-  // Contextual column definitions based on current tab
-  const agGridColumnDefs = useMemo(() => {
-    // Always return all possible columns - let the column manager handle visibility
-    // This ensures the column manager sees all columns regardless of tab
-    return allPossibleColumns;
-  }, [allPossibleColumns]);
 
   // Prepare row data for AG Grid - ONLY include the fields we have column definitions for
   const agGridRows = paginatedProviders.map((provider: Provider) => {
@@ -3191,101 +905,6 @@ b, strong { font-weight: bold !important; }
 
   // CSV Export (async, robust download links)
   const [isExportingCSV, setIsExportingCSV] = useState(false);
-  const handleExportCSV = async () => {
-    setIsExportingCSV(true);
-    try {
-      // Use all filtered providers, not just paginated
-      const allRows = await Promise.all(filteredProviders.map(async (provider: Provider) => {
-        // Find the latest generated contract for this provider (prioritize SUCCESS over PARTIAL_SUCCESS)
-        const latestContract = generatedContracts
-          .filter(c => c.providerId === provider.id && (c.status === 'SUCCESS' || c.status === 'PARTIAL_SUCCESS'))
-          .sort((a, b) => {
-            // First sort by status (SUCCESS first, then PARTIAL_SUCCESS)
-            if (a.status === 'SUCCESS' && b.status !== 'SUCCESS') return -1;
-            if (a.status !== 'SUCCESS' && b.status === 'SUCCESS') return 1;
-            // Then sort by date (newest first)
-            return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
-          })[0];
-        
-        // Find assigned template
-        const assignedTemplateId = templateAssignments[provider.id];
-        const assignedTemplate = assignedTemplateId
-          ? templates.find(t => t.id === assignedTemplateId)
-          : null;
-        
-        let generationStatus = 'Outstanding';
-        let generationDate = '';
-        let downloadLink = '';
-        if (latestContract && assignedTemplate) {
-          if (latestContract.status === 'SUCCESS') {
-            generationStatus = 'Generated';
-          } else if (latestContract.status === 'PARTIAL_SUCCESS') {
-            generationStatus = 'Generated (S3 Failed)';
-          } else {
-            generationStatus = 'Failed';
-          }
-          generationDate = latestContract.generatedAt;
-          // Try to use fileUrl if present and looks like a URL
-          if (latestContract.fileUrl && latestContract.fileUrl.startsWith('http')) {
-            downloadLink = latestContract.fileUrl;
-          } else {
-            // Reconstruct contractId and fileName
-            const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
-            const contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
-            const fileName = getContractFileName(contractYear, provider.name, generationDate ? generationDate.split('T')[0] : new Date().toISOString().split('T')[0]);
-            try {
-              const result = await getContractFile(contractId, fileName);
-              downloadLink = result.url;
-            } catch (e) {
-              downloadLink = '';
-            }
-          }
-        }
-        
-        return {
-          ...provider,
-          assignedTemplate: assignedTemplate ? assignedTemplate.name : 'Unassigned',
-          generationStatus,
-          generationDate,
-          downloadLink,
-        };
-      }));
-      
-      // Build headers based on visible columns + extra fields
-      const visibleFields = agGridColumnDefs
-        .filter(col => col.field && col.field !== 'checkbox' && !hiddenColumns.has(col.field))
-        .map(col => col.field);
-      const headers = [
-        ...visibleFields.map(field => {
-          const col = agGridColumnDefs.find(c => c.field === field);
-          return col?.headerName || field;
-        }),
-        'Assigned Template',
-        'Generation Status',
-        'Generation Date',
-        'Download Link',
-      ];
-      
-      // Build rows
-      const rows = allRows.map(row => [
-        ...visibleFields.map(field => (row as any)[field] ?? ''),
-        row.assignedTemplate,
-        row.generationStatus,
-        row.generationDate,
-        row.downloadLink,
-      ]);
-      
-      // CSV encode
-      const csv = [headers, ...rows].map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      saveAs(blob, 'contract-generation-providers.csv');
-    } catch (err) {
-      setUserError('Failed to export CSV. Please try again.');
-      console.error('CSV Export Error:', err);
-    } finally {
-      setIsExportingCSV(false);
-    }
-  };
 
   // After provider and template are selected and merged, set editorContent
   useEffect(() => {
@@ -3419,23 +1038,7 @@ b, strong { font-weight: bold !important; }
   const processedRows = allFilteredProvidersWithStatus.filter(
     row => row.generationStatus === 'Success' || row.generationStatus === 'Partial Success'
   );
-  // Get real counts from database contracts, not just filtered providers
-  const getRealTabCounts = () => {
-    const totalContracts = generatedContracts.length;
-    const successContracts = generatedContracts.filter(c => c.status === 'SUCCESS').length;
-    const partialSuccessContracts = generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS').length;
-    const failedContracts = generatedContracts.filter(c => c.status === 'FAILED').length;
-    const processedContracts = successContracts + partialSuccessContracts + failedContracts;
-    
-    // Ensure we don't return negative numbers
-    const notGenerated = Math.max(0, filteredProviders.length - processedContracts);
-    
-    return {
-      notGenerated: notGenerated,
-      processed: processedContracts,
-      all: filteredProviders.length,
-    };
-  };
+
 
   const notGeneratedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Not Generated');
   const allRows = allFilteredProvidersWithStatus;
@@ -3526,16 +1129,113 @@ b, strong { font-weight: bold !important; }
   // For AG Grid display, use paginated providers with status
   const tabFilteredRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
   const visibleRows = tabFilteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-  
-  // Debug logging
-  console.log('🔍 Pagination Debug:', {
+
+
+
+  // Generator grid hook - replaces all AG Grid configuration and column definitions
+  const {
+    agGridColumnDefs,
+    gridOptions,
+    gridStyle,
+    onGridReady,
+    onRowDataUpdated,
+  } = useGeneratorGrid({
+    selectedProviderIds,
+    setSelectedProviderIds,
+    visibleRows,
+    columnOrder,
+    hiddenColumns,
+    columnPreferences,
+    templates,
+    generatedContracts,
     statusTab,
-    tabFilteredRowsCount: tabFilteredRows.length,
-    visibleRowsCount: visibleRows.length,
+    selectedTemplate,
+    updateProviderTemplate,
+    getAssignedTemplate,
+    downloadContract,
+    handlePreviewGenerate,
+    handleRowClick,
+    getGenerationDate,
+    gridRef: tempGridRef,
+  });
+
+  // Component rendering hook - extracts all JSX rendering logic
+  const { renderMainLayout } = useGeneratorRendering({
+    // State
+    providers,
+    templates,
+    selectedProviderIds,
+    selectedTemplate,
+    statusTab,
     pageIndex,
     pageSize,
-    selectedProviderIdsCount: selectedProviderIds.length
+    search,
+    bulkOpen,
+    isBulkGenerating,
+    progressModalOpen,
+    progressData,
+    instructionsModalOpen,
+    showClearConfirm,
+    isClearing,
+    clearingProgress,
+    contractsToClear,
+    isColumnSidebarOpen,
+    editorModalOpen,
+    editorContent,
+    previewModalOpen,
+    bulkAssignmentModalOpen,
+    sameTemplateModalOpen,
+    templateErrorModalOpen,
+    bottomActionMenuOpen,
+    showDetailedView,
+    clickedProvider,
+    showAssignmentHint,
+    
+    // Filter state
+    selectedSpecialty,
+    selectedSubspecialty,
+    selectedProviderType,
+    specialtyOptions,
+    subspecialtyOptions,
+    providerTypeOptions,
+    
+    // Computed values
+    filteredProviders,
+    visibleRows,
+    tabFilteredRows,
+    totalPages,
+    allFilteredProvidersWithStatus,
+    tabCounts,
+    
+    // Grid props
+    tempGridRef,
+    agGridColumnDefs,
+    gridOptions,
+    gridStyle,
+    onGridReady,
+    onRowDataUpdated,
+    
+    // Functions
+    setSelectedProviderIds,
+    setBulkOpen,
+    setPageIndex,
+    setSelectedSpecialty,
+    setSelectedSubspecialty,
+    setSelectedProviderType,
+    setInstructionsModalOpen,
+    setShowClearConfirm,
+    clearTemplateAssignments,
+    handleRowClick,
+    handleBulkGenerate,
+    handleModalBulkGenerate,
+    confirmClearContracts,
+    showSuccess,
+    showError,
+    showWarning,
+    showInfo,
   });
+  
+
 
   // Sync AG Grid selection with selectedProviderIds state
 
@@ -3545,11 +1245,11 @@ b, strong { font-weight: bold !important; }
   return (
     <div className="min-h-screen bg-gray-50/50 pt-0 pb-4 px-2 sm:px-4">
       <div className="max-w-7xl mx-auto">
-
-        {/* Header Card - Consistent with Templates/Providers, now with Template Selector */}
+        
+        {/* Header Card - Consistent with Templates/Providers */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-gray-800">Contract Generation</h1>
               <TooltipProvider>
                 <Tooltip>
@@ -3558,44 +1258,32 @@ b, strong { font-weight: bold !important; }
                       <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Info" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent className="bg-gray-900 text-white px-3 py-2 text-sm rounded-md shadow-lg">
+                  <TooltipContent side="right" align="start">
                     Generate contracts for selected providers using your templates
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-
-              
-              <div className="flex-1" /> {/* Spacer to push help icon to the right */}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => setInstructionsModalOpen(true)}
-                      className="p-1 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                      title="View detailed instructions"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent className="bg-gray-900 text-white px-3 py-2 text-sm rounded-md shadow-lg">
-                    View detailed instructions and help
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
             </div>
-            {/* Template Selector - right-aligned in header */}
-            
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setInstructionsModalOpen(true)}
+                className="text-blue-600 border-blue-300 hover:bg-blue-50"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Instructions
+              </Button>
+            </div>
           </div>
           <hr className="my-3 border-gray-100" />
         </div>
 
-        {/* Main Card: Filter, table, no top action buttons */}
+        {/* Main Content Card */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
-          {/* Modern Filter Sections */}
+          {/* Bulk Processing Section */}
           <div className="flex flex-col gap-4 mb-6">
-            {/* Bulk Processing Section - Progressive Disclosure Design */}
             <div className="rounded-xl border border-blue-100 bg-gray-50 shadow-sm p-0 transition-all duration-300 ${bulkOpen ? 'pb-6' : 'pb-0'} relative">
               <div className="flex items-center gap-3 px-6 pt-6 pb-2 cursor-pointer select-none" onClick={() => setBulkOpen(v => !v)}>
                 <span className="text-blue-600 text-2xl">⚡</span>
@@ -3657,15 +1345,9 @@ b, strong { font-weight: bold !important; }
                       >
                         Clear
                       </Button>
-
-
-
-
                     </div>
                   </div>
                 </div>
-
-
 
                 {/* Advanced Options */}
                 <div className="px-6 pt-4">
@@ -3822,313 +1504,143 @@ b, strong { font-weight: bold !important; }
             </div>
           </div>
 
-          {/* Tabs for Pending / Processed / All */}
-          <div className="mb-2 flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <Tabs value={statusTab} onValueChange={v => setStatusTab(v as 'notGenerated' | 'processed' | 'all')} className="flex-1">
-                <TabsList className="flex gap-2 border-b-0 bg-transparent justify-start relative after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-[1.5px] after:bg-gray-200 after:z-10 overflow-visible">
-                  <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                    data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
-                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                    Not Generated <span className="ml-1 text-xs">({tabCounts.notGenerated})</span>
-                  </TabsTrigger>
-
-                  <TabsTrigger value="processed" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                    data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
-                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                    Processed <span className="ml-1 text-xs">({tabCounts.processed})</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
-                    data-[state=active]:bg-blue-50 data-[state=active]:text-blue-900 data-[state=active]:border-blue-300 data-[state=active]:shadow-sm
-                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
-                    All <span className="ml-1 text-xs">({tabCounts.all})</span>
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-              
-              {/* Refresh button for Processed tab */}
-              {statusTab === 'processed' && (
-                <Button
-                  onClick={hydrateGeneratedContracts}
-                  variant="outline"
-                  size="sm"
-                  className="px-3 flex items-center gap-2 text-blue-600 border-blue-300 hover:bg-blue-50"
-                  title="Refresh processed contracts from database"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Refresh
-                </Button>
-              )}
+          {/* Tabs */}
+          <Tabs value={statusTab} onValueChange={(value: any) => setStatusTab(value as 'notGenerated' | 'processed' | 'all')} className="w-full">
+            <div className="flex items-center justify-between mb-4">
+              <TabsList className="flex gap-2 border-b border-blue-200 bg-transparent justify-start">
+                <TabsTrigger value="notGenerated" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                  Not Generated <span className="ml-1 text-xs">({tabCounts.notGenerated})</span>
+                </TabsTrigger>
+                <TabsTrigger value="processed" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                  Processed <span className="ml-1 text-xs">({tabCounts.processed})</span>
+                </TabsTrigger>
+                <TabsTrigger value="all" className="px-5 py-2 font-semibold text-sm border border-b-0 rounded-t-md transition-colors focus:outline-none focus:ring-0
+                  data-[state=active]:bg-white data-[state=active]:text-blue-900 data-[state=active]:border-blue-300
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-700 data-[state=inactive]:border-blue-200">
+                  All <span className="ml-1 text-xs">({tabCounts.all})</span>
+                </TabsTrigger>
+              </TabsList>
             </div>
-            
-            {/* Status & Progress - Positioned on the right side of tabs */}
-            <div className="bg-white border border-gray-200 rounded-lg px-4 py-2.5 shadow-sm hover:shadow-md transition-shadow duration-200">
-              <div className="flex items-center gap-6 text-sm">
-                {/* Template Assignment Status */}
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span className="font-medium text-gray-700">Templates:</span>
-                  <span className="text-green-600 font-semibold">{Object.keys(templateAssignments).length}</span>
-                  <span className="text-gray-400">/</span>
-                  <span className="text-gray-500">{tabFilteredRows.length}</span>
-                  <span className="text-gray-400">assigned</span>
+
+            {/* Search and Controls */}
+            <div className="mb-4">
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                <div className="flex-1 min-w-0">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search providers..."
+                      value={search}
+                      onChange={e => {
+                        setSearch(e.target.value);
+                        setPageIndex(0);
+                      }}
+                      className="pl-10 pr-4 py-2 w-full"
+                    />
+                  </div>
                 </div>
                 
-                              {/* Generation Progress Donut Chart */}
-              {(completedCount > 0 || isBulkGenerating) && (
-                <div className="flex items-center gap-3">
-                  <div className="relative w-12 h-12">
-                    {/* Background circle */}
-                    <svg className="w-12 h-12 transform -rotate-90" viewBox="0 0 48 48">
-                      <circle
-                        cx="24"
-                        cy="24"
-                        r="20"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        fill="none"
-                        className="text-gray-200"
-                      />
-                      {/* Progress circle */}
-                      <circle
-                        cx="24"
-                        cy="24"
-                        r="20"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        fill="none"
-                        strokeLinecap="round"
-                        className="text-emerald-500 transition-all duration-300 ease-out"
-                        style={{
-                          strokeDasharray: `${2 * Math.PI * 20}`,
-                          strokeDashoffset: `${2 * Math.PI * 20 * (1 - (totalCount ? completedCount / totalCount : 0))}`
-                        }}
-                      />
-                    </svg>
-                    {/* Center percentage text */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-sm font-bold text-emerald-600">
-                        {totalCount ? Math.round(completedCount / totalCount * 100) : 0}%
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-gray-700">
-                      complete
-                    </span>
-                  </div>
-                </div>
-              )}
-              </div>
-            </div>
-          </div>
-
-          {/* Search Provider Section - Moved below bulk processing */}
-          <div className="mb-4">
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              <div className="flex-1 min-w-0">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    type="text"
-                    placeholder="Search providers..."
-                    value={search}
-                    onChange={e => {
-                      setSearch(e.target.value);
+                <div className="flex gap-2">
+                  <Select
+                    value={selectedProviderType}
+                    onValueChange={val => {
+                      setSelectedProviderType(val);
                       setPageIndex(0);
                     }}
-                    className="pl-10 pr-4 py-2 w-full"
-                  />
+                  >
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__ALL__">All Types</SelectItem>
+                      {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  
+                  <Button
+                    onClick={handleExportCSV}
+                    variant="outline"
+                    size="sm"
+                    className="px-3 flex items-center gap-2"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    Export CSV
+                  </Button>
+                  
+                  <Button
+                    onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
+                    variant="default"
+                    size="sm"
+                    className="px-3 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+                    title="Manage column visibility, order, and pinning"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                    Columns
+                  </Button>
+                  
+                  {/* Active View Selector */}
+                  {Object.keys(savedViews).length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">View:</span>
+                      <Select
+                        value={activeColumnView}
+                        onValueChange={(viewName) => {
+                          if (viewName === 'default') {
+                            setActiveColumnView('default');
+                          } else if (savedViews[viewName]) {
+                            const viewData = savedViews[viewName];
+                            // Apply the saved view
+                            if (viewData.columnVisibility) {
+                              updateColumnVisibility(viewData.columnVisibility);
+                            }
+                            if (viewData.columnOrder) {
+                              updateColumnOrder(viewData.columnOrder);
+                            }
+                            if (viewData.columnPinning) {
+                              updateColumnPinning(viewData.columnPinning);
+                            }
+                            setActiveColumnView(viewName);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-32 h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">Default</SelectItem>
+                          {Object.keys(savedViews).map(viewName => (
+                            <SelectItem key={viewName} value={viewName}>
+                              {viewName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               </div>
-              
-              <div className="flex gap-2">
-                <Select
-                  value={selectedProviderType}
-                  onValueChange={val => {
-                    setSelectedProviderType(val);
-                    setPageIndex(0);
-                  }}
-                >
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="All Types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__ALL__">All Types</SelectItem>
-                    {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                
-                <Button
-                  onClick={handleExportCSV}
-                  variant="outline"
-                  size="sm"
-                  className="px-3 flex items-center gap-2"
-                >
-                  <FileDown className="w-4 h-4" />
-                  Export CSV
-                </Button>
-                
-
-                <Button
-                  onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
-                  variant="default"
-                  size="sm"
-                  className="px-3 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
-                  title="Manage column visibility, order, and pinning"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                  Columns
-                </Button>
-                
-                {/* Active View Selector */}
-                {Object.keys(savedViews).length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">View:</span>
-                    <Select
-                      value={activeColumnView}
-                      onValueChange={(viewName) => {
-                        if (viewName === 'default') {
-                          setActiveColumnView('default');
-                        } else if (savedViews[viewName]) {
-                          const viewData = savedViews[viewName];
-                          // Apply the saved view
-                          if (viewData.columnVisibility) {
-                            updateColumnVisibility(viewData.columnVisibility);
-                          }
-                          if (viewData.columnOrder) {
-                            updateColumnOrder(viewData.columnOrder);
-                          }
-                          if (viewData.columnPinning) {
-                            updateColumnPinning(viewData.columnPinning);
-                          }
-                          setActiveColumnView(viewName);
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-32 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="default">Default</SelectItem>
-                        {Object.keys(savedViews).map(viewName => (
-                          <SelectItem key={viewName} value={viewName}>
-                            {viewName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
             </div>
-          </div>
+          </Tabs>
 
           {/* AG Grid Table */}
-          <div className="ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-visible" style={{ 
-            height: '600px',
-            width: '100%',
-            minWidth: '100%',
-            maxWidth: '100%',
-            '--ag-header-background-color': '#f8fafc',
-            '--ag-header-foreground-color': '#374151',
-            '--ag-border-color': '#e5e7eb',
-            '--ag-row-hover-color': '#f8fafc',
-            '--ag-selected-row-background-color': '#f1f5f9',
-            '--ag-font-family': 'var(--font-sans, sans-serif)',
-            '--ag-font-size': '14px',
-            '--ag-header-height': '44px',
-            '--ag-row-height': '40px'
-          } as React.CSSProperties}>
+          <div className="ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-visible" style={gridStyle}>
             <AgGridReact
-              ref={gridRef}
+                ref={tempGridRef}
               rowData={visibleRows}
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
-              domLayout="normal"
-              suppressRowClickSelection={false}
               onRowClicked={handleRowClick}
-              pagination={false}
-              enableCellTextSelection={true}
-              headerHeight={44}
-              rowHeight={40}
-              suppressDragLeaveHidesColumns={true}
-              suppressScrollOnNewData={true}
-              suppressColumnVirtualisation={true}
-              suppressRowVirtualisation={false}
-              suppressHorizontalScroll={false}
-              maintainColumnOrder={true}
-              getRowId={(params) => params.data.id}
-              // Prevent extra columns - use strict column control
-              suppressLoadingOverlay={false}
-              suppressNoRowsOverlay={false}
-              skipHeaderOnAutoSize={true}
-              // Column sizing and auto-fit
-              suppressColumnMoveAnimation={false}
-              suppressRowHoverHighlight={false}
-              suppressCellFocus={false}
-              // Prevent blank space issues
-              suppressFieldDotNotation={true}
-              // Remove unwanted gridlines and separators
-              suppressMenuHide={false}
-
-              // Enable column auto-sizing
-              onGridReady={(params) => {
-                // Auto-size columns to fit content but respect max widths
-                params.api.sizeColumnsToFit();
-                
-                // Force columns to fill the entire width
-                setTimeout(() => {
-                  params.api.sizeColumnsToFit();
-                  // Force a second resize to ensure proper layout
-                  setTimeout(() => {
-                    params.api.sizeColumnsToFit();
-                  }, 50);
-                }, 100);
-              }}
-              
-              // Force proper column sizing on data changes
-              onRowDataUpdated={(params) => {
-                setTimeout(() => {
-                  params.api.sizeColumnsToFit();
-                }, 50);
-              }}
-
-              defaultColDef={{ 
-                tooltipValueGetter: params => params.value, 
-                resizable: true, 
-                sortable: true, 
-                filter: true,
-                menuTabs: ['generalMenuTab', 'filterMenuTab', 'columnsMenuTab'],
-                cellStyle: { 
-                  fontSize: '14px', 
-                  fontFamily: 'var(--font-sans, sans-serif)', 
-                  fontWeight: 400, 
-                  color: '#111827', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  height: '100%',
-                  paddingLeft: '12px',
-                  paddingRight: '12px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                },
-                suppressSizeToFit: false,
-                suppressAutoSize: false
-              }}
-              isRowSelectable={(rowNode) => {
-                return Boolean(rowNode.data && rowNode.data.id);
-              }}
-              enableBrowserTooltips={true}
-              enableRangeSelection={true}
-              singleClickEdit={false}
-              suppressClipboardPaste={false}
-              suppressCopyRowsToClipboard={false}
-              allowContextMenuWithControlKey={true}
+              onGridReady={onGridReady}
+              onRowDataUpdated={onRowDataUpdated}
+              {...gridOptions}
             />
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4 border-t border-gray-200">
@@ -4137,7 +1649,7 @@ b, strong { font-weight: bold !important; }
             </div>
             
             {/* Bottom Pagination Controls - Left aligned */}
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center mt-2">
               <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(0)}>&laquo;</Button>
               <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPageIndex(pageIndex - 1)}>&lsaquo;</Button>
               <span className="text-sm px-4">Page {pageIndex + 1} of {Math.max(1, Math.ceil(tabFilteredRows.length / pageSize))}</span>
@@ -4613,8 +2125,21 @@ b, strong { font-weight: bold !important; }
                     <div className="text-xs text-gray-500 mb-3">Drag to reorder columns. Click eye to show/hide.</div>
                     <div className="space-y-1">
                       {columnOrder.map((field, index) => {
-                        const colDef = baseColumns.find((col: any) => col.field === field);
-                        if (!colDef) return null;
+                        // Simple field name mapping for display
+                        const fieldDisplayNames: Record<string, string> = {
+                          name: 'Provider Name',
+                          employeeId: 'Employee ID',
+                          specialty: 'Specialty',
+                          subspecialty: 'Subspecialty',
+                          providerType: 'Provider Type',
+                          administrativeRole: 'Administrative Role',
+                          baseSalary: 'Base Salary',
+                          fte: 'FTE',
+                          startDate: 'Start Date',
+                          compensationModel: 'Compensation Model',
+                          assignedTemplate: 'Template',
+                        };
+                        const headerName = fieldDisplayNames[field] || field;
                         
                         return (
                           <div
@@ -4727,7 +2252,7 @@ b, strong { font-weight: bold !important; }
 
                             {/* Column Name */}
                             <span className={`flex-1 text-sm ${field === 'name' ? 'text-gray-700' : 'text-gray-700'}`}>
-                              {colDef.headerName}
+                              {headerName}
                               {(columnPreferences?.columnPinning?.left || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned left)</span>}
                               {(columnPreferences?.columnPinning?.right || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned right)</span>}
                               {field.toLowerCase().includes('fte') && <span className="text-xs text-blue-500 ml-1">FTE</span>}

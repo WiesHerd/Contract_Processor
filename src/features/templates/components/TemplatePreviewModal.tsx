@@ -13,6 +13,7 @@ import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
 import { downloadFile } from '@/utils/s3Storage';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getContractFileName } from '@/utils/filename';
+import { saveDocxFile } from '@/utils/fileUtils';
 
 interface TemplatePreviewModalProps {
   open: boolean;
@@ -39,9 +40,24 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
   
   const html = template?.editedHtmlContent || template?.htmlPreviewContent || '';
   const mapping: FieldMapping[] | undefined = template ? mappings?.[template.id]?.mappings : undefined;
-  const { content: mergedHtml } = useMemo(() => {
-    if (!template || !selectedProvider) return { content: html };
-    return mergeTemplateWithData(template, selectedProvider, html, mapping);
+  const [mergedHtml, setMergedHtml] = useState(html);
+
+  useEffect(() => {
+    const updateMergedHtml = async () => {
+      if (!template || !selectedProvider) {
+        setMergedHtml(html);
+        return;
+      }
+      try {
+        const result = await mergeTemplateWithData(template, selectedProvider, html, mapping);
+        setMergedHtml(result.content);
+      } catch (error) {
+        console.error('Error merging template data:', error);
+        setMergedHtml(html);
+      }
+    };
+    
+    updateMergedHtml();
   }, [template, selectedProvider, html, mapping]);
 
   useEffect(() => {
@@ -73,14 +89,14 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
       const contractYear = template.contractYear || new Date().getFullYear().toString();
       const runDate = new Date().toISOString().split('T')[0];
       const fileName = getContractFileName(contractYear, selectedProvider.name, runDate);
-      const url = URL.createObjectURL(docxBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      
+      // Use Windows File Explorer "Save As" dialog approach
+      const savedFilePath = await saveDocxFile(docxBlob, fileName);
+      if (savedFilePath) {
+        console.log('✅ Template preview saved successfully:', savedFilePath);
+      } else {
+        console.log('⚠️ Template preview generation completed but save was cancelled by user');
+      }
     } catch (error) {
       console.error("DOCX generation failed:", error);
       alert("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
@@ -102,14 +118,14 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
     try {
       const docxBlob = htmlDocx.asBlob(docxText);
       const fileName = `ScheduleA_${template.name.replace(/\s+/g, '')}.docx`;
-      const url = URL.createObjectURL(docxBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      
+      // Use Windows File Explorer "Save As" dialog approach
+      const savedFilePath = await saveDocxFile(docxBlob, fileName);
+      if (savedFilePath) {
+        console.log('✅ Template DOCX saved successfully:', savedFilePath);
+      } else {
+        console.log('⚠️ Template DOCX generation completed but save was cancelled by user');
+      }
     } catch (error) {
       console.error("DOCX generation failed:", error);
       alert("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");

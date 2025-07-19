@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Provider } from '@/types/provider';
 import { getContractFileName } from '@/utils/filename';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { saveDocxFile } from '@/utils/fileUtils';
 
 // IMPORTANT: Add this to your public/index.html
 // <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
@@ -157,12 +158,19 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
       const contractYear = template.contractYear || new Date().getFullYear().toString();
       const runDate = new Date().toISOString().split('T')[0];
       const fileName = getContractFileName(contractYear, selectedProvider.name, runDate);
-      saveAs(docxBlob, fileName);
-      dispatch(logSecurityEvent({
-        action: 'TEMPLATE_PREVIEW',
-        details: 'Template previewed',
-        severity: 'LOW',
-      }));
+      
+      // Use Windows File Explorer "Save As" dialog approach
+      const savedFilePath = await saveDocxFile(docxBlob, fileName);
+      if (savedFilePath) {
+        console.log('✅ Template preview saved successfully:', savedFilePath);
+        dispatch(logSecurityEvent({
+          action: 'TEMPLATE_PREVIEW',
+          details: 'Template previewed and saved',
+          severity: 'LOW',
+        }));
+      } else {
+        console.log('⚠️ Template preview generation completed but save was cancelled by user');
+      }
     } catch (error) {
       console.error("Error generating DOCX:", error);
     }

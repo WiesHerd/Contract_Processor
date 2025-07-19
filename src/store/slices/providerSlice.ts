@@ -83,7 +83,7 @@ export const updateProvider = createAsyncThunk(
   'providers/updateProvider',
   async (provider: Provider, { rejectWithValue }) => {
     try {
-      const updated = await awsProviders.update(provider);
+      const updated = await awsProviders.update(provider as any);
       toast.success('Provider updated successfully.');
       return updated;
     } catch (error: any) {
@@ -123,7 +123,7 @@ const providerSlice = createSlice({
       action.payload.forEach(csvProvider => {
         const existingIndex = newProviders.findIndex(p => p.id === csvProvider.id);
         if (existingIndex !== -1) {
-          newProviders[existingIndex] = { ...newProviders[existingIndex], ...csvProvider };
+          newProviders[existingIndex] = { ...newProviders[existingIndex], ...csvProvider } as unknown as Provider;
         } else {
           newProviders.push(csvProvider);
         }
@@ -140,7 +140,7 @@ const providerSlice = createSlice({
       state.selectedProviders = action.payload;
     },
     addProvider: (state, action: PayloadAction<Provider>) => {
-      state.providers.push(action.payload);
+      state.providers.push(action.payload as unknown as Provider);
     },
     removeProvider: (state, action: PayloadAction<string>) => {
       state.providers = state.providers.filter(p => p.id !== action.payload);
@@ -170,7 +170,7 @@ const providerSlice = createSlice({
     builder.addCase(fetchProviders.fulfilled, (state, action) => {
       state.loading = false;
       state.loadingAction = null;
-      state.providers = action.payload as Provider[];
+      state.providers = action.payload as unknown as Provider[];
       state.lastSync = new Date().toISOString();
     });
     builder.addCase(fetchProviders.rejected, (state, action) => {
@@ -238,25 +238,23 @@ const providerSlice = createSlice({
       state.loading = false;
       state.loadingAction = null;
     });
-    builder.addCase(fetchProvidersIfNeeded.rejected, (state, action) => {
-      state.loading = false;
-      state.loadingAction = null;
-      state.error = action.error.message || 'Failed to fetch providers';
-    });
 
     // Fetch Providers By Year
     builder.addCase(fetchProvidersByYear.pending, (state) => {
+      console.log('🔍 providerSlice: fetchProvidersByYear.pending');
       state.loading = true;
-      state.loadingAction = 'fetching';
+      state.loadingAction = 'fetchingByYear';
       state.error = null;
     });
     builder.addCase(fetchProvidersByYear.fulfilled, (state, action) => {
+      console.log('🔍 providerSlice: fetchProvidersByYear.fulfilled', action.payload?.length);
       state.loading = false;
       state.loadingAction = null;
-      state.providers = action.payload as Provider[];
+      state.providers = action.payload as unknown as Provider[];
       state.lastSync = new Date().toISOString();
     });
     builder.addCase(fetchProvidersByYear.rejected, (state, action) => {
+      console.log('🔍 providerSlice: fetchProvidersByYear.rejected', action.error);
       state.loading = false;
       state.loadingAction = null;
       state.error = action.error.message || 'Failed to fetch providers by year';

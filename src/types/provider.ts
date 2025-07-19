@@ -69,7 +69,7 @@ export interface ExtendedProvider extends Provider {
   generationStatus?: 'pending' | 'success' | 'error';
 }
 
-export type LoadingAction = 'uploading' | 'clearing' | 'fetching' | null;
+export type LoadingAction = 'uploading' | 'clearing' | 'fetching' | 'fetchingByYear' | null;
 
 export interface ProviderState {
   providers: Provider[];

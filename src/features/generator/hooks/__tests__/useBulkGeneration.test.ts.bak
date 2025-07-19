@@ -1,0 +1,444 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { Provider as ReduxProvider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
+import { useBulkGeneration } from '../useBulkGeneration';
+
+// Mock the dependencies
+vi.mock('@/utils/immutableContractStorage', () => ({
+  immutableContractStorage: {
+    storeImmutableContract: vi.fn(),
+    testS3Connection: vi.fn(),
+    logEnvironmentStatus: vi.fn(),
+  }
+}));
+
+vi.mock('@/utils/s3Storage', () => ({
+  uploadContractFile: vi.fn(),
+}));
+
+vi.mock('@/utils/fileSystemAccess', () => ({
+  saveMultipleFilesAsZip: vi.fn(),
+}));
+
+vi.mock('@/utils/formattingUtils', () => ({
+  normalizeSmartQuotes: vi.fn((text) => text),
+}));
+
+vi.mock('@/utils/template-processor', () => ({
+  mergeTemplateWithData: vi.fn().mockResolvedValue({ content: '<html>test</html>' }),
+}));
+
+vi.mock('@/services/contractGenerationLogService', () => ({
+  ContractGenerationLogService: {
+    createLog: vi.fn(),
+  }
+}));
+
+// Mock window.htmlDocx
+Object.defineProperty(window, 'htmlDocx', {
+  value: {
+    asBlob: vi.fn().mockReturnValue(new Blob(['test'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))
+  },
+  writable: true
+});
+
+// Mock Redux store
+const createMockStore = () => configureStore({
+  reducer: {
+    generator: (state = { generatedContracts: [] }, action: any) => {
+      switch (action.type) {
+        case 'generator/addGeneratedContract':
+          return {
+            ...state,
+            generatedContracts: [...state.generatedContracts, action.payload]
+          };
+        case 'generator/addGenerationLog':
+          return {
+            ...state,
+            generationLogs: [...(state.generationLogs || []), action.payload]
+          };
+        default:
+          return state;
+      }
+    },
+    audit: (state = {}, action: any) => state,
+  },
+  preloadedState: {
+    generator: {
+      generatedContracts: []
+    }
+  }
+});
+
+// Mock data
+const mockProviders = [
+  {
+    id: '1',
+    name: 'Dr. John Doe',
+    specialty: 'Cardiology',
+    fte: 1.0,
+    baseSalary: 250000,
+  },
+  {
+    id: '2',
+    name: 'Dr. Jane Smith',
+    specialty: 'Neurology',
+    fte: 0.8,
+    baseSalary: 200000,
+  }
+];
+
+const mockTemplates = [
+  {
+    id: 'template1',
+    name: 'Base Template',
+    contractYear: '2024',
+    editedHtmlContent: '<html><body>{{ProviderName}}</body></html>',
+    htmlPreviewContent: '<html><body>{{ProviderName}}</body></html>',
+  }
+];
+
+const mockMappings = {
+  template1: {
+    mappings: [
+      {
+        placeholder: '{{ProviderName}}',
+        mappedColumn: 'name',
+        mappingType: 'field' as const,
+      }
+    ]
+  }
+};
+
+const mockProps = {
+  providers: mockProviders,
+  templates: mockTemplates,
+  mappings: mockMappings,
+  selectedProviderIds: ['1', '2'],
+  filteredProviders: mockProviders,
+  generatedContracts: [],
+  getAssignedTemplate: vi.fn().mockReturnValue(mockTemplates[0]),
+  setIsBulkGenerating: vi.fn(),
+  setProgressModalOpen: vi.fn(),
+  setSelectedProviderIds: vi.fn(),
+  setUserError: vi.fn(),
+  showSuccess: vi.fn(),
+  showWarning: vi.fn(),
+  showError: vi.fn(),
+  initializeProgress: vi.fn(),
+  updateProgress: vi.fn(),
+  progressData: {
+    isCancelled: false,
+    steps: [
+      { id: 'generation', status: 'pending' },
+      { id: 'saving', status: 'pending' },
+      { id: 'uploading', status: 'pending' }
+    ],
+    successCount: 0,
+    skippedCount: 0,
+    errorCount: 0
+  },
+  hydrateGeneratedContracts: vi.fn().mockResolvedValue(undefined),
+};
+
+describe('useBulkGeneration', () => {
+  let store: ReturnType<typeof createMockStore>;
+
+  beforeEach(() => {
+    store = createMockStore();
+    vi.clearAllMocks();
+  });
+
+  const renderHookWithProvider = (props: any) => {
+    return renderHook(() => useBulkGeneration(props), {
+      wrapper: ({ children }) => (
+        <ReduxProvider store={store}>
+          {children}
+        </ReduxProvider>
+      ),
+    });
+  };
+
+  describe('handleBulkGenerate', () => {
+    it('should validate provider selection before generation', async () => {
+      const props = {
+        ...mockProps,
+        selectedProviderIds: [],
+      };
+
+      const { result } = renderHookWithProvider(props);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.setUserError).toHaveBeenCalledWith('Please select at least one provider to generate contracts.');
+      expect(props.setIsBulkGenerating).not.toHaveBeenCalled();
+    });
+
+    it('should check for template assignments before generation', async () => {
+      const props = {
+        ...mockProps,
+        getAssignedTemplate: vi.fn().mockReturnValue(null),
+      };
+
+      const { result } = renderHookWithProvider(props);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.setUserError).toHaveBeenCalledWith("The following providers don't have templates assigned: Dr. John Doe, Dr. Jane Smith. Please assign templates or select a default template.");
+      expect(props.setIsBulkGenerating).not.toHaveBeenCalled();
+    });
+
+    it('should initialize progress tracking for bulk generation', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.setIsBulkGenerating).toHaveBeenCalledWith(true);
+      expect(props.initializeProgress).toHaveBeenCalledWith(2);
+      expect(props.updateProgress).toHaveBeenCalledWith({ currentOperation: 'Preparing bulk generation...' });
+    });
+
+    it('should handle cancellation during bulk generation', async () => {
+      const props = {
+        ...mockProps,
+        progressData: {
+          ...mockProps.progressData,
+          isCancelled: true,
+        },
+      };
+
+      const { result } = renderHookWithProvider(props);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.updateProgress).toHaveBeenCalledWith({ currentOperation: 'Operation cancelled by user' });
+      expect(props.setIsBulkGenerating).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('handleModalBulkGenerate', () => {
+    it('should validate modal provider selection', async () => {
+      const props = {
+        ...mockProps,
+        selectedProviderIds: [],
+      };
+
+      const { result } = renderHookWithProvider(props);
+
+      await act(async () => {
+        await result.current.handleModalBulkGenerate();
+      });
+
+      expect(props.setUserError).toHaveBeenCalledWith('No providers selected for generation.');
+      expect(props.setIsBulkGenerating).not.toHaveBeenCalled();
+    });
+
+    it('should check template assignments for modal providers', async () => {
+      const props = {
+        ...mockProps,
+        getAssignedTemplate: vi.fn().mockReturnValue(null),
+      };
+
+      const { result } = renderHookWithProvider(props);
+
+      await act(async () => {
+        await result.current.handleModalBulkGenerate();
+      });
+
+      expect(props.setUserError).toHaveBeenCalledWith('Some providers don\'t have templates assigned: Dr. John Doe, Dr. Jane Smith. Please assign templates first.');
+      expect(props.setIsBulkGenerating).not.toHaveBeenCalled();
+    });
+
+    it('should initialize progress tracking for modal bulk generation', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleModalBulkGenerate();
+      });
+
+      expect(props.setIsBulkGenerating).toHaveBeenCalledWith(true);
+      expect(props.initializeProgress).toHaveBeenCalledWith(2);
+      expect(props.updateProgress).toHaveBeenCalledWith({ currentOperation: 'Starting contract generation...' });
+    });
+  });
+
+  describe('generateContractForProvider', () => {
+    it('should generate contract successfully', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      const provider = mockProviders[0];
+      const template = mockTemplates[0];
+
+      const generationResult = await act(async () => {
+        return await result.current.generateContractForProvider(provider, template, 1, 2);
+      });
+
+      expect(generationResult.success).toBe(true);
+      expect(generationResult.file).toBeDefined();
+      expect(generationResult.file?.provider).toBe(provider);
+      expect(generationResult.file?.template).toBe(template);
+    });
+
+    it('should handle DOCX generator not available', async () => {
+      // Mock htmlDocx as undefined
+      Object.defineProperty(window, 'htmlDocx', {
+        value: undefined,
+        writable: true
+      });
+
+      const { result } = renderHookWithProvider(mockProps);
+
+      const provider = mockProviders[0];
+      const template = mockTemplates[0];
+
+      const generationResult = await act(async () => {
+        return await result.current.generateContractForProvider(provider, template, 1, 2);
+      });
+
+      expect(generationResult.success).toBe(false);
+      expect(generationResult.error).toBe('DOCX generator not available');
+
+      // Restore mock
+      Object.defineProperty(window, 'htmlDocx', {
+        value: {
+          asBlob: vi.fn().mockReturnValue(new Blob(['test'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))
+        },
+        writable: true
+      });
+    });
+
+    it('should handle S3 storage failure gracefully', async () => {
+      const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
+      vi.mocked(immutableContractStorage.testS3Connection).mockResolvedValue({
+        success: false,
+        error: 'S3 connection failed'
+      });
+
+      const { result } = renderHookWithProvider(mockProps);
+
+      const provider = mockProviders[0];
+      const template = mockTemplates[0];
+
+      const generationResult = await act(async () => {
+        return await result.current.generateContractForProvider(provider, template, 1, 2);
+      });
+
+      expect(generationResult.success).toBe(true); // Generation still succeeds
+      expect(generationResult.file).toBeDefined();
+    });
+  });
+
+  describe('ZIP file creation', () => {
+    it('should create ZIP file with generated contracts', async () => {
+      const { saveMultipleFilesAsZip } = await import('@/utils/fileSystemAccess');
+      vi.mocked(saveMultipleFilesAsZip).mockResolvedValue('/path/to/zip');
+
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(saveMultipleFilesAsZip).toHaveBeenCalled();
+      expect(props.updateProgress).toHaveBeenCalledWith({
+        progress: 70,
+        currentOperation: 'Creating ZIP file with all contracts...'
+      });
+    });
+
+    it('should handle ZIP creation failure gracefully', async () => {
+      const { saveMultipleFilesAsZip } = await import('@/utils/fileSystemAccess');
+      vi.mocked(saveMultipleFilesAsZip).mockRejectedValue(new Error('ZIP creation failed'));
+
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.showWarning).toHaveBeenCalledWith('Contracts generated but ZIP creation failed. Individual files may need to be saved manually.');
+    });
+  });
+
+  describe('Progress tracking', () => {
+    it('should update progress during contract generation', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      // Check that progress was updated for each provider
+      expect(props.updateProgress).toHaveBeenCalledWith({
+        currentStep: 1,
+        progress: 35, // 15 + (1/2) * 40
+        currentOperation: 'Generating contract for Dr. John Doe (1/2)'
+      });
+
+      expect(props.updateProgress).toHaveBeenCalledWith({
+        currentStep: 2,
+        progress: 55, // 15 + (2/2) * 40
+        currentOperation: 'Generating contract for Dr. Jane Smith (2/2)'
+      });
+    });
+
+    it('should complete progress tracking', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.updateProgress).toHaveBeenCalledWith({
+        progress: 100,
+        currentStep: 3,
+        steps: expect.any(Array),
+        currentOperation: 'Bulk generation completed successfully!'
+      });
+
+      expect(props.setIsBulkGenerating).toHaveBeenCalledWith(false);
+      expect(props.setProgressModalOpen).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('Cleanup and state management', () => {
+    it('should clear selected providers after completion', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.setSelectedProviderIds).toHaveBeenCalledWith([]);
+    });
+
+    it('should refresh contracts from database', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.hydrateGeneratedContracts).toHaveBeenCalled();
+    });
+
+    it('should show success message', async () => {
+      const { result } = renderHookWithProvider(mockProps);
+
+      await act(async () => {
+        await result.current.handleBulkGenerate();
+      });
+
+      expect(props.showSuccess).toHaveBeenCalledWith('Success! 2 contracts generated successfully.');
+    });
+  });
+}); 

@@ -332,15 +332,15 @@ export const awsProviders = {
   },
 
   async list(year?: number): Promise<Provider[]> {
-    const allProviders: Provider[] = [];
+    let allProviders: Provider[] = [];
     let nextToken: string | null | undefined = null;
 
     console.log('[awsProviders.list] Calling providers query with year:', year);
     
-    // If year is provided, use the year-specific query
+    // If year is provided, try the year-specific query first
     if (year) {
-      do {
-        try {
+      try {
+        do {
           const result: any = await client.graphql({
             query: providersByCompensationYear,
             variables: { 
@@ -355,35 +355,57 @@ export const awsProviders = {
             allProviders.push(...providerData.items.filter(Boolean));
           }
           nextToken = providerData?.nextToken;
-        } catch (error) {
-          console.error('[awsProviders.list] Error listing providers by year:', error);
-          // On error, break the loop and return what we have so far
-          break;
+        } while (nextToken);
+        
+        // If we got results, return them
+        if (allProviders.length > 0) {
+          console.log('[awsProviders.list] Successfully fetched providers by year:', allProviders.length);
+          return allProviders;
         }
-      } while (nextToken);
-    } else {
-      // Fallback to listing all providers if no year specified
-      do {
-        try {
-          const result: any = await client.graphql({
-            query: listProviders,
-            variables: { limit: 1000, nextToken },
-          });
-          console.log('[awsProviders.list] listProviders result:', result);
-          const providerData = result.data?.listProviders;
-          if (providerData?.items) {
-            allProviders.push(...providerData.items.filter(Boolean));
-          }
-          nextToken = providerData?.nextToken;
-        } catch (error) {
-          console.error('[awsProviders.list] Error listing providers:', error);
-          // On error, break the loop and return what we have so far
-          break;
-        }
-      } while (nextToken);
+      } catch (error) {
+        console.error('[awsProviders.list] Error listing providers by year:', error);
+        console.log('[awsProviders.list] Falling back to listProviders query...');
+        // Reset for fallback
+        allProviders = [];
+        nextToken = null;
+      }
     }
-
-    console.log('[awsProviders.list] Returning providers:', allProviders);
+    
+    // Fallback to listing all providers and filtering by year on client side
+    console.log('[awsProviders.list] Using fallback: listProviders query');
+    do {
+      try {
+        const result: any = await client.graphql({
+          query: listProviders,
+          variables: { limit: 1000, nextToken },
+        });
+        console.log('[awsProviders.list] listProviders result:', result);
+        const providerData = result.data?.listProviders;
+        if (providerData?.items) {
+          allProviders.push(...providerData.items.filter(Boolean));
+        }
+        nextToken = providerData?.nextToken;
+      } catch (error) {
+        console.error('[awsProviders.list] Error listing providers:', error);
+        // On error, break the loop and return what we have so far
+        break;
+      }
+    } while (nextToken);
+    
+    // Filter by year on client side if year was specified
+    if (year && allProviders.length > 0) {
+      const filteredProviders = allProviders.filter(provider => 
+        provider.compensationYear === year.toString()
+      );
+      console.log('[awsProviders.list] Filtered providers by year on client side:', {
+        total: allProviders.length,
+        filtered: filteredProviders.length,
+        year: year.toString()
+      });
+      return filteredProviders;
+    }
+    
+    console.log('[awsProviders.list] Returning providers:', allProviders.length);
     return allProviders;
   },
 

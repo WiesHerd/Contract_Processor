@@ -325,38 +325,38 @@ function App() {
     <Provider store={store}>
       <AppInitializer />
       <ErrorHandlerProvider>
-        <AuthProvider>
-          <YearProvider>
-            <Router>
-              <Toaster position="top-right" richColors />
-              <Routes>
-                {/* Public routes with the new minimal layout */}
-                <Route element={<AuthLayout />}>
-                  <Route path="/signin" element={<PublicRoute><SignIn /></PublicRoute>} />
-                  <Route path="/signup" element={<PublicRoute><SignUp /></PublicRoute>} />
-                  <Route path="/verify-email" element={<PublicRoute><VerifyEmail /></PublicRoute>} />
-                </Route>
+      <AuthProvider>
+        <YearProvider>
+          <Router>
+            <Toaster position="top-right" richColors />
+            <Routes>
+              {/* Public routes with the new minimal layout */}
+              <Route element={<AuthLayout />}>
+                <Route path="/signin" element={<PublicRoute><SignIn /></PublicRoute>} />
+                <Route path="/signup" element={<PublicRoute><SignUp /></PublicRoute>} />
+                <Route path="/verify-email" element={<PublicRoute><VerifyEmail /></PublicRoute>} />
+              </Route>
 
-                {/* Protected routes with the full application layout */}
-                <Route element={<AppLayout><Outlet /></AppLayout>}>
-                  <Route path="/" element={<ProtectedRoute><WelcomeScreen /></ProtectedRoute>} />
-                  <Route path="/templates" element={<ProtectedRoute><TemplateManager /></ProtectedRoute>} />
-                  <Route path="/map-fields" element={<ProtectedRoute><MappingListPage /></ProtectedRoute>} />
-                  <Route path="/map-fields/:templateId" element={<ProtectedRoute><FieldMapperPage /></ProtectedRoute>} />
-                  <Route path="/providers" element={<ProtectedRoute><ProviderDataManager /></ProtectedRoute>} />
-                  <Route path="/generate" element={<ProtectedRoute><ContractGenerator /></ProtectedRoute>} />
-                  <Route path="/clauses" element={<ProtectedRoute><ClauseManager /></ProtectedRoute>} />
-                  <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
-                  <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
-                  <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-                                  <Route path="/dynamic-blocks" element={<ProtectedRoute><DynamicBlocksPage /></ProtectedRoute>} />
-                    <Route path="/welcome-demo" element={<ProtectedRoute><WelcomeScreenDemo /></ProtectedRoute>} />
-                  <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-                </Route>
-              </Routes>
-            </Router>
-          </YearProvider>
-        </AuthProvider>
+              {/* Protected routes with the full application layout */}
+              <Route element={<AppLayout><Outlet /></AppLayout>}>
+                <Route path="/" element={<ProtectedRoute><WelcomeScreen /></ProtectedRoute>} />
+                <Route path="/templates" element={<ProtectedRoute><TemplateManager /></ProtectedRoute>} />
+                <Route path="/map-fields" element={<ProtectedRoute><MappingListPage /></ProtectedRoute>} />
+                <Route path="/map-fields/:templateId" element={<ProtectedRoute><FieldMapperPage /></ProtectedRoute>} />
+                <Route path="/providers" element={<ProtectedRoute><ProviderDataManager /></ProtectedRoute>} />
+                <Route path="/generate" element={<ProtectedRoute><ContractGenerator /></ProtectedRoute>} />
+                <Route path="/clauses" element={<ProtectedRoute><ClauseManager /></ProtectedRoute>} />
+                <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
+                <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+                                <Route path="/dynamic-blocks" element={<ProtectedRoute><DynamicBlocksPage /></ProtectedRoute>} />
+                  <Route path="/welcome-demo" element={<ProtectedRoute><WelcomeScreenDemo /></ProtectedRoute>} />
+                <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+              </Route>
+            </Routes>
+          </Router>
+        </YearProvider>
+      </AuthProvider>
       </ErrorHandlerProvider>
     </Provider>
   );
