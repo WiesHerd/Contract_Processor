@@ -9,6 +9,11 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "cleanup": "node scripts/cleanup.js",
+    "cleanup-s3": "node scripts/cleanup-s3-storage.cjs",
+    "update-storage": "node scripts/update-storage-config.cjs",
+    "recreate-contracts": "node scripts/recreate-contracts-folder.cjs",
+    "recreate-contracts-simple": "node scripts/recreate-contracts-simple.cjs",
+    "fix-storage": "npm run cleanup-s3 && npm run update-storage",
     "test": "vitest",
     "test:run": "vitest run"
   },

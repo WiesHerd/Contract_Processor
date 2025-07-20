@@ -29,6 +29,7 @@ export interface CreateContractGenerationLogInput {
   status?: string;
   fileUrl?: string;
   notes?: string;
+  owner?: string;
 }
 
 export interface ContractGenerationLogConnection {
@@ -39,13 +40,16 @@ export interface ContractGenerationLogConnection {
 export class ContractGenerationLogService {
   static async createLog(input: CreateContractGenerationLogInput): Promise<ContractGenerationLog> {
     try {
+      console.log('🔍 Creating contract log with input:', JSON.stringify(input, null, 2));
       const result = await client.graphql({
         query: createContractGenerationLog,
         variables: { input }
       });
+      console.log('✅ Contract log created successfully:', result);
       return (result as any).data.createContractGenerationLog;
     } catch (error) {
-      console.error('Error creating contract generation log:', error);
+      console.error('❌ Error creating contract generation log:', error);
+      console.error('❌ Error details:', JSON.stringify(error, null, 2));
       throw error;
     }
   }
@@ -85,6 +89,19 @@ export class ContractGenerationLogService {
       return (result as any).data.deleteContractGenerationLog;
     } catch (error) {
       console.error('Error deleting contract generation log:', error);
+      throw error;
+    }
+  }
+
+  static async updateLog(id: string, input: Partial<ContractGenerationLog>): Promise<ContractGenerationLog> {
+    try {
+      const result = await client.graphql({
+        query: updateContractGenerationLog,
+        variables: { input: { id, ...input } }
+      });
+      return (result as any).data.updateContractGenerationLog;
+    } catch (error) {
+      console.error('Error updating contract generation log:', error);
       throw error;
     }
   }

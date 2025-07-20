@@ -242,6 +242,48 @@ export const listUserPreferences = /* GraphQL */ `query ListUserPreferences(
   APITypes.ListUserPreferencesQueryVariables,
   APITypes.ListUserPreferencesQuery
 >;
+export const getGeneratorPreferences = /* GraphQL */ `query GetGeneratorPreferences($id: ID!) {
+  getGeneratorPreferences(id: $id) {
+    id
+    userId
+    columnPreferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetGeneratorPreferencesQueryVariables,
+  APITypes.GetGeneratorPreferencesQuery
+>;
+export const listGeneratorPreferences = /* GraphQL */ `query ListGeneratorPreferences(
+  $filter: ModelGeneratorPreferencesFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listGeneratorPreferences(
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      userId
+      columnPreferences
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListGeneratorPreferencesQueryVariables,
+  APITypes.ListGeneratorPreferencesQuery
+>;
 export const getMapping = /* GraphQL */ `query GetMapping($id: ID!) {
   getMapping(id: $id) {
     id
@@ -590,6 +632,37 @@ export const userPreferencesByUserId = /* GraphQL */ `query UserPreferencesByUse
 ` as GeneratedQuery<
   APITypes.UserPreferencesByUserIdQueryVariables,
   APITypes.UserPreferencesByUserIdQuery
+>;
+export const generatorPreferencesByUserId = /* GraphQL */ `query GeneratorPreferencesByUserId(
+  $userId: String!
+  $sortDirection: ModelSortDirection
+  $filter: ModelGeneratorPreferencesFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  generatorPreferencesByUserId(
+    userId: $userId
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      userId
+      columnPreferences
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GeneratorPreferencesByUserIdQueryVariables,
+  APITypes.GeneratorPreferencesByUserIdQuery
 >;
 export const mappingsByTemplateID = /* GraphQL */ `query MappingsByTemplateID(
   $templateID: ID!

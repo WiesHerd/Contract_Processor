@@ -100,6 +100,8 @@ export const useGeneratorEvents = ({
       // Set the provider for preview and open the preview modal
       setSelectedProviderIds([providerId]);
       setPreviewModalOpen(true);
+    } else {
+      console.error('❌ Provider not found for ID:', providerId);
     }
   }, [providers, setSelectedProviderIds, setPreviewModalOpen]);
 
@@ -241,23 +243,18 @@ b, strong { font-weight: bold !important; }
         contractYear: contractYear,
         templateId: selectedTemplate.id,
         generatedAt: new Date().toISOString(),
-        generatedBy: 'user', // TODO: Get actual user ID
+        generatedBy: localStorage.getItem('userEmail') || 'unknown',
         outputType: 'DOCX',
         status: 'SUCCESS',
         fileUrl: fileName,
-        notes: `Generated contract for ${provider.name} using template ${selectedTemplate.name}`
+        notes: `Generated contract for ${provider.name} using template ${selectedTemplate.name}`,
+        owner: localStorage.getItem('userId') || 'unknown'
       };
 
       try {
         const logEntry = await ContractGenerationLogService.createLog(logInput);
-        dispatch(addGenerationLog(logEntry));
-        dispatch(addGeneratedContract({
-          providerId: provider.id,
-          templateId: selectedTemplate.id,
-          status: 'SUCCESS',
-          generatedAt: new Date().toISOString(),
-          dynamoDbId: logEntry?.id, // Store the DynamoDB ID from the log entry
-        }));
+        // Refresh contracts from database to ensure consistency
+        await hydrateGeneratedContracts();
       } catch (logError) {
         console.error('Failed to log contract generation:', logError);
         // Don't fail the generation if logging fails
@@ -265,13 +262,7 @@ b, strong { font-weight: bold !important; }
     } catch (error) {
       setUserError("Failed to generate DOCX. Please ensure the template is properly initialized and html-docx-js is loaded.");
       console.error("DOCX Generation Error:", error);
-      dispatch(addGeneratedContract({
-        providerId: provider.id,
-        templateId: selectedTemplate.id,
-        status: 'FAILED',
-        generatedAt: new Date().toISOString(),
-        // Note: No dynamoDbId for failed contracts since they weren't logged to DynamoDB
-      }));
+      // Don't add failed contracts to Redux - they weren't logged to DynamoDB
     }
   }, [
     selectedTemplate,

@@ -649,7 +649,7 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
             ? JSON.parse(provider.dynamicFields) 
             : provider.dynamicFields;
           
-          console.log(`🔍 Checking dynamicFields:`, dynamicData);
+
           
           // Try direct field name and common variations
           const fieldVariations = [
@@ -734,7 +734,7 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
     }
     })();
     
-    console.log(`🔍 Condition evaluation: ${numericFieldValue} ${condition.operator} ${compareValue} = ${result}`);
+
     return result;
   }, []);
 
@@ -755,7 +755,7 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
     const items: Array<{label: string, value: string}> = [];
     
     // Add conditional items (only show if condition is met)
-    console.log('🔍 Evaluating', debouncedBlock.conditions.length, 'conditional items:');
+
     debouncedBlock.conditions.forEach((condition: Condition, index: number) => {
       // Use the same field lookup logic as evaluateCondition
       let fieldValue = providerData[condition.field];
@@ -808,7 +808,7 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
     });
     
     // Add always include items (always show regardless of value)
-    console.log('🔍 Evaluating', debouncedBlock.alwaysInclude.length, 'always include items:');
+
     debouncedBlock.alwaysInclude.forEach((item: AlwaysInclude, index: number) => {
       if (item.label && item.valueField) {
         let value = providerData[item.valueField];
@@ -1010,7 +1010,7 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
   // Debug: Log what's being evaluated
   useEffect(() => {
     if (debouncedBlock.conditions.length > 0) {
-      console.log('🔍 Evaluating conditions for:', currentProvider.name);
+  
       debouncedBlock.conditions.forEach((condition: Condition, index: number) => {
         const fieldValue = currentProvider[condition.field];
         const conditionMet = evaluateCondition(condition, currentProvider);
@@ -1040,7 +1040,7 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
     };
     
     console.log('💾 Saving block:', savedBlock);
-    console.log('🔍 Is new block:', !block.id || block.id.trim() === '');
+
     
     onSave(savedBlock);
   }, [block, onSave]);

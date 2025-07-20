@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search, Eye, RotateCcw, X, Trash2, FolderOpen, Download, Upload, Users } from 'lucide-react';
+import { AlertTriangle, FileDown, Loader2, Info, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, CheckSquare, Square, Search, Eye, RotateCcw, X, Trash2, FolderOpen, Download, Upload, Users, TestTube, Database, Plus } from 'lucide-react';
 import {
   setSelectedTemplate,
   setSelectedProvider,
@@ -95,8 +95,6 @@ interface ExtendedProvider extends Provider {
 
 
 export default function ContractGenerator() {
-  console.log('🔍 ContractGenerator: Component mounting/rendering');
-  
   const dispatch = useDispatch<AppDispatch>();
   const { providers, loading: providersLoading, error: providersError } = useSelector((state: RootState) => state.provider);
   const lastSync = useSelector((state: RootState) => state.provider.lastSync);
@@ -113,30 +111,24 @@ export default function ContractGenerator() {
   const { preferences: userPreferences } = useProviderPreferences();
   const { selectedYear } = useYear();
 
-  console.log('🔍 ContractGenerator: State values', { 
-    selectedYear, 
-    providersCount: providers.length, 
-    lastSync,
-    providersLoading 
-  });
-
-  // Simple mount effect to verify component is working
-  useEffect(() => {
-    console.log('🔍 ContractGenerator: Component mounted successfully');
-  }, []);
-
   // Load providers for the selected year with caching (same pattern as ProviderDataManager)
   useEffect(() => {
-    console.log('🔍 ContractGenerator: useEffect triggered', { selectedYear, lastSync });
-    
-    // Force fetch every time for now to debug
     if (selectedYear) {
-      console.log('🔍 ContractGenerator: Dispatching fetchProvidersByYear', selectedYear);
       dispatch(fetchProvidersByYear(selectedYear));
-    } else {
-      console.log('🔍 ContractGenerator: No selectedYear, skipping fetch');
     }
   }, [dispatch, selectedYear]);
+
+  // Additional hydration effect to ensure contracts are loaded after providers
+  useEffect(() => {
+    if (selectedYear && providers.length > 0 && generatedContracts.length === 0) {
+      // Add a small delay to ensure providers are fully loaded
+      const timer = setTimeout(() => {
+        hydrateGeneratedContracts();
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [selectedYear, providers.length, generatedContracts.length]);
 
   // Multi-select state will be managed by the hook
   const [search, setSearch] = useState('');
@@ -257,6 +249,11 @@ export default function ContractGenerator() {
     }
   }, [showAssignmentHint, selectedProviderIds.length]);
   
+  // Reset pagination when switching tabs
+  useEffect(() => {
+    setPageIndex(0);
+  }, [statusTab]);
+  
   // Template assignment hook - replaces all template assignment logic
   const {
     templateAssignments,
@@ -282,6 +279,13 @@ export default function ContractGenerator() {
     showWarning,
     showInfo
   });
+
+  // Initialize template assignments with session data on mount
+  useEffect(() => {
+    if (Object.keys(sessionTemplateAssignments).length > 0) {
+      setTemplateAssignments(sessionTemplateAssignments);
+    }
+  }, []); // Only run once on mount
 
   // Wrapper functions to handle session storage
   const updateProviderTemplate = (providerId: string, templateId: string | null) => {
@@ -327,7 +331,14 @@ export default function ContractGenerator() {
   };
 
   const generateAndDownloadDocx = async (provider: Provider, template?: Template) => {
-    return generateAndDownloadDocxHook(provider, template);
+    const result = await generateAndDownloadDocxHook(provider, template);
+    
+    // If generation was successful, refresh contracts from database
+    if (result && result.success) {
+      await hydrateGeneratedContracts();
+    }
+    
+    return result;
   };
 
 
@@ -549,17 +560,83 @@ export default function ContractGenerator() {
 
 
 
+  // Load generated contracts on component mount - FIXED: Only run once to prevent clearing state
+  useEffect(() => {
+    const loadContractsFromDatabase = async () => {
+      try {
+        let allLogs: ContractGenerationLog[] = [];
+        let nextToken = undefined;
+        
+        do {
+          const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
+          if (result && result.items) {
+            allLogs = allLogs.concat(result.items);
+          }
+          nextToken = result?.nextToken;
+        } while (nextToken);
+        
+        // Convert all logs to GeneratedContract format and set them all at once
+        const generatedContractsFromDb: GeneratedContract[] = allLogs
+          .filter(log => log.providerId && log.templateId && log.status && log.generatedAt)
+          .map(log => {
+            // Map DynamoDB status to Redux status, including PARTIAL_SUCCESS
+            let reduxStatus: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
+            if (log.status === 'SUCCESS') {
+              reduxStatus = 'SUCCESS';
+            } else if (log.status === 'PARTIAL_SUCCESS') {
+              reduxStatus = 'PARTIAL_SUCCESS';
+            } else {
+              reduxStatus = 'FAILED';
+            }
+            
+            return {
+              providerId: log.providerId,
+              templateId: log.templateId,
+              status: reduxStatus,
+              generatedAt: log.generatedAt,
+              dynamoDbId: log.id, // Store the actual DynamoDB ID for deletion
+            };
+          });
+
+        // Only update Redux state if we actually have contracts from the database
+        if (generatedContractsFromDb.length > 0) {
+          dispatch(setGeneratedContracts(generatedContractsFromDb));
+        }
+        
+      } catch (e) {
+        // Only show error if it's not a benign 'no records found' error
+        const err = e as Error;
+        if (err && err.message && !(err.message.includes('not found') || err.message.includes('No records'))) {
+          console.error('❌ Initial hydration failed:', err.message);
+          showError({ message: 'Could not load contract generation status from the backend. Please try again later.', severity: 'error' });
+        }
+      }
+    };
+
+    loadContractsFromDatabase();
+  }, [dispatch]); // Add dispatch to dependency array to ensure it's available
+
+  // Keep the original hydrateGeneratedContracts function for other hooks to use
   const hydrateGeneratedContracts = React.useCallback(async () => {
     try {
+      console.log('🔄 Starting hydration of generated contracts from database...');
       let allLogs: ContractGenerationLog[] = [];
       let nextToken = undefined;
+      let pageCount = 0;
       do {
+        pageCount++;
+        console.log(`📄 Fetching page ${pageCount} of contract logs...`);
         const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
         if (result && result.items) {
+          console.log(`📄 Page ${pageCount}: Found ${result.items.length} logs`);
           allLogs = allLogs.concat(result.items);
+        } else {
+          console.log(`📄 Page ${pageCount}: No logs found`);
         }
         nextToken = result?.nextToken;
       } while (nextToken);
+      
+      console.log(`📊 Found ${allLogs.length} contract logs in database`);
       
       // Convert all logs to GeneratedContract format and set them all at once
       const generatedContractsFromDb: GeneratedContract[] = allLogs
@@ -584,55 +661,24 @@ export default function ContractGenerator() {
           };
         });
 
-      // Debug the status mapping
-      console.log('🔍 Hydration Debug - Status mapping:', {
-        totalLogs: allLogs.length,
-        filteredLogs: generatedContractsFromDb.length,
-        statusBreakdown: allLogs.reduce((acc, log) => {
-          acc[log.status || 'undefined'] = (acc[log.status || 'undefined'] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        sampleLogs: allLogs.slice(0, 5).map(log => ({
-          id: log.id,
-          providerId: log.providerId,
-          status: log.status,
-          generatedAt: log.generatedAt
-        }))
-      });
+      console.log(`✅ Converted ${generatedContractsFromDb.length} contracts for Redux state`);
       
-      // Only update Redux state if we actually have contracts from the database
-      // This prevents clearing locally generated contracts when DynamoDB is failing
-      if (generatedContractsFromDb.length > 0) {
-        console.log('🔍 Hydration: Found contracts in database, updating Redux state');
-        dispatch(setGeneratedContracts(generatedContractsFromDb));
-      } else {
-        console.log('🔍 Hydration: No contracts in database, keeping existing Redux state');
-      }
-      
-      console.log('✅ Loaded contracts from DynamoDB:', allLogs.length, 'contracts');
-      console.log('🔍 Generated contracts after hydration:', generatedContractsFromDb);
-      console.log('🔍 Hydration: Contract status breakdown:', {
-        successContracts: generatedContractsFromDb.filter(c => c.status === 'SUCCESS').length,
-        partialSuccessContracts: generatedContractsFromDb.filter(c => c.status === 'PARTIAL_SUCCESS').length,
-        failedContracts: generatedContractsFromDb.filter(c => c.status === 'FAILED').length,
-        totalContracts: generatedContractsFromDb.length
-      });
+      // Always update Redux state with contracts from database (even if empty)
+      dispatch(setGeneratedContracts(generatedContractsFromDb));
+      console.log('✅ Redux state updated with contracts from database');
       // Clear any previous errors silently
     } catch (e) {
+      console.error('❌ Error during hydration:', e);
       // Only show error if it's not a benign 'no records found' error
       const err = e as Error;
       if (err && err.message && (err.message.includes('not found') || err.message.includes('No records'))) {
         // treat as empty, not an error - no need to show anything
+        console.log('ℹ️ No contract logs found in database (this is normal for empty state)');
       } else {
         showError({ message: 'Could not load contract generation status from the backend. Please try again later.', severity: 'error' });
       }
     }
   }, [dispatch]);
-
-  // Load generated contracts on component mount
-  useEffect(() => {
-    hydrateGeneratedContracts();
-  }, [hydrateGeneratedContracts]);
 
   // Filtering logic (by name or specialty)
   const filteredProviders = providers.filter((provider) => {
@@ -719,10 +765,6 @@ export default function ContractGenerator() {
 
   const handlePreview = () => {
     return handlePreviewHook();
-  };
-
-  const handlePreviewGenerate = (providerId: string) => {
-    return handlePreviewGenerateHook(providerId);
   };
 
   const handleRowClick = (event: any) => {
@@ -1020,20 +1062,7 @@ export default function ContractGenerator() {
     };
   });
   
-  // Debug year filtering
-  console.log('🔍 Year Filtering Debug:', {
-    currentYear: new Date().getFullYear().toString(),
-    contractsByYear: generatedContracts.reduce((acc, contract) => {
-      const year = new Date(contract.generatedAt).getFullYear().toString();
-      acc[year] = (acc[year] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>),
-    sampleContractYears: generatedContracts.slice(0, 10).map(c => ({
-      providerId: c.providerId,
-      generatedAt: c.generatedAt,
-      year: new Date(c.generatedAt).getFullYear().toString()
-    }))
-  });
+
 
   const processedRows = allFilteredProvidersWithStatus.filter(
     row => row.generationStatus === 'Success' || row.generationStatus === 'Partial Success'
@@ -1043,79 +1072,29 @@ export default function ContractGenerator() {
   const notGeneratedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Not Generated');
   const allRows = allFilteredProvidersWithStatus;
   
-  // Debug logging for tab counts
-  console.log('🔍 Tab Counts Debug:', {
-    totalProviders: filteredProviders.length,
-    generatedContractsInState: generatedContracts.length,
-    realTabCounts: getRealTabCounts(),
-    oldTabCounts: {
-      processedRows: processedRows.length,
-      notGeneratedRows: notGeneratedRows.length,
-      allRows: allRows.length,
-    },
-    generatedContractsDetails: generatedContracts.map(c => ({
-      providerId: c.providerId,
-      templateId: c.templateId,
-      status: c.status,
-      generatedAt: c.generatedAt
-    })),
-    sampleProviderStatus: allFilteredProvidersWithStatus.slice(0, 3).map(p => ({
-      id: p.id,
-      name: p.name,
-      generationStatus: p.generationStatus,
-      assignedTemplate: getAssignedTemplate(p)?.id
-    }))
-  });
+  // Minimal debug logging - only log when there are issues - moved to useEffect to prevent infinite loops
+  useEffect(() => {
+    const realTabCounts = getRealTabCounts();
+    const hasTabCountMismatch = realTabCounts.processed !== processedRows.length || realTabCounts.notGenerated !== notGeneratedRows.length;
+    
+    if (hasTabCountMismatch) {
+      console.log('🔍 Tab Count Issue:', {
+        expected: realTabCounts,
+        actual: { processed: processedRows.length, notGenerated: notGeneratedRows.length },
+        contracts: generatedContracts.length
+      });
+    }
+  }, [processedRows.length, notGeneratedRows.length, generatedContracts.length]);
   
-  // Additional debug logging for processed contracts
-  console.log('🔍 Processed Contracts Debug:', {
-    statusTab,
-    processedRowsCount: processedRows.length,
-    processedRowsDetails: processedRows.slice(0, 5).map(p => ({
-      id: p.id,
-      name: p.name,
-      generationStatus: p.generationStatus,
-      matchingContracts: generatedContracts.filter(c => c.providerId === p.id)
-    }))
-  });
-  
-  // Debug the contract status matching logic
-  console.log('🔍 Contract Status Matching Debug:', {
-    totalGeneratedContracts: generatedContracts.length,
-    contractsWithSuccessStatus: generatedContracts.filter(c => c.status === 'SUCCESS').length,
-    contractsWithPartialSuccessStatus: generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS').length,
-    contractsWithFailedStatus: generatedContracts.filter(c => c.status === 'FAILED').length,
-    sampleContracts: generatedContracts.slice(0, 5).map(c => ({
-      providerId: c.providerId,
-      status: c.status,
-      generatedAt: c.generatedAt
-    })),
-    sampleProviderMatching: filteredProviders.slice(0, 3).map(p => {
-      const matchingContracts = generatedContracts.filter(c => c.providerId === p.id);
-      const latestContract = matchingContracts
-        .filter(c => c.status === 'SUCCESS' || c.status === 'PARTIAL_SUCCESS')
-        .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
-      return {
-        providerId: p.id,
-        providerName: p.name,
-        matchingContractsCount: matchingContracts.length,
-        latestContractStatus: latestContract?.status || 'none',
-        generationStatus: latestContract ? (latestContract.status === 'SUCCESS' ? 'Success' : 'Partial Success') : 'Not Generated'
-      };
-    })
-  });
-
-  // Debug logging for column preferences
-  console.log('🔍 Column Preferences Debug:', {
-    userPreferences: userPreferences,
-    columnVisibility: userPreferences?.columnVisibility,
-    columnOrder: userPreferences?.columnOrder,
-    columnPinning: userPreferences?.columnPinning,
-    hasColumnPreferences: !!userPreferences?.columnVisibility,
-    columnVisibilityKeys: userPreferences?.columnVisibility ? Object.keys(userPreferences.columnVisibility) : [],
-    columnOrderLength: userPreferences?.columnOrder?.length || 0,
-    userPreferencesKeys: userPreferences ? Object.keys(userPreferences) : []
-  });
+  // Only log contract issues - moved to useEffect to prevent infinite loops
+  useEffect(() => {
+    if (generatedContracts.length > 0) {
+      const partialContracts = generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS');
+      if (partialContracts.length > 0) {
+        console.log('⚠️ Partial Success Contracts:', partialContracts.length);
+      }
+    }
+  }, [generatedContracts]);
   
   const tabCounts = getRealTabCounts();
 
@@ -1129,6 +1108,10 @@ export default function ContractGenerator() {
   // For AG Grid display, use paginated providers with status
   const tabFilteredRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
   const visibleRows = tabFilteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+
+
+
+
 
 
 
@@ -1153,7 +1136,7 @@ export default function ContractGenerator() {
     updateProviderTemplate,
     getAssignedTemplate,
     downloadContract,
-    handlePreviewGenerate,
+    handlePreviewGenerate: handlePreviewGenerateHook,
     handleRowClick,
     getGenerationDate,
     gridRef: tempGridRef,
@@ -1565,6 +1548,36 @@ export default function ContractGenerator() {
                   </Select>
                   
                   <Button
+                    onClick={async () => {
+                      await hydrateGeneratedContracts();
+                      showSuccess('Contract status refreshed from database');
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="px-3 flex items-center gap-2"
+                    title="Refresh contract status from database"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Refresh
+                  </Button>
+                  
+
+                  
+
+                  
+
+                  
+
+                  
+
+                  
+
+                  
+
+                  
+
+                  
+                  <Button
                     onClick={handleExportCSV}
                     variant="outline"
                     size="sm"
@@ -1572,6 +1585,66 @@ export default function ContractGenerator() {
                   >
                     <FileDown className="w-4 h-4" />
                     Export CSV
+                  </Button>
+                  
+                  <Button
+                    onClick={async () => {
+                      try {
+                        // Clear all test contracts from database
+                        let allLogs = [];
+                        let nextToken = undefined;
+                        
+                        do {
+                          const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
+                          if (result && result.items) {
+                            allLogs = allLogs.concat(result.items);
+                          }
+                          nextToken = result?.nextToken;
+                        } while (nextToken);
+                        
+                        // Filter for test contracts - be more aggressive to clear any test data
+                        const testLogs = allLogs.filter(log => 
+                          log.providerId === 'test-provider-id' || 
+                          log.notes?.includes('Test log entry') ||
+                          log.notes?.includes('Test') ||
+                          log.generatedBy === 'test' ||
+                          log.generatedBy === 'Test' ||
+                          log.fileUrl === 'test-url' ||
+                          log.templateId === 'test-template-id'
+                        );
+                        
+                        if (testLogs.length === 0) {
+                          showSuccess('No test contracts found to clear');
+                          return;
+                        }
+                        
+                        // Delete each test contract
+                        let deletedCount = 0;
+                        for (const log of testLogs) {
+                          try {
+                            await ContractGenerationLogService.deleteLog(log.id);
+                            deletedCount++;
+                          } catch (error) {
+                            console.error(`Failed to delete test contract ${log.id}:`, error);
+                          }
+                        }
+                        
+                        // Refresh the contracts from database
+                        await hydrateGeneratedContracts();
+                        
+                        showSuccess(`Cleared ${deletedCount} test contracts from database`);
+                      } catch (error) {
+                        console.error('Error clearing test contracts:', error);
+                        showError({ message: 'Failed to clear test contracts', severity: 'error' });
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="px-3 flex items-center gap-2"
+                    title="Clear all test contracts from database"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Clear Test Data
                   </Button>
                   
                   <Button
@@ -1632,12 +1705,12 @@ export default function ContractGenerator() {
           </Tabs>
 
           {/* AG Grid Table */}
-          <div className="ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-visible" style={gridStyle}>
+          <div className={`ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-visible ${statusTab === 'processed' ? 'processed-tab' : ''}`} style={gridStyle}>
             <AgGridReact
                 ref={tempGridRef}
               rowData={visibleRows}
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
-              onRowClicked={handleRowClick}
+              onRowClicked={statusTab === 'processed' ? undefined : handleRowClick}
               onGridReady={onGridReady}
               onRowDataUpdated={onRowDataUpdated}
               {...gridOptions}
@@ -1727,6 +1800,11 @@ export default function ContractGenerator() {
           .ag-theme-alpine .ag-row {
             cursor: pointer !important;
             transition: background-color 0.15s ease !important;
+          }
+          
+          /* Disable row clicks for Processed tab */
+          .ag-theme-alpine.processed-tab .ag-row {
+            cursor: default !important;
           }
           .ag-theme-alpine .ag-row:hover {
             background-color: #f8fafc !important;
@@ -1820,6 +1898,24 @@ export default function ContractGenerator() {
           }
           .ag-theme-alpine .ag-root {
             border: none !important;
+          }
+
+          /* Ensure Contract Actions links are clickable */
+          .ag-theme-alpine .ag-cell[col-id="actions"] {
+            pointer-events: auto !important;
+          }
+          .ag-theme-alpine .ag-cell[col-id="actions"] a {
+            pointer-events: auto !important;
+            z-index: 1000 !important;
+            position: relative !important;
+            text-decoration: none !important;
+            cursor: pointer !important;
+          }
+          .ag-theme-alpine .ag-cell[col-id="actions"] a:hover {
+            background-color: #f3f4f6 !important;
+          }
+          .ag-theme-alpine .ag-cell[col-id="actions"] a:active {
+            background-color: #e5e7eb !important;
           }
           .ag-theme-alpine .ag-body {
             border: none !important;
@@ -2326,13 +2422,18 @@ export default function ContractGenerator() {
         {/* Contract Preview Modal */}
         <ContractPreviewModal
           open={previewModalOpen}
-          onClose={() => setPreviewModalOpen(false)}
+          onClose={() => {
+            setPreviewModalOpen(false);
+            setSelectedProviderIds([]); // Clear selected providers when modal closes
+          }}
           template={selectedTemplate}
           providers={providers}
           selectedProviderIds={selectedProviderIds}
-          onGenerate={handlePreviewGenerate}
+          onGenerate={handlePreviewGenerateHook}
           onBulkGenerate={handleBulkGenerate}
           getAssignedTemplate={getAssignedTemplate}
+          templates={templates}
+          generatedContracts={generatedContracts}
         />
 
 
@@ -3274,7 +3375,21 @@ export default function ContractGenerator() {
           title="Bulk Contract Generation"
           progress={progressData.progress}
           message={progressData.currentOperation}
+          onClose={() => {
+            console.log('Force closing progress modal from ContractGenerator');
+            setProgressModalOpen(false);
+          }}
         />
+        
+        {/* Debug overlay indicator */}
+        {progressModalOpen && (
+          <div 
+            className="fixed top-4 right-4 bg-red-500 text-white px-3 py-1 rounded text-sm z-[9999]"
+            style={{ pointerEvents: 'none' }}
+          >
+            Progress Modal Open (z-50 overlay active)
+          </div>
+        )}
 
 
 

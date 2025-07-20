@@ -344,6 +344,60 @@ export const deleteUserPreferences = /* GraphQL */ `mutation DeleteUserPreferenc
   APITypes.DeleteUserPreferencesMutationVariables,
   APITypes.DeleteUserPreferencesMutation
 >;
+export const createGeneratorPreferences = /* GraphQL */ `mutation CreateGeneratorPreferences(
+  $input: CreateGeneratorPreferencesInput!
+  $condition: ModelGeneratorPreferencesConditionInput
+) {
+  createGeneratorPreferences(input: $input, condition: $condition) {
+    id
+    userId
+    columnPreferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateGeneratorPreferencesMutationVariables,
+  APITypes.CreateGeneratorPreferencesMutation
+>;
+export const updateGeneratorPreferences = /* GraphQL */ `mutation UpdateGeneratorPreferences(
+  $input: UpdateGeneratorPreferencesInput!
+  $condition: ModelGeneratorPreferencesConditionInput
+) {
+  updateGeneratorPreferences(input: $input, condition: $condition) {
+    id
+    userId
+    columnPreferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateGeneratorPreferencesMutationVariables,
+  APITypes.UpdateGeneratorPreferencesMutation
+>;
+export const deleteGeneratorPreferences = /* GraphQL */ `mutation DeleteGeneratorPreferences(
+  $input: DeleteGeneratorPreferencesInput!
+  $condition: ModelGeneratorPreferencesConditionInput
+) {
+  deleteGeneratorPreferences(input: $input, condition: $condition) {
+    id
+    userId
+    columnPreferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteGeneratorPreferencesMutationVariables,
+  APITypes.DeleteGeneratorPreferencesMutation
+>;
 export const createMapping = /* GraphQL */ `mutation CreateMapping(
   $input: CreateMappingInput!
   $condition: ModelMappingConditionInput

@@ -163,6 +163,7 @@ input CreateContractGenerationLogInput {
   status: String
   fileUrl: String
   notes: String
+  owner: String
 }
 
 input UpdateContractGenerationLogInput {
@@ -176,6 +177,7 @@ input UpdateContractGenerationLogInput {
   status: String
   fileUrl: String
   notes: String
+  owner: String
 }
 
 input DeleteContractGenerationLogInput {
@@ -197,4 +199,9 @@ input DeleteMappingInput {
 
 input DeleteTemplateMappingInput {
   id: ID!
+}
+
+input CreateGeneratorPreferencesInput {
+  userId: String!
+  columnPreferences: AWSJSON!
 }

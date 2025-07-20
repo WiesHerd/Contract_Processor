@@ -8,18 +8,8 @@ export function YearSelector() {
   const { selectedYear, setSelectedYear, availableYears, isLoading, error } = useYear();
 
   const handleYearChange = (value: string) => {
-    console.log('YearSelector: Year changed to:', value);
     setSelectedYear(Number(value));
   };
-
-  // Debug logging
-  console.log('YearSelector Debug:', {
-    selectedYear,
-    availableYears,
-    isLoading,
-    error,
-    availableYearsLength: availableYears.length
-  });
 
   return (
     <div className="flex items-center gap-2">

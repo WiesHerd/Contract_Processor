@@ -409,6 +409,45 @@ export type DeleteUserPreferencesInput = {
   id: string,
 };
 
+export type CreateGeneratorPreferencesInput = {
+  userId: string,
+  columnPreferences: string,
+};
+
+export type ModelGeneratorPreferencesConditionInput = {
+  userId?: ModelStringInput | null,
+  columnPreferences?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  and?: Array< ModelGeneratorPreferencesConditionInput | null > | null,
+  or?: Array< ModelGeneratorPreferencesConditionInput | null > | null,
+  not?: ModelGeneratorPreferencesConditionInput | null,
+};
+
+export type GeneratorPreferences = {
+  __typename: "GeneratorPreferences",
+  id: string,
+  userId: string,
+  columnPreferences: string,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type UpdateGeneratorPreferencesInput = {
+  id: string,
+  userId?: string | null,
+  columnPreferences?: string | null,
+  createdAt?: string | null,
+  updatedAt?: string | null,
+  owner?: string | null,
+};
+
+export type DeleteGeneratorPreferencesInput = {
+  id: string,
+};
+
 export type CreateMappingInput = {
   id?: string | null,
   templateID: string,
@@ -619,6 +658,7 @@ export type CreateContractGenerationLogInput = {
   status?: string | null,
   fileUrl?: string | null,
   notes?: string | null,
+  owner?: string | null,
 };
 
 export type ModelContractGenerationLogConditionInput = {
@@ -667,6 +707,7 @@ export type UpdateContractGenerationLogInput = {
   status?: string | null,
   fileUrl?: string | null,
   notes?: string | null,
+  owner?: string | null,
 };
 
 export type DeleteContractGenerationLogInput = {
@@ -777,6 +818,24 @@ export type ModelUserPreferencesFilterInput = {
 export type ModelUserPreferencesConnection = {
   __typename: "ModelUserPreferencesConnection",
   items:  Array<UserPreferences | null >,
+  nextToken?: string | null,
+};
+
+export type ModelGeneratorPreferencesFilterInput = {
+  id?: ModelIDInput | null,
+  userId?: ModelStringInput | null,
+  columnPreferences?: ModelStringInput | null,
+  createdAt?: ModelStringInput | null,
+  updatedAt?: ModelStringInput | null,
+  owner?: ModelStringInput | null,
+  and?: Array< ModelGeneratorPreferencesFilterInput | null > | null,
+  or?: Array< ModelGeneratorPreferencesFilterInput | null > | null,
+  not?: ModelGeneratorPreferencesFilterInput | null,
+};
+
+export type ModelGeneratorPreferencesConnection = {
+  __typename: "ModelGeneratorPreferencesConnection",
+  items:  Array<GeneratorPreferences | null >,
   nextToken?: string | null,
 };
 
@@ -1033,6 +1092,17 @@ export type ModelSubscriptionUserPreferencesFilterInput = {
   updatedAt?: ModelSubscriptionStringInput | null,
   and?: Array< ModelSubscriptionUserPreferencesFilterInput | null > | null,
   or?: Array< ModelSubscriptionUserPreferencesFilterInput | null > | null,
+  owner?: ModelStringInput | null,
+};
+
+export type ModelSubscriptionGeneratorPreferencesFilterInput = {
+  id?: ModelSubscriptionIDInput | null,
+  userId?: ModelSubscriptionStringInput | null,
+  columnPreferences?: ModelSubscriptionStringInput | null,
+  createdAt?: ModelSubscriptionStringInput | null,
+  updatedAt?: ModelSubscriptionStringInput | null,
+  and?: Array< ModelSubscriptionGeneratorPreferencesFilterInput | null > | null,
+  or?: Array< ModelSubscriptionGeneratorPreferencesFilterInput | null > | null,
   owner?: ModelStringInput | null,
 };
 
@@ -1426,6 +1496,57 @@ export type DeleteUserPreferencesMutation = {
     userId: string,
     screen: string,
     preferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type CreateGeneratorPreferencesMutationVariables = {
+  input: CreateGeneratorPreferencesInput,
+  condition?: ModelGeneratorPreferencesConditionInput | null,
+};
+
+export type CreateGeneratorPreferencesMutation = {
+  createGeneratorPreferences?:  {
+    __typename: "GeneratorPreferences",
+    id: string,
+    userId: string,
+    columnPreferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type UpdateGeneratorPreferencesMutationVariables = {
+  input: UpdateGeneratorPreferencesInput,
+  condition?: ModelGeneratorPreferencesConditionInput | null,
+};
+
+export type UpdateGeneratorPreferencesMutation = {
+  updateGeneratorPreferences?:  {
+    __typename: "GeneratorPreferences",
+    id: string,
+    userId: string,
+    columnPreferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type DeleteGeneratorPreferencesMutationVariables = {
+  input: DeleteGeneratorPreferencesInput,
+  condition?: ModelGeneratorPreferencesConditionInput | null,
+};
+
+export type DeleteGeneratorPreferencesMutation = {
+  deleteGeneratorPreferences?:  {
+    __typename: "GeneratorPreferences",
+    id: string,
+    userId: string,
+    columnPreferences: string,
     createdAt?: string | null,
     updatedAt?: string | null,
     owner?: string | null,
@@ -1972,6 +2093,44 @@ export type ListUserPreferencesQuery = {
   } | null,
 };
 
+export type GetGeneratorPreferencesQueryVariables = {
+  id: string,
+};
+
+export type GetGeneratorPreferencesQuery = {
+  getGeneratorPreferences?:  {
+    __typename: "GeneratorPreferences",
+    id: string,
+    userId: string,
+    columnPreferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type ListGeneratorPreferencesQueryVariables = {
+  filter?: ModelGeneratorPreferencesFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type ListGeneratorPreferencesQuery = {
+  listGeneratorPreferences?:  {
+    __typename: "ModelGeneratorPreferencesConnection",
+    items:  Array< {
+      __typename: "GeneratorPreferences",
+      id: string,
+      userId: string,
+      columnPreferences: string,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+      owner?: string | null,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
 export type GetMappingQueryVariables = {
   id: string,
 };
@@ -2291,6 +2450,30 @@ export type UserPreferencesByUserIdQuery = {
       userId: string,
       screen: string,
       preferences: string,
+      createdAt?: string | null,
+      updatedAt?: string | null,
+      owner?: string | null,
+    } | null >,
+    nextToken?: string | null,
+  } | null,
+};
+
+export type GeneratorPreferencesByUserIdQueryVariables = {
+  userId: string,
+  sortDirection?: ModelSortDirection | null,
+  filter?: ModelGeneratorPreferencesFilterInput | null,
+  limit?: number | null,
+  nextToken?: string | null,
+};
+
+export type GeneratorPreferencesByUserIdQuery = {
+  generatorPreferencesByUserId?:  {
+    __typename: "ModelGeneratorPreferencesConnection",
+    items:  Array< {
+      __typename: "GeneratorPreferences",
+      id: string,
+      userId: string,
+      columnPreferences: string,
       createdAt?: string | null,
       updatedAt?: string | null,
       owner?: string | null,
@@ -2758,6 +2941,57 @@ export type OnDeleteUserPreferencesSubscription = {
     userId: string,
     screen: string,
     preferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnCreateGeneratorPreferencesSubscriptionVariables = {
+  filter?: ModelSubscriptionGeneratorPreferencesFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnCreateGeneratorPreferencesSubscription = {
+  onCreateGeneratorPreferences?:  {
+    __typename: "GeneratorPreferences",
+    id: string,
+    userId: string,
+    columnPreferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnUpdateGeneratorPreferencesSubscriptionVariables = {
+  filter?: ModelSubscriptionGeneratorPreferencesFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnUpdateGeneratorPreferencesSubscription = {
+  onUpdateGeneratorPreferences?:  {
+    __typename: "GeneratorPreferences",
+    id: string,
+    userId: string,
+    columnPreferences: string,
+    createdAt?: string | null,
+    updatedAt?: string | null,
+    owner?: string | null,
+  } | null,
+};
+
+export type OnDeleteGeneratorPreferencesSubscriptionVariables = {
+  filter?: ModelSubscriptionGeneratorPreferencesFilterInput | null,
+  owner?: string | null,
+};
+
+export type OnDeleteGeneratorPreferencesSubscription = {
+  onDeleteGeneratorPreferences?:  {
+    __typename: "GeneratorPreferences",
+    id: string,
+    userId: string,
+    columnPreferences: string,
     createdAt?: string | null,
     updatedAt?: string | null,
     owner?: string | null,

@@ -132,6 +132,7 @@ b, strong { font-weight: bold !important; }
       let s3UploadSuccess = false;
       let dynamoDbSuccess = false;
       let logEntryId: string | undefined;
+      let storageTimestamp = '';
       
       try {
         contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
@@ -140,24 +141,21 @@ b, strong { font-weight: bold !important; }
         const arrayBuffer = await docxBlob.arrayBuffer();
         const buffer = new Uint8Array(arrayBuffer);
         
-        // Store with immutable data and permanent URL
+        // Store with immutable storage (same as single contract generation)
         const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
         
-        // Test S3 connection first
-        const s3TestResult = await immutableContractStorage.testS3Connection();
-        if (!s3TestResult.success) {
-          throw new Error(`S3 connection test failed: ${s3TestResult.error}`);
-        }
+        console.log('🔍 Storing contract with immutable storage...');
         
-        const immutableResult = await immutableContractStorage.storeImmutableContract(
+        const storageResult = await immutableContractStorage.storeImmutableContract(
           contractId,
           fileName,
           buffer,
-          provider,
-          assignedTemplate
+          provider, // Snapshot of provider data at generation time
+          assignedTemplate // Snapshot of template data at generation time
         );
         
-        permanentUrl = immutableResult.permanentUrl;
+        permanentUrl = storageResult.permanentUrl;
+        storageTimestamp = storageResult.generatedAt; // Capture the storage timestamp
         s3UploadSuccess = true;
       } catch (s3err) {
         console.error('❌ Failed to store contract in S3:', s3err);
@@ -169,17 +167,27 @@ b, strong { font-weight: bold !important; }
         providerId: provider.id,
         contractYear: contractYear,
         templateId: assignedTemplate.id,
-        generatedAt: new Date().toISOString(),
-        generatedBy: 'user',
+        generatedAt: s3UploadSuccess ? storageTimestamp : new Date().toISOString(), // Use storage timestamp if available
+        generatedBy: localStorage.getItem('userEmail') || 'unknown',
         outputType: 'DOCX',
         status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS',
         fileUrl: permanentUrl || fileName,
-        localFilePath: `ZIP/${fileName}`,
-        notes: `Generated contract for ${provider.name} using template ${assignedTemplate.name}. Will be saved in ZIP. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`
+        notes: `Generated contract for ${provider.name} using template ${assignedTemplate.name}. Will be saved in ZIP. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`,
+        owner: localStorage.getItem('userId') || 'unknown'
       };
+      
+      console.log('📝 Log input data:', {
+        providerId: logInput.providerId,
+        contractYear: logInput.contractYear,
+        templateId: logInput.templateId,
+        status: logInput.status,
+        fileUrl: logInput.fileUrl
+      });
 
       try {
+        console.log('📝 Creating DynamoDB log entry for contract...');
         const logEntry = await ContractGenerationLogService.createLog(logInput);
+        console.log('✅ DynamoDB log entry created successfully:', logEntry?.id);
         dispatch(addGenerationLog(logEntry));
         dynamoDbSuccess = true;
         logEntryId = logEntry?.id;
@@ -384,8 +392,35 @@ b, strong { font-weight: bold !important; }
     setProgressModalOpen(false);
     // Clear selected providers to hide the bottom menu
     setSelectedProviderIds([]);
+    
+    // Add a delay to ensure DynamoDB writes have been committed
+    console.log('🔍 Bulk generation completed, waiting 5 seconds for DynamoDB writes to commit...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
     // Refresh contracts from database to ensure Processed tab shows correctly
-    await hydrateGeneratedContracts();
+    console.log('🔍 Refreshing contracts from database...');
+    let hydrationSuccess = false;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (!hydrationSuccess && retryCount < maxRetries) {
+      try {
+        await hydrateGeneratedContracts();
+        console.log('✅ Contracts refreshed from database successfully');
+        hydrationSuccess = true;
+      } catch (hydrationError) {
+        retryCount++;
+        console.error(`❌ Failed to refresh contracts from database (attempt ${retryCount}/${maxRetries}):`, hydrationError);
+        
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Waiting 2 seconds before retry ${retryCount + 1}...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          console.error('❌ Failed to refresh contracts after all retries');
+          // Don't fail the entire operation if hydration fails
+        }
+      }
+    }
     console.log('Bulk generation completed. Contracts added to Redux state:', successful.length);
     
     // Log bulk generation operation

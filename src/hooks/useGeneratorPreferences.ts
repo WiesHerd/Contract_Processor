@@ -56,19 +56,21 @@ export function useGeneratorPreferences() {
       const result = await client.graphql({
         query: /* GraphQL */ `
           query GetGeneratorPreferences($userId: String!) {
-            getGeneratorPreferences(userId: $userId) {
-              id
-              userId
-              columnPreferences
-              createdAt
-              updatedAt
+            generatorPreferencesByUserId(userId: $userId) {
+              items {
+                id
+                userId
+                columnPreferences
+                createdAt
+                updatedAt
+              }
             }
           }
         `,
         variables: { userId: user.username },
       });
 
-      const data = (result as any).data?.getGeneratorPreferences;
+      const data = (result as any).data?.generatorPreferencesByUserId?.items?.[0];
       if (data) {
         setPreferences({
           ...defaultColumnPreferences,
@@ -76,10 +78,13 @@ export function useGeneratorPreferences() {
         });
       }
     } catch (err: any) {
-      console.warn('Failed to load generator preferences:', err);
-      // Don't set error for missing preferences, just use defaults
-      if (!err.message?.includes('not found')) {
+      // Only log the error once and don't spam the console
+      if (!err.message?.includes('not found') && !err.message?.includes('Validation error')) {
+        console.warn('Failed to load generator preferences:', err);
         setError('Failed to load preferences');
+      } else {
+        // This is expected for new users or when preferences don't exist yet
+        console.log('No existing generator preferences found, using defaults');
       }
     } finally {
       setLoading(false);
@@ -93,8 +98,8 @@ export function useGeneratorPreferences() {
     try {
       await client.graphql({
         query: /* GraphQL */ `
-          mutation CreateOrUpdateGeneratorPreferences($input: CreateGeneratorPreferencesInput!) {
-            createOrUpdateGeneratorPreferences(input: $input) {
+          mutation CreateGeneratorPreferences($input: CreateGeneratorPreferencesInput!) {
+            createGeneratorPreferences(input: $input) {
               id
               userId
               columnPreferences

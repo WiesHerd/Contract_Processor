@@ -1068,7 +1068,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           suppressRowVirtualisation={false}
           onRowDoubleClicked={handleRowDoubleClick}
           defaultColDef={{ 
-            menuTabs: ['generalMenuTab', 'filterMenuTab', 'columnsMenuTab'],
+            menuTabs: ['generalMenuTab', 'filterMenuTab', 'columnsMenuTab'] as any,
             resizable: true,
             sortable: true,
             filter: true

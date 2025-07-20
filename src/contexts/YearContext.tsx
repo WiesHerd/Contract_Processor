@@ -71,13 +71,8 @@ export function YearProvider({ children }: YearProviderProps) {
         `
       });
       
-      console.log('GraphQL result:', result);
-      
       const years = (result as any)?.data?.listProviderYears || [];
-      console.log('Raw years from GraphQL:', years);
-      
       const validYears = years.map((year: string) => parseInt(year)).filter(validateYear);
-      console.log('Valid years after filtering:', validYears);
       
       return validYears;
     } catch (error) {
@@ -89,11 +84,8 @@ export function YearProvider({ children }: YearProviderProps) {
   // Fetch years from S3 (contracts)
   const fetchContractYears = async (): Promise<number[]> => {
     try {
-      console.log('Fetching contract years from S3...');
-      
       // List all contract files in S3
       const contractFiles = await listFiles('contracts/');
-      console.log('Contract files found:', contractFiles);
       
       // Extract years from contract file paths
       // Contract paths are: contracts/{contractId}/{fileName}
@@ -101,17 +93,14 @@ export function YearProvider({ children }: YearProviderProps) {
       const years = new Set<number>();
       
       contractFiles.forEach(file => {
-        console.log('Processing contract file:', file);
         // Extract year from contract ID in the path
         const pathParts = file.split('/');
         if (pathParts.length >= 2) {
           const contractId = pathParts[1]; // contracts/contractId/fileName
-          console.log('Contract ID:', contractId);
           const contractParts = contractId.split('-');
           if (contractParts.length >= 3) {
             const yearStr = contractParts[contractParts.length - 1]; // Last part is year
             const year = parseInt(yearStr);
-            console.log('Extracted year:', year, 'from', yearStr);
             if (validateYear(year)) {
               years.add(year);
             }
@@ -120,7 +109,6 @@ export function YearProvider({ children }: YearProviderProps) {
       });
       
       const result = Array.from(years).sort((a, b) => b - a); // Sort descending
-      console.log('Years extracted from S3:', result);
       return result;
     } catch (error) {
       console.error('Error fetching contract years from S3:', error);
@@ -144,18 +132,10 @@ export function YearProvider({ children }: YearProviderProps) {
       const allYears = new Set([...providerYears, ...contractYears]);
       let sortedYears = Array.from(allYears).sort((a, b) => b - a); // Sort descending
       
-      console.log('Available years found:', {
-        providerYears,
-        contractYears,
-        combined: sortedYears
-      });
-      
       // If no years found from GraphQL/S3, try fallback from Redux store
       if (sortedYears.length === 0) {
-        console.log('No years found from GraphQL/S3, trying Redux fallback...');
         const fallbackYears = extractYearsFromProviders();
         sortedYears = fallbackYears;
-        console.log('Fallback years from Redux:', sortedYears);
       }
       
       setAvailableYears(sortedYears);
@@ -164,12 +144,10 @@ export function YearProvider({ children }: YearProviderProps) {
       if (sortedYears.length > 0) {
         const mostRecentYear = sortedYears[0];
         setSelectedYear(mostRecentYear);
-        console.log(`Set selected year to most recent: ${mostRecentYear}`);
       } else {
         // Fallback to current year if no data found
         const currentYear = new Date().getFullYear();
         setSelectedYear(currentYear);
-        console.log(`No data found, using current year: ${currentYear}`);
       }
     } catch (error) {
       console.error('Error fetching available years:', error);
@@ -196,7 +174,6 @@ export function YearProvider({ children }: YearProviderProps) {
   // Also refresh years when providers are loaded in Redux
   useEffect(() => {
     if (providers.length > 0 && availableYears.length === 0) {
-      console.log('Providers loaded in Redux, refreshing years...');
       fetchAvailableYears();
     }
   }, [providers.length, availableYears.length]);
@@ -223,25 +200,7 @@ export function YearProvider({ children }: YearProviderProps) {
     }
   };
 
-  // Debug logging
-  useEffect(() => {
-    console.log('YearContext Debug:', {
-      selectedYear,
-      availableYears,
-      isLoading,
-      error,
-      providersCount: providers.length,
-      providersWithYears: providers.filter(p => p.compensationYear).length
-    });
-    
-    // Run the test function after a delay
-    setTimeout(() => {
-      if (availableYears.length === 0) {
-        console.log('No years found, running manual test...');
-        testGraphQLQuery();
-      }
-    }, 2000);
-  }, [selectedYear, availableYears, isLoading, error, providers.length]);
+
 
   const value: YearContextType = {
     selectedYear,

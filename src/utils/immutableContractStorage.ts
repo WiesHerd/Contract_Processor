@@ -1,9 +1,9 @@
 // src/utils/immutableContractStorage.ts
 // Enterprise-grade immutable contract storage with permanent URLs
 
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { withRetry } from './retry';
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 interface ImmutableContract {
   contractId: string;
@@ -30,19 +30,18 @@ interface ContractMetadata {
 }
 
 class ImmutableContractStorage {
-  private readonly BUCKET_NAME = import.meta.env.VITE_S3_BUCKET || 'contractgenerator42b439f60de94b878e0fba58439804';
-  private readonly AWS_REGION = import.meta.env.VITE_AWS_REGION || 'us-east-1';
   private readonly CONTRACTS_PREFIX = 'contracts/immutable/';
   private readonly METADATA_PREFIX = 'contracts/metadata/';
   
-  // Initialize S3 client with retry configuration (same as s3Storage.ts)
+  // S3 Configuration
+  private readonly AWS_REGION = import.meta.env.VITE_AWS_REGION || 'us-east-2';
+  private readonly BUCKET_NAME = import.meta.env.VITE_S3_BUCKET || 'contractengine-storage-wherdzik';
   private readonly s3Client = new S3Client({
     region: this.AWS_REGION,
     credentials: {
-      accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID,
-      secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY,
-    },
-    maxAttempts: 3,
+      accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY || ''
+    }
   });
 
   /**
@@ -59,7 +58,6 @@ class ImmutableContractStorage {
     const version = '1.0.0';
     
     console.log('🔍 ImmutableStorage Debug:', {
-      bucketName: this.BUCKET_NAME,
       contractId,
       fileName,
       fileSize: fileBuffer.length,
@@ -70,61 +68,52 @@ class ImmutableContractStorage {
     const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${timestamp}/${fileName}`;
     const metadataKey = `${this.METADATA_PREFIX}${contractId}/${timestamp}.json`;
     
-    console.log('🔍 S3 Keys:', { immutableKey, metadataKey });
+    console.log('🔍 Amplify Storage Keys:', { immutableKey, metadataKey });
     
     // Calculate file hash for integrity using Web Crypto API
     const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     
-    // Store the contract file permanently (no expiration)
-    console.log('🔍 Attempting S3 upload to bucket:', this.BUCKET_NAME);
-    console.log('🔍 S3 Client configuration:', {
-      region: this.AWS_REGION,
-      hasAccessKey: !!import.meta.env.VITE_AWS_ACCESS_KEY_ID,
-      hasSecretKey: !!import.meta.env.VITE_AWS_SECRET_ACCESS_KEY,
-      bucketName: this.BUCKET_NAME,
-      key: immutableKey,
-      fileSize: fileBuffer.length
-    });
+    // Store the contract file using direct S3
+    console.log('🔍 Attempting S3 upload for contract file...');
     
     try {
       await withRetry(async () => {
-        console.log('🔍 Sending PutObjectCommand to S3...');
-        await this.s3Client.send(new PutObjectCommand({
-      Bucket: this.BUCKET_NAME,
-      Key: immutableKey,
-      Body: fileBuffer,
-      ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          ServerSideEncryption: 'AES256',
-      Metadata: {
-        'contract-id': contractId,
-        'generated-at': timestamp,
-        'version': version,
-        'file-hash': fileHash,
-        'immutable': 'true'
-      }
-    }));
-        console.log('🔍 PutObjectCommand sent successfully');
+        console.log('🔍 Sending contract file to S3...');
+        
+        const putCommand = new PutObjectCommand({
+          Bucket: this.BUCKET_NAME,
+          Key: immutableKey,
+          Body: fileBuffer,
+          ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          Metadata: {
+            'contract-id': contractId,
+            'generated-at': timestamp,
+            'version': version,
+            'file-hash': fileHash,
+            'immutable': 'true'
+          }
+        });
+        
+        await this.s3Client.send(putCommand);
+        console.log('🔍 Contract file upload successful');
       });
       
       console.log('✅ S3 upload successful for contract file');
     } catch (error) {
       console.error('❌ S3 upload failed for contract file:', error);
-      console.error('❌ S3 error details:', {
+      console.error('❌ Upload error details:', {
         name: error.name,
         message: error.message,
-        code: error.code,
-        statusCode: error.statusCode,
-        requestId: error.requestId,
-        region: this.AWS_REGION,
+        key: immutableKey,
         bucket: this.BUCKET_NAME,
-        key: immutableKey
+        region: this.AWS_REGION
       });
       throw error;
     }
 
-    // Create permanent URL (no expiration)
+    // Create permanent URL (never expires)
     const permanentUrl = await this.createPermanentUrl(immutableKey);
     
     // Store metadata with provider/template snapshots
@@ -137,7 +126,7 @@ class ImmutableContractStorage {
       generatedAt: timestamp,
       status: 'SUCCESS',
       fileSize: fileBuffer.length,
-      permanentUrl,
+      permanentUrl: permanentUrl,
       version
     };
 
@@ -145,34 +134,33 @@ class ImmutableContractStorage {
     
     try {
       await withRetry(async () => {
-        console.log('🔍 Sending metadata PutObjectCommand to S3...');
-        await this.s3Client.send(new PutObjectCommand({
-      Bucket: this.BUCKET_NAME,
-      Key: metadataKey,
-      Body: JSON.stringify(metadata),
-      ContentType: 'application/json',
-          ServerSideEncryption: 'AES256',
-      Metadata: {
-        'contract-id': contractId,
-        'generated-at': timestamp,
-        'version': version
-      }
-    }));
-        console.log('🔍 Metadata PutObjectCommand sent successfully');
+        console.log('🔍 Sending metadata to S3...');
+        
+        const putCommand = new PutObjectCommand({
+          Bucket: this.BUCKET_NAME,
+          Key: metadataKey,
+          Body: JSON.stringify(metadata),
+          ContentType: 'application/json',
+          Metadata: {
+            'contract-id': contractId,
+            'generated-at': timestamp,
+            'version': version
+          }
+        });
+        
+        await this.s3Client.send(putCommand);
+        console.log('🔍 Metadata upload successful');
       });
       
       console.log('✅ Metadata upload successful');
     } catch (error) {
       console.error('❌ Metadata upload failed:', error);
-      console.error('❌ Metadata S3 error details:', {
+      console.error('❌ Metadata upload error details:', {
         name: error.name,
         message: error.message,
-        code: error.code,
-        statusCode: error.statusCode,
-        requestId: error.requestId,
-        region: this.AWS_REGION,
+        key: metadataKey,
         bucket: this.BUCKET_NAME,
-        key: metadataKey
+        region: this.AWS_REGION
       });
       throw error;
     }
@@ -185,7 +173,7 @@ class ImmutableContractStorage {
       templateData, // Snapshot of template data at generation time
       generatedAt: timestamp,
       version,
-      permanentUrl,
+      permanentUrl: permanentUrl,
       fileHash
     };
 
@@ -193,22 +181,35 @@ class ImmutableContractStorage {
   }
 
   /**
-   * Create a permanent URL that never expires
+   * Create a download URL using CloudFront or presigned URL for private buckets
    */
   private async createPermanentUrl(key: string): Promise<string> {
-    // For enterprise use, we'll use a CloudFront distribution
-    // For now, we'll create a very long-lived URL (1 year) and auto-refresh
-    const command = new GetObjectCommand({
-      Bucket: this.BUCKET_NAME,
-      Key: key
-    });
-
     try {
-    // Create URL that expires in 1 year (maximum allowed)
-      const url = await getSignedUrl(this.s3Client, command, { expiresIn: 31536000 });
-    return url;
+      // Check if CloudFront is configured
+      const cloudFrontDomain = import.meta.env.VITE_CLOUDFRONT_DOMAIN;
+      
+      if (cloudFrontDomain) {
+        // Use CloudFront for permanent URLs
+        return `https://${cloudFrontDomain}/${key}`;
+      } else {
+        // For private buckets, create a presigned URL instead of direct S3 URL
+        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+        const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+        
+        const getCommand = new GetObjectCommand({
+          Bucket: this.BUCKET_NAME,
+          Key: key
+        });
+        
+        // Create a presigned URL that expires in 1 hour
+        const presignedUrl = await getSignedUrl(this.s3Client, getCommand, {
+          expiresIn: 3600 // 1 hour
+        });
+        
+        return presignedUrl;
+      }
     } catch (error) {
-      console.error('Failed to create permanent URL:', error);
+      console.error('Failed to create download URL:', error);
       throw new Error('Failed to create download URL for contract');
     }
   }
@@ -220,13 +221,15 @@ class ImmutableContractStorage {
     const metadataKey = `${this.METADATA_PREFIX}${contractId}/${timestamp}.json`;
     
     try {
-      const response = await this.s3Client.send(new GetObjectCommand({
+      const getCommand = new GetObjectCommand({
         Bucket: this.BUCKET_NAME,
         Key: metadataKey
-      }));
-
+      });
+      
+      const response = await this.s3Client.send(getCommand);
       if (response.Body) {
-        const metadata = JSON.parse(await response.Body.transformToString());
+        const metadataText = await response.Body.transformToString();
+        const metadata = JSON.parse(metadataText);
         return metadata;
       }
     } catch (error) {
@@ -237,7 +240,7 @@ class ImmutableContractStorage {
   }
 
   /**
-   * Get permanent download URL for a contract
+   * Get download URL for a contract (uses presigned URL for private buckets)
    */
   async getPermanentDownloadUrl(contractId: string, timestamp: string, fileName: string): Promise<string> {
     const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${timestamp}/${fileName}`;
@@ -246,13 +249,29 @@ class ImmutableContractStorage {
       // First try to get the permanent URL from metadata
       const metadata = await this.getImmutableContract(contractId, timestamp);
       if (metadata?.permanentUrl) {
-        return metadata.permanentUrl;
+        // Check if it's a CloudFront URL (permanent) or needs to be converted to presigned
+        if (metadata.permanentUrl.includes('cloudfront.net')) {
+          return metadata.permanentUrl;
+        }
       }
       
-      // Fallback: create a new permanent URL
-      return await this.createPermanentUrl(immutableKey);
+      // For private buckets, use presigned URLs instead of direct S3 URLs
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+      
+      const getCommand = new GetObjectCommand({
+        Bucket: this.BUCKET_NAME,
+        Key: immutableKey
+      });
+      
+      // Create a presigned URL that expires in 1 hour
+      const presignedUrl = await getSignedUrl(this.s3Client, getCommand, {
+        expiresIn: 3600 // 1 hour
+      });
+      
+      return presignedUrl;
     } catch (error) {
-      console.error('Failed to get permanent download URL:', error);
+      console.error('Failed to get download URL:', error);
       throw new Error('Contract not found or inaccessible');
     }
   }
@@ -264,20 +283,13 @@ class ImmutableContractStorage {
     const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${timestamp}/${fileName}`;
     
     try {
-      const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+      const getCommand = new GetObjectCommand({
+        Bucket: this.BUCKET_NAME,
+        Key: immutableKey
+      });
       
-      // Check if file exists
-      await this.s3Client.send(new HeadObjectCommand({
-        Bucket: this.BUCKET_NAME,
-        Key: immutableKey
-      }));
-
       // Get file and verify hash
-      const response = await this.s3Client.send(new GetObjectCommand({
-        Bucket: this.BUCKET_NAME,
-        Key: immutableKey
-      }));
-
+      const response = await this.s3Client.send(getCommand);
       if (response.Body) {
         const fileBuffer = await response.Body.transformToByteArray();
         const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
@@ -299,32 +311,38 @@ class ImmutableContractStorage {
    */
   async listContractVersions(contractId: string): Promise<ContractMetadata[]> {
     try {
-      const response = await this.s3Client.send(new ListObjectsV2Command({
+      const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+      
+      const listCommand = new ListObjectsV2Command({
         Bucket: this.BUCKET_NAME,
         Prefix: `${this.METADATA_PREFIX}${contractId}/`
-      }));
+      });
+      
+      const response = await this.s3Client.send(listCommand);
 
       const versions: ContractMetadata[] = [];
       
-      for (const object of response.Contents || []) {
-        if (object.Key) {
-          const timestamp = object.Key.split('/').pop()?.replace('.json', '') || '';
-          const metadata = await this.getImmutableContract(contractId, timestamp);
-          if (metadata) {
-            // Convert ImmutableContract to ContractMetadata
-            const contractMetadata: ContractMetadata = {
-              contractId: metadata.contractId,
-              providerId: metadata.providerData.id,
-              providerName: metadata.providerData.name,
-              templateId: metadata.templateData.id,
-              templateName: metadata.templateData.name,
-              generatedAt: metadata.generatedAt,
-              status: 'SUCCESS',
-              fileSize: undefined,
-              permanentUrl: metadata.permanentUrl,
-              version: metadata.version
-            };
-            versions.push(contractMetadata);
+      if (response.Contents) {
+        for (const object of response.Contents) {
+          if (object.Key) {
+            const timestamp = object.Key.split('/').pop()?.replace('.json', '') || '';
+            const metadata = await this.getImmutableContract(contractId, timestamp);
+            if (metadata) {
+              // Convert ImmutableContract to ContractMetadata
+              const contractMetadata: ContractMetadata = {
+                contractId: metadata.contractId,
+                providerId: metadata.providerData.id,
+                providerName: metadata.providerData.name,
+                templateId: metadata.templateData.id,
+                templateName: metadata.templateData.name,
+                generatedAt: metadata.generatedAt,
+                status: 'SUCCESS',
+                fileSize: undefined,
+                permanentUrl: metadata.permanentUrl,
+                version: metadata.version
+              };
+              versions.push(contractMetadata);
+            }
           }
         }
       }

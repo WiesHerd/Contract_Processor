@@ -289,21 +289,29 @@ export const useGeneratorDataManagement = ({
 
   // Function to get real tab counts from database contracts
   const getRealTabCounts = useCallback(() => {
-    const totalContracts = generatedContracts.length;
-    const successContracts = generatedContracts.filter(c => c.status === 'SUCCESS').length;
-    const partialSuccessContracts = generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS').length;
-    const failedContracts = generatedContracts.filter(c => c.status === 'FAILED').length;
-    const processedContracts = successContracts + partialSuccessContracts + failedContracts;
+    // Count providers by their generation status, not just contract counts
+    let processedCount = 0;
+    let notGeneratedCount = 0;
     
-    // Ensure we don't return negative numbers
-    const notGenerated = Math.max(0, filteredProviders.length - processedContracts);
+    // For each provider, check if they have any generated contracts
+    filteredProviders.forEach(provider => {
+      const providerContracts = generatedContracts.filter(c => c.providerId === provider.id);
+      
+      if (providerContracts.length > 0) {
+        // Provider has at least one contract - count as processed
+        processedCount++;
+      } else {
+        // Provider has no contracts - count as not generated
+        notGeneratedCount++;
+      }
+    });
     
     return {
-      notGenerated: notGenerated,
-      processed: processedContracts,
+      notGenerated: notGeneratedCount,
+      processed: processedCount,
       all: filteredProviders.length,
     };
-  }, [generatedContracts, filteredProviders.length]);
+  }, [generatedContracts, filteredProviders]);
 
   return {
     handleClearGenerated,

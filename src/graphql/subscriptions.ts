@@ -344,6 +344,60 @@ export const onDeleteUserPreferences = /* GraphQL */ `subscription OnDeleteUserP
   APITypes.OnDeleteUserPreferencesSubscriptionVariables,
   APITypes.OnDeleteUserPreferencesSubscription
 >;
+export const onCreateGeneratorPreferences = /* GraphQL */ `subscription OnCreateGeneratorPreferences(
+  $filter: ModelSubscriptionGeneratorPreferencesFilterInput
+  $owner: String
+) {
+  onCreateGeneratorPreferences(filter: $filter, owner: $owner) {
+    id
+    userId
+    columnPreferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnCreateGeneratorPreferencesSubscriptionVariables,
+  APITypes.OnCreateGeneratorPreferencesSubscription
+>;
+export const onUpdateGeneratorPreferences = /* GraphQL */ `subscription OnUpdateGeneratorPreferences(
+  $filter: ModelSubscriptionGeneratorPreferencesFilterInput
+  $owner: String
+) {
+  onUpdateGeneratorPreferences(filter: $filter, owner: $owner) {
+    id
+    userId
+    columnPreferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnUpdateGeneratorPreferencesSubscriptionVariables,
+  APITypes.OnUpdateGeneratorPreferencesSubscription
+>;
+export const onDeleteGeneratorPreferences = /* GraphQL */ `subscription OnDeleteGeneratorPreferences(
+  $filter: ModelSubscriptionGeneratorPreferencesFilterInput
+  $owner: String
+) {
+  onDeleteGeneratorPreferences(filter: $filter, owner: $owner) {
+    id
+    userId
+    columnPreferences
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnDeleteGeneratorPreferencesSubscriptionVariables,
+  APITypes.OnDeleteGeneratorPreferencesSubscription
+>;
 export const onCreateMapping = /* GraphQL */ `subscription OnCreateMapping(
   $filter: ModelSubscriptionMappingFilterInput
   $owner: String

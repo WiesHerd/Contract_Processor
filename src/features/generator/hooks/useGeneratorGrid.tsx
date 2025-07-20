@@ -1,9 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { CheckCircle, XCircle, AlertTriangle, FileText, Eye, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { formatCurrency, formatNumber, formatDate } from '@/utils/formattingUtils';
 import type { Provider } from '@/types/provider';
 import type { Template } from '@/types/template';
@@ -289,7 +287,35 @@ export const useGeneratorGrid = ({
         maxWidth: 250,
         valueGetter: (params: any) => {
           const provider = params.data;
-          const model = provider.compensationModel || provider.compensationType || provider.CompensationModel || '';
+          
+          // Debug logging to see what's in the provider data
+          if (provider.id === 'jennifer-lopez' || provider.name?.includes('Jennifer')) {
+            console.log('🔍 Compensation Model Debug for Jennifer:', {
+              providerId: provider.id,
+              providerName: provider.name,
+              compensationModel: provider.compensationModel,
+              compensationType: provider.compensationType,
+              CompensationModel: provider.CompensationModel,
+              dynamicFields: provider.dynamicFields,
+              allKeys: Object.keys(provider)
+            });
+          }
+          
+          // Check multiple possible field names and locations
+          let model = provider.compensationModel || provider.compensationType || provider.CompensationModel;
+          
+          // Check in dynamicFields if not found in root
+          if (!model && provider.dynamicFields) {
+            try {
+              const dynamicFields = typeof provider.dynamicFields === 'string' 
+                ? JSON.parse(provider.dynamicFields) 
+                : provider.dynamicFields;
+              model = dynamicFields.compensationModel || dynamicFields.compensationType || dynamicFields.CompensationModel;
+            } catch (e) {
+              // Ignore parsing errors
+            }
+          }
+          
           return model || 'Not specified';
         },
         cellRenderer: (params: any) => {
@@ -345,7 +371,9 @@ export const useGeneratorGrid = ({
               return (
                 <div className="w-full h-full flex items-center px-2" style={{ position: 'relative', overflow: 'hidden' }}>
                   <div className="flex items-center gap-2 w-full">
-                    <FileText className="w-4 h-4 text-green-600 flex-shrink-0" />
+                    <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
                     <span className="text-sm font-medium text-gray-900 truncate" title={usedTemplate?.name || 'Unknown template'}>
                       {usedTemplate?.name || 'Unknown template'}
                     </span>
@@ -504,7 +532,7 @@ export const useGeneratorGrid = ({
     },
   };
 
-  // Contract Actions column (only for Processed tab)
+  // Contract Actions column (only for Processed tab) - Using simple HTML instead of AG Grid cell renderer
   const contractActionsColumn = {
     headerName: 'Contract Actions',
     field: 'actions',
@@ -532,48 +560,35 @@ export const useGeneratorGrid = ({
         
         return (
           <div className="flex items-center gap-1">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      downloadContract(provider, contract.templateId);
-                    }}
-                    className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8`}
-                    title={isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract"}
-                  >
-                    <FileText className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract"}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePreviewGenerate(provider.id);
-                    }}
-                    className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8`}
-                    title="Preview Contract"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Preview Contract
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <div
+              className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
+              style={{ 
+                pointerEvents: 'auto',
+                zIndex: 9999,
+                position: 'relative'
+              }}
+              title={isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract"}
+              onMouseDown={() => downloadContract(provider, contract.templateId)}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div
+              className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
+              style={{ 
+                pointerEvents: 'auto',
+                zIndex: 9999,
+                position: 'relative'
+              }}
+              title="Preview Contract"
+              onMouseDown={() => handlePreviewGenerate(provider.id)}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </div>
           </div>
         );
       }
@@ -605,7 +620,7 @@ export const useGeneratorGrid = ({
   // Grid options and configuration
   const gridOptions = useMemo(() => ({
     domLayout: "normal" as const,
-    suppressRowClickSelection: false,
+    suppressRowClickSelection: true, // Disable row click selection to prevent interference
     pagination: false,
     enableCellTextSelection: true,
     headerHeight: 44,
@@ -635,7 +650,7 @@ export const useGeneratorGrid = ({
       resizable: true, 
       sortable: true, 
       filter: true,
-      menuTabs: ['generalMenuTab', 'filterMenuTab', 'columnsMenuTab'],
+      menuTabs: ['generalMenuTab', 'filterMenuTab', 'columnsMenuTab'] as any,
       cellStyle: { 
         fontSize: '14px', 
         fontFamily: 'var(--font-sans, sans-serif)', 

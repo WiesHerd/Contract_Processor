@@ -53,6 +53,9 @@ export const useContractGeneration = ({
   
   // Helper function to download a contract with error handling
   const downloadContract = useCallback(async (provider: Provider, templateId: string) => {
+    console.log('🔍 Download contract called for:', { provider: provider.name, templateId });
+    console.log('🔍 Available contracts in Redux:', generatedContracts);
+    
     try {
       // Find the actual generated contract (allow both SUCCESS and PARTIAL_SUCCESS)
       const contract = generatedContracts.find(
@@ -60,7 +63,10 @@ export const useContractGeneration = ({
         (c.status === 'SUCCESS' || c.status === 'PARTIAL_SUCCESS')
       );
       
+      console.log('🔍 Found contract:', contract);
+      
       if (!contract) {
+        console.log('❌ No contract found for provider:', provider.name);
         setUserError(`No generated contract found for ${provider.name}. Please regenerate the contract.`);
         return;
       }
@@ -71,44 +77,88 @@ export const useContractGeneration = ({
       
       const contractId = provider.id + '-' + templateId + '-' + contractYear;
       
-      // Use the actual generation date from the contract
-      const generationDate = contract.generatedAt ? contract.generatedAt.split('T')[0] : new Date().toISOString().split('T')[0];
+      // Use the actual generation timestamp from the contract (full ISO string)
+      const generationTimestamp = contract.generatedAt || new Date().toISOString();
+      const generationDate = generationTimestamp.split('T')[0];
       const fileName = getContractFileName(contractYear, provider.name, generationDate);
       
-      console.log('Attempting to download contract:', { 
+      console.log('🔍 Download attempt for contract:', { 
         contractId, 
         fileName, 
         provider: provider.name,
         status: contract.status,
-        generationDate 
+        generationTimestamp,
+        generationDate,
+        contractData: contract
       });
       
       // Try to get the contract file from immutable storage first
       let downloadUrl: string;
       try {
         const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
-        downloadUrl = await immutableContractStorage.getPermanentDownloadUrl(contractId, generationDate, fileName);
+        
+        // Use the full contract ID for storage lookup
+        // The storage uses the full contractId: providerId-templateId-contractYear
+        console.log('🔍 Download Debug:', {
+          fullContractId: contractId,
+          generationTimestamp,
+          fileName
+        });
+        
+        downloadUrl = await immutableContractStorage.getPermanentDownloadUrl(contractId, generationTimestamp, fileName);
         console.log('✅ Successfully retrieved permanent download URL from immutable storage');
       } catch (immutableError) {
         console.log('Immutable storage failed, trying S3 storage...', immutableError);
-        // Fallback to S3 storage
+        
+        // Try to find the file with different timestamp variations
         try {
-          const { getContractFile } = await import('@/utils/s3Storage');
-          const result = await getContractFile(contractId, fileName);
-          downloadUrl = result.url;
-          console.log('✅ Successfully generated download URL via S3 storage');
-        } catch (s3StorageError) {
-          console.error('❌ Both immutable and S3 storage failed:', {
-            immutableError: immutableError.message,
-            s3StorageError: s3StorageError.message
-          });
+          const { checkFileExists } = await import('@/utils/s3Storage');
+          const { getSignedDownloadUrl } = await import('@/utils/s3Storage');
           
-          // Check if the file actually exists in S3
-          try {
-            const { checkFileExists } = await import('@/utils/s3Storage');
-            const fileExists = await checkFileExists(`contracts/${contractId}/${fileName}`);
+          // Try different timestamp variations for older contracts
+          const possibleTimestamps = [
+            generationTimestamp, // Original timestamp
+            generationTimestamp.replace(/\.\d{3}Z$/, 'Z'), // Remove milliseconds
+            generationTimestamp.split('.')[0] + 'Z', // Remove milliseconds and add Z
+            new Date(generationTimestamp).toISOString(), // Normalized timestamp
+            // Add known timestamp for Elizabeth Ramirez's contract
+            '2025-07-19T16:25:42.780Z', // Known timestamp from S3
+          ];
+          
+          console.log('🔍 Trying different timestamp variations:', possibleTimestamps);
+          
+          let foundPath = null;
+          
+          // Try each timestamp variation
+          for (const timestamp of possibleTimestamps) {
+            const immutablePath = `contracts/immutable/${contractId}/${timestamp}/${fileName}`;
+            console.log(`🔍 Checking path: ${immutablePath}`);
             
-            if (!fileExists) {
+            try {
+              const fileExists = await checkFileExists(immutablePath);
+              if (fileExists) {
+                foundPath = immutablePath;
+                console.log(`✅ Found file with timestamp: ${timestamp}`);
+                break;
+              }
+            } catch (checkError) {
+              console.log(`❌ Path not found: ${immutablePath}`);
+            }
+          }
+          
+          if (foundPath) {
+            // File exists in immutable storage, generate presigned download URL
+            downloadUrl = await getSignedDownloadUrl(foundPath);
+            console.log('✅ Found file in immutable storage and generated download URL');
+          } else {
+            // Check regular S3 storage path as last resort
+            const regularPath = `contracts/${contractId}/${fileName}`;
+            const regularFileExists = await checkFileExists(regularPath);
+            
+            if (regularFileExists) {
+              downloadUrl = await getSignedDownloadUrl(regularPath);
+              console.log('✅ Found file in regular S3 storage and generated download URL');
+            } else {
               setUserError(`Contract file not found in storage for ${provider.name}. The contract may have been generated but failed to upload to storage. Please regenerate the contract.`);
               
               // Offer to regenerate the contract
@@ -122,12 +172,11 @@ export const useContractGeneration = ({
                 }
               }
               return;
-            } else {
-              throw new Error(`File exists in S3 but download URL generation failed`);
             }
-          } catch (checkError) {
-            throw new Error(`Failed to verify file existence: ${checkError.message}`);
           }
+        } catch (checkError) {
+          console.error('❌ Failed to check file existence:', checkError);
+          throw new Error(`Failed to verify file existence: ${checkError.message}`);
         }
       }
       
@@ -229,7 +278,7 @@ b, strong { font-weight: bold !important; }
         // Store with immutable data and permanent URL
         const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
         const immutableResult = await immutableContractStorage.storeImmutableContract(
-          contractId,
+          provider.id, // Use just the provider ID for storage
           fileName,
           buffer,
           provider, // Snapshot of provider data at generation time
@@ -249,6 +298,29 @@ b, strong { font-weight: bold !important; }
         console.error('Failed to store contract with immutable data:', s3err);
         setUserError(`Contract generated but failed to store permanently: ${s3err instanceof Error ? s3err.message : 'Unknown error'}. You can still download locally.`);
         s3UploadSuccess = false;
+      }
+      
+      // Log the generation event to DynamoDB
+      try {
+        const { ContractGenerationLogService } = await import('@/services/contractGenerationLogService');
+        const logInput = {
+          providerId: provider.id,
+          contractYear: contractYear,
+          templateId: templateToUse.id,
+          generatedAt: new Date().toISOString(),
+          generatedBy: localStorage.getItem('userEmail') || 'unknown',
+          outputType: 'DOCX',
+          status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS',
+          fileUrl: permanentUrl || fileName,
+          notes: `Generated contract for ${provider.name} using template ${templateToUse.name}. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`,
+          owner: localStorage.getItem('userId') || 'unknown'
+        };
+        
+        const logEntry = await ContractGenerationLogService.createLog(logInput);
+        console.log('✅ Contract generation logged to DynamoDB:', logEntry.id);
+      } catch (logError) {
+        console.error('❌ Failed to log contract to DynamoDB:', logError);
+        // Don't fail the entire operation for logging errors
       }
       
       return {

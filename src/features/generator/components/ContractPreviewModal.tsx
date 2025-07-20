@@ -22,6 +22,8 @@ interface ContractPreviewModalProps {
   onGenerate: (providerId: string) => void;
   onBulkGenerate: () => void;
   getAssignedTemplate: (provider: Provider) => Template | null;
+  templates: Template[];
+  generatedContracts: any[];
 }
 
 const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
@@ -33,6 +35,8 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
   onGenerate,
   onBulkGenerate,
   getAssignedTemplate,
+  templates,
+  generatedContracts,
 }) => {
   const { mappings } = useSelector((state: RootState) => state.mappings);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
@@ -78,8 +82,34 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
         return;
       }
 
-      // Use assigned template or fallback to global template
-      const templateToUse = getAssignedTemplate(selectedProvider) || template;
+      // Use assigned template, fallback to template from generated contract, or global template
+      let templateToUse = getAssignedTemplate(selectedProvider);
+      
+      // If no assigned template, try to find template from generated contract
+      if (!templateToUse) {
+        const generatedContract = generatedContracts?.find(c => c.providerId === selectedProvider.id);
+        if (generatedContract) {
+          templateToUse = templates.find(t => t.id === generatedContract.templateId) || null;
+        }
+      }
+      
+      // Final fallback to global template
+      if (!templateToUse) {
+        templateToUse = template;
+      }
+      
+      // Debug logging
+      console.log('🔍 Preview Modal Debug:', {
+        providerId: selectedProvider.id,
+        providerName: selectedProvider.name,
+        assignedTemplate: getAssignedTemplate(selectedProvider),
+        globalTemplate: template,
+        templateToUse: templateToUse,
+        hasTemplate: !!templateToUse,
+        selectedProviderIds: selectedProviderIds,
+        availableProviders: availableProviders.map(p => ({ id: p.id, name: p.name }))
+      });
+      
       if (!templateToUse) {
         const emptyContent = '<div style="padding: 2rem; text-align: center; color: #666; font-family: Arial, sans-serif;"><h3>No Template Assigned</h3><p>This provider does not have a template assigned. Please assign a template first.</p></div>';
         setPreviewData({
@@ -126,7 +156,7 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
     };
 
     generatePreview();
-  }, [template, selectedProvider, mappings, getAssignedTemplate]);
+  }, [template, selectedProvider, mappings, getAssignedTemplate, templates, generatedContracts]);
 
   // Utility to normalize smart quotes and special characters
   const normalizeSmartQuotes = (text: string): string => {
@@ -190,7 +220,7 @@ const ContractPreviewModal: React.FC<ContractPreviewModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] w-full h-[95vh] flex flex-col p-0">
+      <DialogContent className="max-w-6xl w-full h-[95vh] flex flex-col p-0">
         <DialogHeader className="flex-shrink-0 px-6 py-4 border-b">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Eye className="w-5 h-5 text-blue-600" />

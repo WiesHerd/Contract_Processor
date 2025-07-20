@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import type { Provider } from '@/types/provider';
 import type { Template } from '@/types/template';
+import { ContractActionsPanel } from '../components/ContractActionsPanel';
 
 interface ExtendedProvider extends Provider {
   [key: string]: any;
@@ -110,6 +111,14 @@ interface UseGeneratorRenderingProps {
   showError: (error: any) => void;
   showWarning: (message: string) => void;
   showInfo: (message: string) => void;
+  
+  // Contract action handlers
+  onDownloadContract: (provider: Provider, templateId: string) => void;
+  onPreviewContract: (provider: Provider, templateId: string) => void;
+  onViewInS3: (provider: Provider, templateId: string) => void;
+  
+  // Generated contracts data
+  generatedContracts: any[];
 }
 
 export const useGeneratorRendering = ({
@@ -185,6 +194,14 @@ export const useGeneratorRendering = ({
   showError,
   showWarning,
   showInfo,
+  
+  // Contract action handlers
+  onDownloadContract,
+  onPreviewContract,
+  onViewInS3,
+  
+  // Generated contracts data
+  generatedContracts,
 }: UseGeneratorRenderingProps) => {
 
   const renderHeader = () => (
@@ -460,6 +477,18 @@ export const useGeneratorRendering = ({
         </div>
 
         <TabsContent value={statusTab} className="mt-0">
+          {/* Contract Actions Panel - Only for processed tab */}
+          <ContractActionsPanel
+            selectedProviderIds={selectedProviderIds}
+            providers={providers}
+            generatedContracts={generatedContracts}
+            templates={templates}
+            statusTab={statusTab}
+            onDownloadContract={onDownloadContract}
+            onPreviewContract={onPreviewContract}
+            onViewInS3={onViewInS3}
+          />
+          
           {/* AG Grid */}
           <div className="ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-visible" style={gridStyle}>
             <AgGridReact

@@ -71,19 +71,35 @@ export const useTemplateAssignment = ({
       t.name.trim() !== ''
     );
     
+    // Debug logging
+    console.log('🔍 getAssignedTemplate Debug:', {
+      providerId: provider.id,
+      providerName: provider.name,
+      templateAssignments: templateAssignments,
+      hasAssignment: !!templateAssignments[provider.id],
+      assignmentId: templateAssignments[provider.id],
+      validTemplatesCount: validTemplates.length,
+      selectedTemplate: selectedTemplate,
+      validTemplateIds: validTemplates.map(t => t.id)
+    });
+    
     // 1. Check if manually assigned
     if (templateAssignments[provider.id]) {
       const assignedTemplate = validTemplates.find(t => t.id === templateAssignments[provider.id]);
       if (assignedTemplate) {
+        console.log('✅ Found assigned template:', assignedTemplate.name);
         return assignedTemplate;
       }
+      console.log('❌ Assigned template not found in valid templates');
       return null;
     }
     
     // 2. Fallback to selected template (original behavior)
     if (selectedTemplate && selectedTemplate.id && selectedTemplate.id.trim() !== '') {
+      console.log('✅ Using selected template:', selectedTemplate.name);
       return selectedTemplate;
     }
+    console.log('❌ No template found');
     return null;
   }, [templates, templateAssignments, selectedTemplate]);
 
