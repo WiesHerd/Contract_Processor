@@ -1587,65 +1587,7 @@ export default function ContractGenerator() {
                     Export CSV
                   </Button>
                   
-                  <Button
-                    onClick={async () => {
-                      try {
-                        // Clear all test contracts from database
-                        let allLogs = [];
-                        let nextToken = undefined;
-                        
-                        do {
-                          const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
-                          if (result && result.items) {
-                            allLogs = allLogs.concat(result.items);
-                          }
-                          nextToken = result?.nextToken;
-                        } while (nextToken);
-                        
-                        // Filter for test contracts - be more aggressive to clear any test data
-                        const testLogs = allLogs.filter(log => 
-                          log.providerId === 'test-provider-id' || 
-                          log.notes?.includes('Test log entry') ||
-                          log.notes?.includes('Test') ||
-                          log.generatedBy === 'test' ||
-                          log.generatedBy === 'Test' ||
-                          log.fileUrl === 'test-url' ||
-                          log.templateId === 'test-template-id'
-                        );
-                        
-                        if (testLogs.length === 0) {
-                          showSuccess('No test contracts found to clear');
-                          return;
-                        }
-                        
-                        // Delete each test contract
-                        let deletedCount = 0;
-                        for (const log of testLogs) {
-                          try {
-                            await ContractGenerationLogService.deleteLog(log.id);
-                            deletedCount++;
-                          } catch (error) {
-                            console.error(`Failed to delete test contract ${log.id}:`, error);
-                          }
-                        }
-                        
-                        // Refresh the contracts from database
-                        await hydrateGeneratedContracts();
-                        
-                        showSuccess(`Cleared ${deletedCount} test contracts from database`);
-                      } catch (error) {
-                        console.error('Error clearing test contracts:', error);
-                        showError({ message: 'Failed to clear test contracts', severity: 'error' });
-                      }
-                    }}
-                    variant="outline"
-                    size="sm"
-                    className="px-3 flex items-center gap-2"
-                    title="Clear all test contracts from database"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Clear Test Data
-                  </Button>
+
                   
                   <Button
                     onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
