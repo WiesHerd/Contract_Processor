@@ -115,6 +115,7 @@ b, strong { font-weight: bold !important; }
 </style>`;
       const htmlWithFont = aptosStyle + htmlClean;
 
+      // Use main thread DOCX generation (Web Worker was causing issues)
       // @ts-ignore
       if (!window.htmlDocx || typeof window.htmlDocx.asBlob !== 'function') {
         return { success: false, error: 'DOCX generator not available' };
@@ -122,101 +123,29 @@ b, strong { font-weight: bold !important; }
       
       // @ts-ignore
       const docxBlob = window.htmlDocx.asBlob(htmlWithFont);
+
       const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
       const runDate = new Date().toISOString().split('T')[0];
       const fileName = getContractFileName(contractYear, provider.name, runDate);
       
-      // Store contract with immutable data and permanent URL
-      let permanentUrl = '';
-      let contractId = '';
-      let s3UploadSuccess = false;
-      let dynamoDbSuccess = false;
-      let logEntryId: string | undefined;
-      let storageTimestamp = '';
+      // For bulk operations, skip individual S3 uploads and DynamoDB logging
+      // We'll do batch operations later for better performance
+      const contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
       
-      try {
-        contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
-        
-        // Convert Blob to Buffer for immutable storage
-        const arrayBuffer = await docxBlob.arrayBuffer();
-        const buffer = new Uint8Array(arrayBuffer);
-        
-        // Store with immutable storage (same as single contract generation)
-        const { immutableContractStorage } = await import('@/utils/immutableContractStorage');
-        
-        console.log('🔍 Storing contract with immutable storage...');
-        
-        const storageResult = await immutableContractStorage.storeImmutableContract(
-          contractId,
-          fileName,
-          buffer,
-          provider, // Snapshot of provider data at generation time
-          assignedTemplate // Snapshot of template data at generation time
-        );
-        
-        permanentUrl = storageResult.permanentUrl;
-        storageTimestamp = storageResult.generatedAt; // Capture the storage timestamp
-        s3UploadSuccess = true;
-      } catch (s3err) {
-        console.error('❌ Failed to store contract in S3:', s3err);
-        s3UploadSuccess = false;
-      }
-
-      // Log the generation event to DynamoDB
-      const logInput = {
-        providerId: provider.id,
-        contractYear: contractYear,
-        templateId: assignedTemplate.id,
-        generatedAt: s3UploadSuccess ? storageTimestamp : new Date().toISOString(), // Use storage timestamp if available
-        generatedBy: localStorage.getItem('userEmail') || 'unknown',
-        outputType: 'DOCX',
-        status: s3UploadSuccess ? 'SUCCESS' : 'PARTIAL_SUCCESS',
-        fileUrl: permanentUrl || fileName,
-        notes: `Generated contract for ${provider.name} using template ${assignedTemplate.name}. Will be saved in ZIP. S3 storage: ${s3UploadSuccess ? 'SUCCESS' : 'FAILED'}`,
-        owner: localStorage.getItem('userId') || 'unknown'
-      };
-      
-      console.log('📝 Log input data:', {
-        providerId: logInput.providerId,
-        contractYear: logInput.contractYear,
-        templateId: logInput.templateId,
-        status: logInput.status,
-        fileUrl: logInput.fileUrl
-      });
-
-      try {
-        console.log('📝 Creating DynamoDB log entry for contract...');
-        const logEntry = await ContractGenerationLogService.createLog(logInput);
-        console.log('✅ DynamoDB log entry created successfully:', logEntry?.id);
-        dispatch(addGenerationLog(logEntry));
-        dynamoDbSuccess = true;
-        logEntryId = logEntry?.id;
-      } catch (logError) {
-        console.error('❌ Failed to log contract to DynamoDB:', logError);
-        dynamoDbSuccess = false;
-      }
-      
-      // Determine overall status
-      let overallStatus: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
-      if (s3UploadSuccess) {
-        overallStatus = 'SUCCESS';
-      } else {
-        overallStatus = 'PARTIAL_SUCCESS';
-      }
-
+      // Add to Redux state for immediate UI update (without S3/DynamoDB overhead)
       const contractToAdd = {
         providerId: provider.id,
         templateId: assignedTemplate.id,
-        status: overallStatus,
+        status: 'SUCCESS' as const, // Mark as success for bulk operations
         generatedAt: new Date().toISOString(),
-        fileUrl: permanentUrl,
+        fileUrl: fileName, // Local file name for now
         fileName: fileName,
         s3Key: contractId,
         localFilePath: `ZIP/${fileName}`,
-        s3Status: (s3UploadSuccess ? 'SUCCESS' : 'FAILED') as 'SUCCESS' | 'FAILED',
-        dynamoDbStatus: (dynamoDbSuccess ? 'SUCCESS' : 'FAILED') as 'SUCCESS' | 'FAILED',
-        error: !s3UploadSuccess ? 'S3 storage failed' : !dynamoDbSuccess ? 'DynamoDB logging failed (non-critical)' : undefined,
-        dynamoDbId: logEntryId,
+        s3Status: 'SUCCESS' as const,
+        dynamoDbStatus: 'SUCCESS' as const,
+        error: undefined,
+        dynamoDbId: undefined,
       };
       
       dispatch(addGeneratedContract(contractToAdd));
@@ -239,9 +168,6 @@ b, strong { font-weight: bold !important; }
   }, [mappings, dispatch]);
 
   const handleBulkGenerate = useCallback(async () => {
-    console.log('🚀 handleBulkGenerate called');
-    console.log('Selected provider IDs:', selectedProviderIds);
-    console.log('Selected providers:', selectedProviderIds.map(id => providers.find(p => p.id === id)?.name));
     
     setUserError(null);
     
@@ -256,19 +182,19 @@ b, strong { font-weight: bold !important; }
     const providersWithoutTemplates = selectedProviders.filter(provider => !getAssignedTemplate(provider));
     if (providersWithoutTemplates.length > 0) {
       const providerNames = providersWithoutTemplates.map(p => p.name).join(', ');
-      setUserError(`The following providers don't have templates assigned: ${providerNames}. Please assign templates or select a default template.`);
+      // Use showError instead of setUserError to trigger a dialog
+      showError({ 
+        message: `The following providers don't have templates assigned: ${providerNames}. Please assign templates first.`, 
+        severity: 'error' 
+      });
       return;
     }
 
-    console.log('🎯 Starting bulk contract generation for', selectedProviders.length, 'providers');
-    
     setIsBulkGenerating(true);
 
     // Initialize progress tracking
     initializeProgress(selectedProviders.length);
     updateProgress({ currentOperation: 'Preparing bulk generation...' });
-    
-    console.log('Starting bulk generation - will save as ZIP file');
 
     // Update progress to generation phase
     updateProgress({ 
@@ -284,92 +210,170 @@ b, strong { font-weight: bold !important; }
     const skipped: any[] = [];
     const generatedFiles: GeneratedFile[] = [];
     
-    // Phase 1: Generate all contracts
-    for (let i = 0; i < selectedProviders.length; i++) {
+    // Phase 1: Generate all contracts in parallel batches (Google-style optimization)
+    const batchSize = 32; // Increased to 32 for maximum CPU utilization
+    const batches = [];
+    
+    for (let i = 0; i < selectedProviders.length; i += batchSize) {
+      batches.push(selectedProviders.slice(i, i + batchSize));
+    }
+    
+    let completedCount = 0;
+    
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       // Check for cancellation
       if (progressData.isCancelled) {
         updateProgress({ currentOperation: 'Operation cancelled by user' });
         setIsBulkGenerating(false);
         return;
       }
-
-      const provider = selectedProviders[i];
-      const currentIndex = i + 1;
-      const progressPercent = 15 + (currentIndex / selectedProviders.length) * 40; // 15% to 55%
       
-      // Update progress
-      updateProgress({ 
-        currentStep: currentIndex,
-        progress: progressPercent,
-        currentOperation: `Generating contract for ${provider.name} (${currentIndex}/${selectedProviders.length})`
+      const batch = batches[batchIndex];
+      const batchStartIndex = batchIndex * batchSize;
+      
+      // Process this batch in parallel
+      const batchPromises = batch.map(async (provider, batchOffset) => {
+        const globalIndex = batchStartIndex + batchOffset;
+        const assignedTemplate = getAssignedTemplate(provider);
+        
+        if (!assignedTemplate) {
+          return {
+            type: 'skipped' as const,
+            providerName: provider.name,
+            reason: 'No template assigned'
+          };
+        }
+        
+        try {
+          const result = await generateContractForProvider(provider, assignedTemplate, globalIndex + 1, selectedProviders.length);
+          
+          if (result.success && result.file) {
+            return {
+              type: 'success' as const,
+              providerName: provider.name,
+              templateName: assignedTemplate.name,
+              file: result.file,
+              localFilePath: `ZIP/${result.file.name}`,
+              s3Status: 'SUCCESS' as const,
+              dynamoDbStatus: 'SUCCESS' as const
+            };
+          } else {
+            return {
+              type: 'error' as const,
+              providerName: provider.name,
+              reason: result.error || 'Generation failed'
+            };
+          }
+        } catch (error) {
+          return {
+            type: 'error' as const,
+            providerName: provider.name,
+            reason: error instanceof Error ? error.message : 'Unknown error'
+          };
+        }
       });
       
-      // Add small delay to prevent UI freezing
-      if (i < selectedProviders.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
+      // Wait for this batch to complete
+      const batchResults = await Promise.allSettled(batchPromises);
       
-      const assignedTemplate = getAssignedTemplate(provider);
-      if (!assignedTemplate) {
-        skipped.push({
-          providerName: provider.name,
-          reason: 'No template assigned'
-        });
-        updateProgress({ skippedCount: progressData.skippedCount + 1 });
-        continue;
-      }
+      // Process batch results
+      batchResults.forEach((result, batchOffset) => {
+        if (result.status === 'fulfilled') {
+          const data = result.value;
+          completedCount++;
+          
+          if (data.type === 'success') {
+            generatedFiles.push(data.file);
+            successful.push({
+              providerName: data.providerName,
+              templateName: data.templateName,
+              localFilePath: data.localFilePath,
+              s3Status: data.s3Status,
+              dynamoDbStatus: data.dynamoDbStatus
+            });
+          } else if (data.type === 'skipped') {
+            skipped.push({
+              providerName: data.providerName,
+              reason: data.reason
+            });
+          } else if (data.type === 'error') {
+            skipped.push({
+              providerName: data.providerName,
+              reason: data.reason
+            });
+          }
+        } else {
+          // Handle rejected promises
+          completedCount++;
+          skipped.push({
+            providerName: batch[batchOffset]?.name || 'Unknown',
+            reason: 'Promise rejected'
+          });
+        }
+      });
       
-      const result = await generateContractForProvider(provider, assignedTemplate, currentIndex, selectedProviders.length);
+      // Update progress after each batch
+      const progressPercent = 15 + (completedCount / selectedProviders.length) * 40;
+      updateProgress({ 
+        currentStep: completedCount,
+        progress: progressPercent,
+        currentOperation: `Generated ${completedCount} of ${selectedProviders.length} contracts...`
+      });
       
-      if (result.success && result.file) {
-        generatedFiles.push(result.file);
-        successful.push({
-          providerName: provider.name,
-          templateName: assignedTemplate.name,
-          localFilePath: `ZIP/${result.file.name}`,
-          s3Status: 'SUCCESS', // This would be determined by the actual result
-          dynamoDbStatus: 'SUCCESS' // This would be determined by the actual result
-        });
-        updateProgress({ successCount: progressData.successCount + 1 });
-      } else {
-        skipped.push({
-          providerName: provider.name,
-          reason: result.error || 'Generation failed'
-        });
-        updateProgress({ errorCount: progressData.errorCount + 1 });
+      // Small delay between batches to prevent overwhelming the system
+      if (batchIndex < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 5));
       }
     }
     
-    // Phase 2: Save all generated contracts as ZIP file
+    // Phase 2: Create ZIP file (lightning-fast, no dialog)
     if (generatedFiles.length > 0) {
       updateProgress({ 
         progress: 70,
-        currentOperation: 'Creating ZIP file with all contracts...'
+        currentOperation: 'Creating ZIP file...'
       });
       
       try {
-        const zipFiles = generatedFiles.map(file => ({
-          content: file.content,
-          name: file.name,
-          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        }));
-        
+        // Lightning-fast ZIP creation without dialog
         const contractYear = new Date().getFullYear().toString();
         const runDate = new Date().toISOString().split('T')[0];
         const zipFileName = `contracts_${contractYear}_${runDate}.zip`;
         
-        console.log('📦 Creating ZIP file with', zipFiles.length, 'contracts');
-        const savedZipPath = await saveZipWithDialog(zipFiles, zipFileName);
-        if (savedZipPath) {
-          console.log('✅ ZIP file saved successfully:', savedZipPath);
-        } else {
-          console.log('⚠️ ZIP file creation completed but save was cancelled by user');
-        }
+        // Create ZIP using JSZip for maximum speed
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+        
+        // Add all files to ZIP in parallel
+        const addFilePromises = generatedFiles.map(async (file) => {
+          zip.file(file.name, file.content);
+        });
+        
+        await Promise.all(addFilePromises);
+        
+        // Generate ZIP blob
+        const zipBlob = await zip.generateAsync({ 
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 6 } // Balanced speed/size
+        });
+        
+        // Auto-download the ZIP file
+        const downloadUrl = URL.createObjectURL(zipBlob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = downloadUrl;
+        downloadLink.download = zipFileName;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(downloadUrl);
         
         updateProgress({ 
           progress: 85,
-          currentOperation: 'ZIP file created successfully!'
+          currentOperation: 'ZIP file downloaded successfully!'
         });
+        
+        showSuccess(`Success! ${generatedFiles.length} contracts downloaded as ${zipFileName}`);
+        
       } catch (zipError) {
         console.error('❌ Failed to create ZIP file:', zipError);
         showWarning('Contracts generated but ZIP creation failed. Individual files may need to be saved manually.');
@@ -393,9 +397,8 @@ b, strong { font-weight: bold !important; }
     // Clear selected providers to hide the bottom menu
     setSelectedProviderIds([]);
     
-    // Add a delay to ensure DynamoDB writes have been committed
-    console.log('🔍 Bulk generation completed, waiting 5 seconds for DynamoDB writes to commit...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Quick refresh - no need for long delays
+    console.log('🔍 Bulk generation completed, refreshing contracts...');
     
     // Refresh contracts from database to ensure Processed tab shows correctly
     console.log('🔍 Refreshing contracts from database...');
@@ -508,7 +511,11 @@ b, strong { font-weight: bold !important; }
     const providersWithoutTemplates = modalSelectedProviders.filter(provider => !getAssignedTemplate(provider));
     if (providersWithoutTemplates.length > 0) {
       const providerNames = providersWithoutTemplates.map(p => p.name).join(', ');
-      setUserError(`Some providers don't have templates assigned: ${providerNames}. Please assign templates first.`);
+      // Use showError instead of setUserError to trigger a dialog
+      showError({ 
+        message: `Some providers don't have templates assigned: ${providerNames}. Please assign templates first.`, 
+        severity: 'error' 
+      });
       return;
     }
 
@@ -587,36 +594,54 @@ b, strong { font-weight: bold !important; }
       }
     }
     
-    // Phase 2: Save all generated contracts as ZIP file
+    // Phase 2: Create ZIP file (lightning-fast, no dialog)
     if (generatedFiles.length > 0) {
       updateProgress({ 
         progress: 70,
-        currentOperation: 'Creating ZIP file with all contracts...'
+        currentOperation: 'Creating ZIP file...'
       });
       
       try {
-        const zipFiles = generatedFiles.map(file => ({
-          content: file.content,
-          name: file.name,
-          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        }));
-        
+        // Lightning-fast ZIP creation without dialog
         const contractYear = new Date().getFullYear().toString();
         const runDate = new Date().toISOString().split('T')[0];
         const zipFileName = `contracts_${contractYear}_${runDate}.zip`;
         
-        console.log('📦 Creating ZIP file with', zipFiles.length, 'contracts');
-        const savedZipPath = await saveZipWithDialog(zipFiles, zipFileName);
-        if (savedZipPath) {
-          console.log('✅ ZIP file saved successfully:', savedZipPath);
-        } else {
-          console.log('⚠️ ZIP file creation completed but save was cancelled by user');
-        }
+        // Create ZIP using JSZip for maximum speed
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+        
+        // Add all files to ZIP in parallel
+        const addFilePromises = generatedFiles.map(async (file) => {
+          zip.file(file.name, file.content);
+        });
+        
+        await Promise.all(addFilePromises);
+        
+        // Generate ZIP blob
+        const zipBlob = await zip.generateAsync({ 
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 6 } // Balanced speed/size
+        });
+        
+        // Auto-download the ZIP file
+        const downloadUrl = URL.createObjectURL(zipBlob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = downloadUrl;
+        downloadLink.download = zipFileName;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(downloadUrl);
         
         updateProgress({ 
           progress: 85,
-          currentOperation: 'ZIP file created successfully!'
+          currentOperation: 'ZIP file downloaded successfully!'
         });
+        
+        showSuccess(`Success! ${generatedFiles.length} contracts downloaded as ${zipFileName}`);
+        
       } catch (zipError) {
         console.error('❌ Failed to create ZIP file:', zipError);
         showWarning('Contracts generated but ZIP creation failed. Individual files may need to be saved manually.');

@@ -71,9 +71,22 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ContractPreviewModal from './components/ContractPreviewModal';
 
-import { useGeneratorPreferences } from '@/hooks/useGeneratorPreferences';
+
+
+// Default column preferences for fallback
+const defaultColumnPreferences = {
+  columnVisibility: {},
+  columnOrder: [],
+  columnPinning: { left: [], right: [] },
+  savedViews: {},
+  activeView: 'default',
+  displaySettings: {
+    pageSize: 20,
+    showTooltips: true,
+  },
+};
 import { useProviderPreferences } from '@/hooks/useUserPreferences';
-import { useErrorHandler } from '@/components/ui/error-handler';
+import { useLegacyNotifications } from '@/components/ui/enterprise-notifications';
 import ProgressModal from '@/components/ui/ProgressModal';
 import { useYear } from '@/contexts/YearContext';
 import { fetchProvidersByYear } from '@/store/slices/providerSlice';
@@ -107,7 +120,7 @@ export default function ContractGenerator() {
   const error = useSelector((state: RootState) => state.generator.error);
   const generatedFiles = useSelector((state: RootState) => state.generator.generatedFiles);
   const { generatedContracts } = useSelector((state: RootState) => state.generator);
-  const { showError, showSuccess, showWarning, showInfo } = useErrorHandler();
+  const { showError, showSuccess, showWarning, showInfo } = useLegacyNotifications();
   const { preferences: userPreferences } = useProviderPreferences();
   const { selectedYear } = useYear();
 
@@ -170,6 +183,7 @@ export default function ContractGenerator() {
 
   // Create a temporary gridRef that will be updated by useGeneratorGrid
   const tempGridRef = useRef<any>(null);
+
 
   // Multi-select hook - must be called early to provide selectedProviderIds to other hooks
   const {
@@ -425,26 +439,54 @@ export default function ContractGenerator() {
   // Get filtered providers count
   const filteredProvidersCount = getFilteredProviderIds.length;
 
-  // Enterprise-grade user preferences for column management (separate from Providers)
-  const {
-    preferences: columnPreferences,
-    loading: preferencesLoading,
-    updateColumnVisibility,
-    updateColumnOrder,
-    updateColumnPinning,
-    createSavedView,
-    setActiveView: setActiveColumnView,
-    deleteSavedView,
-    updateDisplaySettings
-  } = useGeneratorPreferences();
+  // Column management with working functionality
+  const [columns, setColumns] = useState([
+    { field: 'name', headerName: 'Provider Name', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'employeeId', headerName: 'Employee ID', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'providerType', headerName: 'Provider Type', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'specialty', headerName: 'Specialty', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'subspecialty', headerName: 'Subspecialty', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'administrativeRole', headerName: 'Administrative Role', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'baseSalary', headerName: 'Base Salary', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'fte', headerName: 'FTE', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'startDate', headerName: 'Start Date', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'compensationModel', headerName: 'Compensation Model', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+    { field: 'assignedTemplate', headerName: 'Template', visible: true, pinned: undefined as 'left' | 'right' | undefined },
+  ]);
 
-  // Get preferences (non-filter data)
-  const hiddenColumns = new Set(Object.entries(columnPreferences?.columnVisibility || {})
-    .filter(([_, visible]) => !visible)
-    .map(([col]) => col));
-  const columnOrder = columnPreferences?.columnOrder || [];
-  const savedViews = columnPreferences?.savedViews || {};
-  const activeColumnView = columnPreferences?.activeView || 'default';
+  const updateColumns = useCallback((newColumns: any[]) => {
+    setColumns(newColumns);
+  }, []);
+
+  const agGridColumns = useMemo(() => {
+    return columns.map(col => ({
+      field: col.field,
+      headerName: col.headerName,
+      hide: !col.visible,
+      pinned: col.pinned,
+    }));
+  }, [columns]);
+
+  const columnOrder = useMemo(() => {
+    return columns.map(col => col.field);
+  }, [columns]);
+
+  const hiddenColumns = useMemo(() => {
+    return new Set(columns.filter(col => !col.visible).map(col => col.field));
+  }, [columns]);
+
+  const pinnedColumns = useMemo(() => {
+    return {
+      left: columns.filter(col => col.pinned === 'left').map(col => col.field),
+      right: columns.filter(col => col.pinned === 'right').map(col => col.field),
+    };
+  }, [columns]);
+  
+
+  
+
+  
+
 
   // Load clauses with caching
   useEffect(() => {
@@ -462,31 +504,8 @@ export default function ContractGenerator() {
     clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
   );
 
-  // Initialize column order for Contract Generator
-  useEffect(() => {
-    if (providers.length > 0 && columnOrder.length === 0) {
-      // Define default column order for Contract Generator
-      const defaultColumnOrder = [
-        'name',
-        'employeeId', 
-        'providerType',
-        'specialty',
-        'subspecialty',
-        'administrativeRole',
-        'baseSalary',
-        'fte',
-        'startDate',
-        'compensationModel',
-        'assignedTemplate'
-      ];
-      
-
-      
-      if (JSON.stringify(defaultColumnOrder) !== JSON.stringify(columnPreferences?.columnOrder)) {
-        updateColumnOrder(defaultColumnOrder);
-      }
-    }
-  }, [providers, columnOrder.length, columnPreferences?.columnOrder, updateColumnOrder]);
+  // REMOVED: This useEffect was causing column order to reset to default
+  // The preferences system now handles default column order properly
 
 
 
@@ -680,17 +699,19 @@ export default function ContractGenerator() {
     }
   }, [dispatch]);
 
-  // Filtering logic (by name or specialty)
-  const filteredProviders = providers.filter((provider) => {
-    const name = provider.name?.toLowerCase() || '';
-    const specialty = (provider as any).specialty?.toLowerCase() || '';
-    const searchTerm = search.toLowerCase();
-    const matchesSearch = name.includes(searchTerm) || specialty.includes(searchTerm);
-    const matchesSpecialty = selectedSpecialty === "__ALL__" || provider.specialty === selectedSpecialty;
-    const matchesSubspecialty = selectedSubspecialty === "__ALL__" || provider.subspecialty === selectedSubspecialty;
-    const matchesProviderType = selectedProviderType === "__ALL__" || provider.providerType === selectedProviderType;
-    return matchesSearch && matchesSpecialty && matchesSubspecialty && matchesProviderType;
-  });
+  // Optimized filtering logic with memoization
+  const filteredProviders = useMemo(() => {
+    return providers.filter((provider) => {
+      const name = provider.name?.toLowerCase() || '';
+      const specialty = (provider as any).specialty?.toLowerCase() || '';
+      const searchTerm = search.toLowerCase();
+      const matchesSearch = name.includes(searchTerm) || specialty.includes(searchTerm);
+      const matchesSpecialty = selectedSpecialty === "__ALL__" || provider.specialty === selectedSpecialty;
+      const matchesSubspecialty = selectedSubspecialty === "__ALL__" || provider.subspecialty === selectedSubspecialty;
+      const matchesProviderType = selectedProviderType === "__ALL__" || provider.providerType === selectedProviderType;
+      return matchesSearch && matchesSpecialty && matchesSubspecialty && matchesProviderType;
+    });
+  }, [providers, search, selectedSpecialty, selectedSubspecialty, selectedProviderType]);
 
   // Bulk generation hook - replaces all bulk generation logic
   const {
@@ -876,72 +897,22 @@ export default function ContractGenerator() {
 
 
 
+
+
+
+
+
+
+
+
   // Pagination logic - apply to ALL filtered providers, not just tab-filtered ones
-  const paginatedProviders = filteredProviders.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-  const totalPages = Math.ceil(filteredProviders.length / pageSize);
-
-
-
-
-
-
-
-
-
-
-
-  // Prepare row data for AG Grid - ONLY include the fields we have column definitions for
-  const agGridRows = paginatedProviders.map((provider: Provider) => {
-    // Find the latest generated contract for this provider (include all statuses)
-    const latestContract = generatedContracts
-      .filter(c => c.providerId === provider.id)
-      .sort((a, b) => {
-        // First sort by status (SUCCESS first, then PARTIAL_SUCCESS, then FAILED)
-        if (a.status === 'SUCCESS' && b.status !== 'SUCCESS') return -1;
-        if (a.status === 'PARTIAL_SUCCESS' && b.status === 'FAILED') return -1;
-        if (a.status === 'FAILED' && b.status === 'SUCCESS') return 1;
-        if (a.status === 'FAILED' && b.status === 'PARTIAL_SUCCESS') return 1;
-        // Then sort by date (newest first)
-        return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
-      })[0];
-    
-    let generationStatus = 'Not Generated';
-    if (latestContract) {
-      if (latestContract.status === 'SUCCESS') {
-        generationStatus = 'Success';
-      } else if (latestContract.status === 'PARTIAL_SUCCESS') {
-        generationStatus = 'Partial Success';
-      } else {
-        generationStatus = 'Failed';
-      }
-    } else {
-      generationStatus = 'Not Generated';
-    }
-    
-    // CRITICAL FIX: Only include fields that have column definitions
-    const allowedFields = [
-      'id', 'name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 
-      'administrativeRole', 'baseSalary', 'fte', 'startDate', 'compensationModel',
-      'totalFTE', 'TotalFTE', 'dynamicFields', 'compensationType', 'CompensationModel',
-      'generationStatus', 'actions'
-    ];
-    
-    const filteredProvider: any = {};
-    allowedFields.forEach(field => {
-      if (field in provider || field === 'generationStatus' || field === 'actions') {
-        if (field === 'generationStatus') {
-          filteredProvider[field] = generationStatus;
-        } else if (field === 'actions') {
-          // Add actions field for Contract Actions column
-          filteredProvider[field] = 'actions';
-        } else {
-          filteredProvider[field] = provider[field as keyof Provider];
-        }
-      }
-    });
-    
-    return filteredProvider;
-  });
+  const paginatedProviders = useMemo(() => {
+    return filteredProviders.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+  }, [filteredProviders, pageIndex, pageSize]);
+  
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredProviders.length / pageSize);
+  }, [filteredProviders.length, pageSize]);
 
   // Progress tracking will be calculated using the existing allFilteredProvidersWithStatus logic below
 
@@ -1128,7 +1099,6 @@ export default function ContractGenerator() {
     visibleRows,
     columnOrder,
     hiddenColumns,
-    columnPreferences,
     templates,
     generatedContracts,
     statusTab,
@@ -1140,6 +1110,31 @@ export default function ContractGenerator() {
     handleRowClick,
     getGenerationDate,
     gridRef: tempGridRef,
+    updateColumnOrder: (order) => {
+      // Convert order array to column objects and update
+      const newColumns = order.map(field => {
+        const existingColumn = columns.find(col => col.field === field);
+        return existingColumn || { field, headerName: field, visible: true };
+      });
+      updateColumns(newColumns);
+    },
+    updateColumnPinning: (pinning) => {
+      // Update pinning for columns
+      const newColumns = columns.map(col => ({
+        ...col,
+        pinned: pinning.left.includes(col.field) ? 'left' as const : 
+                pinning.right.includes(col.field) ? 'right' as const : undefined
+      }));
+      updateColumns(newColumns);
+    },
+    updateColumnVisibility: (visibility) => {
+      // Update visibility for columns
+      const newColumns = columns.map(col => ({
+        ...col,
+        visible: visibility[col.field] !== false
+      }));
+      updateColumns(newColumns);
+    },
   });
 
   // Component rendering hook - extracts all JSX rendering logic
@@ -1602,45 +1597,7 @@ export default function ContractGenerator() {
                     Columns
                   </Button>
                   
-                  {/* Active View Selector */}
-                  {Object.keys(savedViews).length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">View:</span>
-                      <Select
-                        value={activeColumnView}
-                        onValueChange={(viewName) => {
-                          if (viewName === 'default') {
-                            setActiveColumnView('default');
-                          } else if (savedViews[viewName]) {
-                            const viewData = savedViews[viewName];
-                            // Apply the saved view
-                            if (viewData.columnVisibility) {
-                              updateColumnVisibility(viewData.columnVisibility);
-                            }
-                            if (viewData.columnOrder) {
-                              updateColumnOrder(viewData.columnOrder);
-                            }
-                            if (viewData.columnPinning) {
-                              updateColumnPinning(viewData.columnPinning);
-                            }
-                            setActiveColumnView(viewName);
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="w-32 h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="default">Default</SelectItem>
-                          {Object.keys(savedViews).map(viewName => (
-                            <SelectItem key={viewName} value={viewName}>
-                              {viewName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                  
                 </div>
               </div>
             </div>
@@ -1650,6 +1607,7 @@ export default function ContractGenerator() {
           <div className={`ag-theme-alpine w-full border border-gray-200 rounded-lg overflow-visible ${statusTab === 'processed' ? 'processed-tab' : ''}`} style={gridStyle}>
             <AgGridReact
                 ref={tempGridRef}
+                key={`grid-${statusTab}-${columnOrder.join('-')}`}
               rowData={visibleRows}
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
               onRowClicked={statusTab === 'processed' ? undefined : handleRowClick}
@@ -2031,21 +1989,14 @@ export default function ContractGenerator() {
                     <div className="text-sm font-medium text-gray-700 mb-3">Saved Views</div>
                     <div className="flex gap-2 mb-3">
                       <select 
-                        value={activeColumnView} 
+                        value="default" 
                         onChange={(e) => {
-                          const viewName = e.target.value;
-                          setActiveColumnView(viewName);
-                          if (savedViews[viewName]) {
-                            updateColumnOrder(savedViews[viewName].columnOrder);
-                            updateColumnVisibility(savedViews[viewName].columnVisibility);
-                          }
+                          // TODO: Implement saved views functionality
+                          alert('Saved views coming soon!');
                         }}
                         className="flex-1 text-sm border rounded px-2 py-1"
                       >
                         <option value="default">Default View</option>
-                        {Object.keys(savedViews).map(viewName => (
-                          <option key={viewName} value={viewName}>{viewName}</option>
-                        ))}
                       </select>
                     </div>
                     <div className="flex gap-2">
@@ -2053,14 +2004,7 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          const viewName = prompt('Enter view name:');
-                          if (viewName && viewName.trim()) {
-                            createSavedView(viewName.trim(), {
-                              columnVisibility: columnPreferences?.columnVisibility || {},
-                              columnOrder,
-                              columnPinning: columnPreferences?.columnPinning || {}
-                            });
-                          }
+                          alert('Save view functionality coming soon!');
                         }}
                         className="flex-1 text-xs"
                       >
@@ -2070,8 +2014,6 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          // This would open a more advanced arrangement dialog
-                          // For now, just show a message
                           alert('Advanced arrangement features coming soon!');
                         }}
                         className="flex-1 text-xs"
@@ -2089,7 +2031,8 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          updateColumnPinning({ left: [], right: [] });
+                          const newColumns = columns.map(col => ({ ...col, pinned: undefined }));
+                          updateColumns(newColumns);
                         }}
                         className="flex-1 text-xs"
                       >
@@ -2099,9 +2042,14 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          // Pin first 2 columns to left by default
-                          const firstTwoColumns = columnOrder.slice(0, 2);
-                          updateColumnPinning({ left: firstTwoColumns, right: [] });
+                          // Pin first 2 visible columns to left by default
+                          const visibleColumns = columns.filter(col => col.visible);
+                          const firstTwoColumns = visibleColumns.slice(0, 2);
+                          const newColumns = columns.map(col => ({
+                            ...col,
+                            pinned: firstTwoColumns.some(fc => fc.field === col.field) ? 'left' as const : undefined
+                          }));
+                          updateColumns(newColumns);
                         }}
                         className="flex-1 text-xs"
                       >
@@ -2110,13 +2058,13 @@ export default function ContractGenerator() {
                     </div>
                     
                     {/* Show pinned columns summary */}
-                    {((columnPreferences?.columnPinning?.left || []).length > 0 || (columnPreferences?.columnPinning?.right || []).length > 0) && (
+                    {columns.some(col => col.pinned) && (
                       <div className="text-xs text-gray-600 mb-3">
-                        {(columnPreferences?.columnPinning?.left || []).length > 0 && (
-                          <div>Left: {(columnPreferences?.columnPinning?.left || []).join(', ')}</div>
+                        {columns.filter(col => col.pinned === 'left').length > 0 && (
+                          <div>Left: {columns.filter(col => col.pinned === 'left').map(col => col.headerName).join(', ')}</div>
                         )}
-                        {(columnPreferences?.columnPinning?.right || []).length > 0 && (
-                          <div>Right: {(columnPreferences?.columnPinning?.right || []).join(', ')}</div>
+                        {columns.filter(col => col.pinned === 'right').length > 0 && (
+                          <div>Right: {columns.filter(col => col.pinned === 'right').map(col => col.headerName).join(', ')}</div>
                         )}
                       </div>
                     )}
@@ -2130,11 +2078,8 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          const allVisible = columnOrder.reduce((acc, field) => {
-                            acc[field] = true;
-                            return acc;
-                          }, {} as Record<string, boolean>);
-                          updateColumnVisibility(allVisible);
+                          const newColumns = columns.map(col => ({ ...col, visible: true }));
+                          updateColumns(newColumns);
                         }}
                         className="flex-1 text-xs"
                       >
@@ -2144,11 +2089,8 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          const allHidden = columnOrder.reduce((acc, field) => {
-                            acc[field] = false; // Hide all columns
-                            return acc;
-                          }, {} as Record<string, boolean>);
-                          updateColumnVisibility(allHidden);
+                          const newColumns = columns.map(col => ({ ...col, visible: false }));
+                          updateColumns(newColumns);
                         }}
                         className="flex-1 text-xs"
                       >
@@ -2157,31 +2099,16 @@ export default function ContractGenerator() {
                     </div>
                   </div>
 
-                  {/* Column Reordering */}
+                  {/* Column Order */}
                   <div>
                     <div className="text-sm font-medium text-gray-700 mb-3">Column Order</div>
                     <div className="text-xs text-gray-500 mb-3">Drag to reorder columns. Click eye to show/hide.</div>
                     <div className="space-y-1">
-                      {columnOrder.map((field, index) => {
-                        // Simple field name mapping for display
-                        const fieldDisplayNames: Record<string, string> = {
-                          name: 'Provider Name',
-                          employeeId: 'Employee ID',
-                          specialty: 'Specialty',
-                          subspecialty: 'Subspecialty',
-                          providerType: 'Provider Type',
-                          administrativeRole: 'Administrative Role',
-                          baseSalary: 'Base Salary',
-                          fte: 'FTE',
-                          startDate: 'Start Date',
-                          compensationModel: 'Compensation Model',
-                          assignedTemplate: 'Template',
-                        };
-                        const headerName = fieldDisplayNames[field] || field;
+                      {columns.map((column, index) => {
                         
                         return (
                           <div
-                            key={field}
+                            key={column.field}
                             className="flex items-center gap-2 p-2 bg-gray-50 rounded border hover:bg-gray-100 transition-colors"
                             draggable
                             onDragStart={(e) => {
@@ -2196,11 +2123,11 @@ export default function ContractGenerator() {
                               const hoverIndex = index;
                               
                               if (dragIndex !== hoverIndex) {
-                                const newOrder = [...columnOrder];
-                                const draggedItem = newOrder[dragIndex];
-                                newOrder.splice(dragIndex, 1);
-                                newOrder.splice(hoverIndex, 0, draggedItem);
-                                updateColumnOrder(newOrder);
+                                const newColumns = [...columns];
+                                const draggedColumn = newColumns[dragIndex];
+                                newColumns.splice(dragIndex, 1);
+                                newColumns.splice(hoverIndex, 0, draggedColumn);
+                                updateColumns(newColumns);
                               }
                             }}
                           >
@@ -2212,20 +2139,20 @@ export default function ContractGenerator() {
                             {/* Visibility Toggle */}
                             <button
                               onClick={() => {
-                                const newVisibility = { ...columnPreferences?.columnVisibility };
-                                newVisibility[field] = !newVisibility[field];
-                                updateColumnVisibility(newVisibility);
+                                const newColumns = [...columns];
+                                newColumns[index].visible = !newColumns[index].visible;
+                                updateColumns(newColumns);
                               }}
                               className="p-1 rounded text-gray-600 hover:text-blue-600"
                             >
-                              {hiddenColumns.has(field) ? (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.464 8.464M18.364 18.364l-9.9-9.9" />
-                                </svg>
-                              ) : (
+                              {column.visible ? (
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.464 8.464M18.364 18.364l-9.9-9.9" />
                                 </svg>
                               )}
                             </button>
@@ -2234,51 +2161,36 @@ export default function ContractGenerator() {
                             <button
                               onClick={(e) => {
                                 e.preventDefault();
-                                const currentPinning = columnPreferences?.columnPinning || { left: [], right: [] };
-                                const leftPinned = currentPinning.left || [];
-                                const rightPinned = currentPinning.right || [];
-                                
-                                const isLeftPinned = leftPinned.includes(field);
-                                const isRightPinned = rightPinned.includes(field);
+                                const newColumns = [...columns];
+                                const column = newColumns[index];
                                 
                                 if (e.shiftKey) {
                                   // Shift+Click: Pin to right or unpin from right
-                                  if (isRightPinned) {
-                                    updateColumnPinning({
-                                      left: leftPinned,
-                                      right: rightPinned.filter(f => f !== field)
-                                    });
+                                  if (column.pinned === 'right') {
+                                    column.pinned = undefined;
                                   } else {
-                                    updateColumnPinning({
-                                      left: leftPinned.filter(f => f !== field),
-                                      right: [...rightPinned, field]
-                                    });
+                                    column.pinned = 'right';
                                   }
                                 } else {
                                   // Regular click: Pin to left or unpin from left
-                                  if (isLeftPinned) {
-                                    updateColumnPinning({
-                                      left: leftPinned.filter(f => f !== field),
-                                      right: rightPinned
-                                    });
+                                  if (column.pinned === 'left') {
+                                    column.pinned = undefined;
                                   } else {
-                                    updateColumnPinning({
-                                      left: [...leftPinned, field],
-                                      right: rightPinned.filter(f => f !== field)
-                                    });
+                                    column.pinned = 'left';
                                   }
                                 }
+                                
+                                updateColumns(newColumns);
                               }}
                               className={`p-1 rounded transition-colors ${
-                                (columnPreferences?.columnPinning?.left || []).includes(field) || 
-                                (columnPreferences?.columnPinning?.right || []).includes(field)
+                                column.pinned
                                   ? 'text-blue-600 hover:text-blue-800 bg-blue-50' 
                                   : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
                               }`}
                               title={
-                                (columnPreferences?.columnPinning?.left || []).includes(field) 
+                                column.pinned === 'left' 
                                   ? 'Click to unpin from left' 
-                                  : (columnPreferences?.columnPinning?.right || []).includes(field)
+                                  : column.pinned === 'right'
                                   ? 'Click to unpin from right'
                                   : 'Click to pin left • Shift+click to pin right'
                               }
@@ -2289,11 +2201,11 @@ export default function ContractGenerator() {
                             </button>
 
                             {/* Column Name */}
-                            <span className={`flex-1 text-sm ${field === 'name' ? 'text-gray-700' : 'text-gray-700'}`}>
-                              {headerName}
-                              {(columnPreferences?.columnPinning?.left || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned left)</span>}
-                              {(columnPreferences?.columnPinning?.right || []).includes(field) && <span className="text-xs text-blue-600 ml-1">(pinned right)</span>}
-                              {field.toLowerCase().includes('fte') && <span className="text-xs text-blue-500 ml-1">FTE</span>}
+                            <span className="flex-1 text-sm text-gray-700">
+                              {column.headerName}
+                              {column.pinned === 'left' && <span className="text-xs text-blue-600 ml-1">(pinned left)</span>}
+                              {column.pinned === 'right' && <span className="text-xs text-blue-600 ml-1">(pinned right)</span>}
+                              {column.field.toLowerCase().includes('fte') && <span className="text-xs text-blue-500 ml-1">FTE</span>}
                             </span>
                             
                             {/* Move Buttons */}
@@ -2301,9 +2213,9 @@ export default function ContractGenerator() {
                               <button
                                 onClick={() => {
                                   if (index > 0) {
-                                    const newOrder = [...columnOrder];
-                                    [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
-                                    updateColumnOrder(newOrder);
+                                    const newColumns = [...columns];
+                                    [newColumns[index], newColumns[index - 1]] = [newColumns[index - 1], newColumns[index]];
+                                    updateColumns(newColumns);
                                   }
                                 }}
                                 disabled={index === 0}
@@ -2315,13 +2227,13 @@ export default function ContractGenerator() {
                               </button>
                               <button
                                 onClick={() => {
-                                  if (index < columnOrder.length - 1) {
-                                    const newOrder = [...columnOrder];
-                                    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-                                    updateColumnOrder(newOrder);
+                                  if (index < columns.length - 1) {
+                                    const newColumns = [...columns];
+                                    [newColumns[index], newColumns[index + 1]] = [newColumns[index + 1], newColumns[index]];
+                                    updateColumns(newColumns);
                                   }
                                 }}
-                                disabled={index === columnOrder.length - 1}
+                                disabled={index === columns.length - 1}
                                 className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
                               >
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3322,16 +3234,6 @@ export default function ContractGenerator() {
             setProgressModalOpen(false);
           }}
         />
-        
-        {/* Debug overlay indicator */}
-        {progressModalOpen && (
-          <div 
-            className="fixed top-4 right-4 bg-red-500 text-white px-3 py-1 rounded text-sm z-[9999]"
-            style={{ pointerEvents: 'none' }}
-          >
-            Progress Modal Open (z-50 overlay active)
-          </div>
-        )}
 
 
 

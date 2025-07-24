@@ -40,7 +40,7 @@ import ProfilePage from './features/auth/ProfilePage';
 import PublicRoute from './components/PublicRoute';
 import { AuthLayout } from './components/AuthLayout';
 import { withErrorBoundary } from './components/ErrorBoundary';
-import { ErrorHandlerProvider } from './components/ui/error-handler';
+import { EnterpriseNotificationProvider } from './components/ui/enterprise-notifications';
 import { fetchMappingsIfNeeded } from '@/features/templates/mappingsSlice';
 import { fetchProvidersIfNeeded } from '@/store/slices/providerSlice';
 import { fetchTemplatesIfNeeded } from '@/features/templates/templatesSlice';
@@ -324,11 +324,10 @@ function App() {
   return (
     <Provider store={store}>
       <AppInitializer />
-      <ErrorHandlerProvider>
+      <EnterpriseNotificationProvider>
       <AuthProvider>
         <YearProvider>
           <Router>
-            <Toaster position="top-right" richColors />
             <Routes>
               {/* Public routes with the new minimal layout */}
               <Route element={<AuthLayout />}>
@@ -357,7 +356,7 @@ function App() {
           </Router>
         </YearProvider>
       </AuthProvider>
-      </ErrorHandlerProvider>
+      </EnterpriseNotificationProvider>
     </Provider>
   );
 }

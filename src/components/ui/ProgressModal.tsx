@@ -48,16 +48,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({
             <LoadingSpinner size="md" color="primary" />
           )}
           
-          {/* Debug: Force close button */}
-          <button
-            onClick={() => {
-              console.log('Force closing progress modal');
-              onClose?.();
-            }}
-            className="mt-4 px-3 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
-          >
-            Force Close (Debug)
-          </button>
+
         </div>
       </DialogContent>
     </Dialog>

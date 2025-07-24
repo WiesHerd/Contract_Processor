@@ -181,4 +181,23 @@ html, body {
 /* Remove border from last row for a clean finish */
 .ag-theme-alpine .ag-center-cols-container .ag-row:last-child {
   border-bottom: none !important;
+}
+
+/* Fix selection cell click issues */
+.ag-theme-alpine .ag-cell[col-id="selected"] {
+  pointer-events: auto !important;
+  z-index: 9999 !important;
+}
+
+/* Prevent AG Grid from interfering with selection clicks */
+.ag-theme-alpine .ag-cell[col-id="selected"] * {
+  pointer-events: auto !important;
+}
+
+/* Disable text selection in selection cells */
+.ag-theme-alpine .ag-cell[col-id="selected"] {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
 } 
