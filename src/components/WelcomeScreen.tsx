@@ -14,32 +14,28 @@ const mainFeatures = [
     description: 'Design and manage contract templates with dynamic placeholders',
     icon: <FileText className="w-6 h-6" />,
     path: '/templates',
-    gradient: 'from-blue-600 via-blue-500 to-cyan-500',
-    stats: '12 active'
+    gradient: 'from-blue-600 via-blue-500 to-cyan-500'
   },
   {
     title: 'Dynamic Blocks',
     description: 'Create intelligent conditional content with advanced logic',
     icon: <Zap className="w-6 h-6" />,
     path: '/dynamic-blocks',
-    gradient: 'from-amber-600 via-amber-500 to-yellow-500',
-    stats: '8 blocks'
+    gradient: 'from-amber-600 via-amber-500 to-yellow-500'
   },
   {
     title: 'Providers',
     description: 'Centralized provider data management and bulk operations',
     icon: <Users className="w-6 h-6" />,
     path: '/providers',
-    gradient: 'from-emerald-600 via-emerald-500 to-green-500',
-    stats: '1,247 records'
+    gradient: 'from-emerald-600 via-emerald-500 to-green-500'
   },
   {
     title: 'Generate',
     description: 'Automated contract generation with enterprise-grade processing',
     icon: <FilePlus2 className="w-6 h-6" />,
     path: '/generate',
-    gradient: 'from-purple-600 via-purple-500 to-indigo-500',
-    stats: '3,456 generated'
+    gradient: 'from-purple-600 via-purple-500 to-indigo-500'
   }
 ];
 
@@ -90,15 +86,15 @@ export const WelcomeScreen = () => {
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg blur opacity-20"></div>
-                  <div className={`relative p-2 rounded-lg ${isDark ? 'bg-gray-900' : 'bg-white'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
-                    <Logo size={24} />
+                  <div className={`relative p-3 rounded-lg ${isDark ? 'bg-gray-900' : 'bg-white'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                    <Logo size={32} />
                   </div>
                 </div>
                 <div>
-                  <h1 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  <h1 className={`text-2xl font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     ContractEngine
                   </h1>
-                  <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                     Physician Contract Automation
                   </p>
                 </div>
@@ -167,12 +163,9 @@ export const WelcomeScreen = () => {
                 <h3 className={`text-2xl font-bold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                   {feature.title}
                 </h3>
-                <p className={`text-base mb-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                <p className={`text-base ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                   {feature.description}
                 </p>
-                <div className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
-                  {feature.stats}
-                </div>
               </div>
             </button>
           ))}

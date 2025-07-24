@@ -70,6 +70,8 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ContractPreviewModal from './components/ContractPreviewModal';
+import { ContractProgressChart } from '@/components/ui/ContractProgressChart';
+import { useContractProgress } from './hooks/useContractProgress';
 
 
 
@@ -199,6 +201,9 @@ export default function ContractGenerator() {
     visibleRows: [], // Will be updated after visibleRows is computed
     gridRef: tempGridRef
   });
+
+  // Contract progress tracking hook
+  const contractProgress = useContractProgress();
 
   // Progress tracking state
   const [progressModalOpen, setProgressModalOpen] = useState(false);
@@ -1227,33 +1232,32 @@ export default function ContractGenerator() {
         {/* Header Card - Consistent with Templates/Providers */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
               <h1 className="text-lg font-bold text-gray-800">Contract Generation</h1>
+              
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="cursor-pointer">
-                      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Info" />
-                    </span>
+                    <button
+                      onClick={() => setInstructionsModalOpen(true)}
+                      className="cursor-pointer p-1 rounded hover:bg-gray-100 transition-colors"
+                      aria-label="View instructions"
+                    >
+                      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" />
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" align="start">
-                    Generate contracts for selected providers using your templates
+                    View detailed instructions and help
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setInstructionsModalOpen(true)}
-                className="text-blue-600 border-blue-300 hover:bg-blue-50"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Instructions
-              </Button>
-            </div>
+            
+            {/* Donut Progress Chart - Moved to the right */}
+            <ContractProgressChart 
+              progress={contractProgress} 
+              className="flex-shrink-0"
+            />
           </div>
           <hr className="my-3 border-gray-100" />
         </div>
