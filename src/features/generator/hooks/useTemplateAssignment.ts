@@ -17,9 +17,10 @@ interface UseTemplateAssignmentProps {
   selectedTemplate: Template | null;
   getFilteredProviderIds: () => string[];
   showSuccess: (message: string) => void;
-  showError: (error: { message: string; severity: string }) => void;
+  showError: (error: { message: string; severity?: string }) => void;
   showWarning: (message: string) => void;
   showInfo: (message: string) => void;
+  generatedContracts?: any[]; // Add generatedContracts to props
 }
 
 interface UseTemplateAssignmentReturn {
@@ -51,7 +52,8 @@ export const useTemplateAssignment = ({
   showSuccess,
   showError,
   showWarning,
-  showInfo
+  showInfo,
+  generatedContracts
 }: UseTemplateAssignmentProps): UseTemplateAssignmentReturn => {
   const dispatch = useDispatch<AppDispatch>();
   
@@ -71,18 +73,52 @@ export const useTemplateAssignment = ({
       t.name.trim() !== ''
     );
     
-    // ONLY check for explicit individual assignment - no global fallback
+    // Debug logging
+    console.log('getAssignedTemplate Debug:', {
+      providerId: provider?.id,
+      providerName: provider?.name,
+      templateAssignmentsCount: Object.keys(templateAssignments).length,
+      selectedTemplateId: selectedTemplate?.id,
+      selectedTemplateName: selectedTemplate?.name,
+      generatedContractsLength: generatedContracts?.length,
+      validTemplatesLength: validTemplates.length
+    });
+    
+    // 1. Check for explicit individual assignment first
     if (templateAssignments[provider.id]) {
       const assignedTemplate = validTemplates.find(t => t.id === templateAssignments[provider.id]);
       if (assignedTemplate) {
+        console.log('Found explicit assignment:', assignedTemplate.name);
         return assignedTemplate;
       }
       return null;
     }
     
-    // No fallback to global template - require explicit assignment
+    // 2. Fallback to selected template (global assignment)
+    if (selectedTemplate && selectedTemplate.id && selectedTemplate.id.trim() !== '') {
+      const validSelectedTemplate = validTemplates.find(t => t.id === selectedTemplate.id);
+      if (validSelectedTemplate) {
+        console.log('Found global assignment:', validSelectedTemplate.name);
+        return validSelectedTemplate;
+      }
+    }
+    
+    // 3. Fallback to template used when contract was generated
+    if (generatedContracts && generatedContracts.length > 0) {
+      const providerContract = generatedContracts.find(c => c.providerId === provider.id);
+      if (providerContract && providerContract.templateId && providerContract.templateId.trim() !== '') {
+        const contractTemplate = validTemplates.find(t => t.id === providerContract.templateId);
+        if (contractTemplate) {
+          console.log('Found historical assignment:', contractTemplate.name);
+          return contractTemplate;
+        }
+      }
+    }
+    
+    // 4. No assignment found
+    console.log('No template assignment found');
     return null;
-  }, [templates, templateAssignments]);
+  }, [templates, templateAssignments, selectedTemplate, generatedContracts]);
 
   // Update template assignment for a provider
   const updateProviderTemplate = useCallback((providerId: string, templateId: string | null) => {

@@ -89,6 +89,41 @@ const getCompensationModel = (provider: any): string => {
   return model || 'Not Specified';
 };
 
+// Utility function to create professional template display names
+const createTemplateDisplayName = (templateName: string, version: string = '1'): { short: string; full: string } => {
+  const fullName = `${templateName} (v${version})`;
+  
+  // If name is short enough, use as-is
+  if (templateName.length <= 18) {
+    return { short: fullName, full: fullName };
+  }
+  
+  // Create a professional short name
+  // Extract key parts: "Schedule_A_Template_With_CF_and_FTE_Breakdown" -> "Schedule A (v1)"
+  const words = templateName.split('_');
+  let shortName = '';
+  
+  if (words.length >= 2) {
+    // Use first two meaningful words
+    const firstWord = words[0];
+    const secondWord = words[1];
+    
+    if (firstWord.toLowerCase() === 'schedule' && secondWord) {
+      shortName = `Schedule ${secondWord}`;
+    } else {
+      shortName = `${firstWord} ${secondWord}`;
+    }
+  } else {
+    // Fallback to first 15 characters
+    shortName = templateName.substring(0, 15);
+  }
+  
+  return { 
+    short: `${shortName}... (v${version})`, 
+    full: fullName 
+  };
+};
+
 // Memoized cell renderers to prevent recreation
 const createSelectionCellRenderer = (selectedProviderIds: string[], setSelectedProviderIds: any) => {
   return (params: any) => {
@@ -338,6 +373,59 @@ export const useGeneratorGrid = ({
       },
     },
 
+    assignedTemplate: {
+      field: 'assignedTemplate',
+      headerName: 'Template',
+      width: 160,
+      minWidth: 140,
+      maxWidth: 180,
+      valueGetter: (params: any) => {
+        const provider = params.data;
+        const assignedTemplate = getAssignedTemplate(provider);
+        
+        if (!assignedTemplate) {
+          return 'No template';
+        }
+        
+        // Create a shortened version for display
+        const { short, full } = createTemplateDisplayName(assignedTemplate.name, assignedTemplate.version || '1');
+        
+        // Store full name in data for tooltip
+        params.data._fullTemplateName = full;
+        params.data._isTemplateTruncated = short !== full;
+        
+        return short;
+      },
+      sortable: true,
+      filter: false,
+      tooltipValueGetter: (params: any) => {
+        // Return full template name for tooltip
+        return params.data._fullTemplateName || params.value;
+      },
+      cellRenderer: (params: any) => {
+        const value = params.value;
+        const isTruncated = params.data._isTemplateTruncated;
+        
+        if (!value || value === 'No template') {
+          return `<span class="text-gray-400">${value}</span>`;
+        }
+        
+        // Add visual indicator for truncated names
+        const truncatedIndicator = isTruncated ? '<span class="text-blue-500 ml-1">⋯</span>' : '';
+        
+        return `<div class="flex items-center justify-between w-full">
+          <span class="truncate">${value}</span>
+          ${truncatedIndicator}
+        </div>`;
+      },
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap',
+        cursor: 'help'
+      },
+    },
+
     }), [templates, getAssignedTemplate, updateProviderTemplate]);
 
   // Generation Status column - Always show
@@ -353,8 +441,18 @@ export const useGeneratorGrid = ({
       const assignedTemplate = getAssignedTemplate(provider);
       const contract = generatedContracts.find(c => c.providerId === provider.id);
       
+      // Debug logging
+      console.log('Generation Status Debug:', {
+        providerId: provider?.id,
+        providerName: provider?.name,
+        assignedTemplate: assignedTemplate?.name,
+        contractFound: !!contract,
+        contractStatus: contract?.status,
+        generatedContractsLength: generatedContracts?.length
+      });
+      
       if (!assignedTemplate) {
-        return '— No Template';
+        return '⬜ Not Processed';
       }
       
       if (!contract) {
@@ -392,6 +490,16 @@ export const useGeneratorGrid = ({
       const provider = params.data;
       const assignedTemplate = getAssignedTemplate(provider);
       const contract = generatedContracts.find(c => c.providerId === provider.id);
+      
+      // Debug logging
+      console.log('Contract Actions Debug:', {
+        providerId: provider?.id,
+        providerName: provider?.name,
+        assignedTemplate: assignedTemplate?.name,
+        contractFound: !!contract,
+        contractStatus: contract?.status,
+        generatedContractsLength: generatedContracts?.length
+      });
       
       // If no template assigned, show "Assign Template"
       if (!assignedTemplate) {
@@ -492,6 +600,21 @@ export const useGeneratorGrid = ({
     
     // Add columns in the order specified by columnOrder
     columnOrder.forEach(field => {
+      // Skip template column for processed tab
+      if (statusTab === 'processed' && field === 'assignedTemplate') {
+        return;
+      }
+      
+      // Skip template column for all tab
+      if (statusTab === 'all' && field === 'assignedTemplate') {
+        return;
+      }
+      
+      // Skip template, generation status, and actions columns for notGenerated tab
+      if (statusTab === 'notGenerated' && (field === 'assignedTemplate' || field === 'generationStatus' || field === 'actions')) {
+        return;
+      }
+      
       const colDef = allColumnDefs[field as keyof typeof allColumnDefs];
       if (colDef) {
         // Apply pinning from preferences
@@ -516,9 +639,11 @@ export const useGeneratorGrid = ({
       }
     });
     
-    // Add generation status and actions columns for all tabs
-    orderedColumns.push(generationStatusColumn);
-    orderedColumns.push(contractActionsColumn);
+    // Add generation status and actions columns for all tabs except notGenerated
+    if (statusTab !== 'notGenerated') {
+      orderedColumns.push(generationStatusColumn);
+      orderedColumns.push(contractActionsColumn);
+    }
     
     // Debug logging
     console.log('🔍 Column Debug:', {
@@ -528,7 +653,7 @@ export const useGeneratorGrid = ({
     });
     
     return orderedColumns;
-  }, [selectColumn, allColumnDefs, columnOrder, hiddenColumns, leftPinned, rightPinned, generationStatusColumn, contractActionsColumn]);
+  }, [selectColumn, allColumnDefs, columnOrder, hiddenColumns, leftPinned, rightPinned, generationStatusColumn, contractActionsColumn, statusTab]);
 
   // Grid options and configuration - optimized for performance
   const gridOptions = useMemo(() => ({

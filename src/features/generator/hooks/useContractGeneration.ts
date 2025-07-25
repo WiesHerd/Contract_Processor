@@ -27,7 +27,7 @@ interface UseContractGenerationProps {
   setUserError: (error: string) => void;
   showSuccess: (message: string) => void;
   showWarning: (message: string) => void;
-  showError: (message: string) => void;
+  showError: (error: { message: string; severity?: string }) => void;
 }
 
 interface GenerationResult {

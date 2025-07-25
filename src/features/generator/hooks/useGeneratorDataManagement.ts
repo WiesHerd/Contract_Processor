@@ -22,7 +22,7 @@ interface UseGeneratorDataManagementProps {
   setUserError: (error: string) => void;
   showSuccess: (message: string) => void;
   showWarning: (message: string) => void;
-  showError: (error: any) => void;
+  showError: (error: { message: string; severity?: string }) => void;
   showInfo: (message: string) => void;
   setIsClearing: (clearing: boolean) => void;
   setClearingProgress: (progress: number) => void;

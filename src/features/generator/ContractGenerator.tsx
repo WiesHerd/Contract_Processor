@@ -304,7 +304,8 @@ export default function ContractGenerator() {
     showSuccess,
     showError,
     showWarning,
-    showInfo
+    showInfo,
+    generatedContracts
   });
 
   // Initialize template assignments with session data on mount
@@ -481,12 +482,40 @@ export default function ContractGenerator() {
   }, [columns]);
 
   const columnOrder = useMemo(() => {
-    return columns.map(col => col.field);
-  }, [columns]);
+    // Filter out template column for processed tab
+    // Filter out template column for all tab
+    // Filter out template, generation status, and actions columns for notGenerated tab
+    return columns
+      .filter(col => {
+        if (statusTab === 'processed' && col.field === 'assignedTemplate') {
+          return false;
+        }
+        if (statusTab === 'all' && col.field === 'assignedTemplate') {
+          return false;
+        }
+        if (statusTab === 'notGenerated' && (col.field === 'assignedTemplate' || col.field === 'generationStatus' || col.field === 'actions')) {
+          return false;
+        }
+        return true;
+      })
+      .map(col => col.field);
+  }, [columns, statusTab]);
 
   const hiddenColumns = useMemo(() => {
-    return new Set(columns.filter(col => !col.visible).map(col => col.field));
-  }, [columns]);
+    // For processed tab, always hide the template column
+    // For all tab, always hide the template column
+    // For notGenerated tab, always hide template, generation status, and actions columns
+    const hiddenFields = columns
+      .filter(col => {
+        if (!col.visible) return true;
+        if (statusTab === 'processed' && col.field === 'assignedTemplate') return true;
+        if (statusTab === 'all' && col.field === 'assignedTemplate') return true;
+        if (statusTab === 'notGenerated' && (col.field === 'assignedTemplate' || col.field === 'generationStatus' || col.field === 'actions')) return true;
+        return false;
+      })
+      .map(col => col.field);
+    return new Set(hiddenFields);
+  }, [columns, statusTab]);
 
   const pinnedColumns = useMemo(() => {
     return {
@@ -1928,12 +1957,33 @@ export default function ContractGenerator() {
             overflow: hidden !important;
           }
           
-          /* Fix template column layout */
+          /* Fix template column layout - professional truncation approach */
           .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] {
-            min-width: 150px !important;
-            max-width: 200px !important;
+            min-width: 140px !important;
+            max-width: 180px !important;
             position: relative !important;
-            overflow: visible !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+            cursor: help !important;
+            padding: 8px 12px !important;
+          }
+          /* Ensure template column tooltips work properly */
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"]:hover {
+            background-color: #f8fafc !important;
+          }
+          /* Style truncated indicator */
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] .text-blue-500 {
+            color: #3b82f6 !important;
+            font-weight: bold !important;
+            font-size: 14px !important;
+          }
+          /* Ensure proper flex layout in template cells */
+          .ag-theme-alpine .ag-cell[col-id="assignedTemplate"] div {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            width: 100% !important;
           }
           
           /* Ensure tooltips appear above AG Grid */
