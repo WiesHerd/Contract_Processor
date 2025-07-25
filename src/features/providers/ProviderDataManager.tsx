@@ -607,7 +607,7 @@ export default function ProviderDataManager() {
                 disabled={loading}
               >
                 <Upload className="w-4 h-4 mr-2" />
-                Upload CSV
+                📊 Upload CSV
               </Button>
               <Button
                 variant="outline"
@@ -616,7 +616,7 @@ export default function ProviderDataManager() {
                 disabled={loading}
               >
                 <Download className="w-4 h-4 mr-2" />
-                Download CSV Template
+                📋 Download Template
               </Button>
               <Button
                 variant="outline"
@@ -625,7 +625,7 @@ export default function ProviderDataManager() {
                 disabled={loading || providers.length === 0}
               >
                 <Download className="w-4 h-4 mr-2" />
-                Download Full CSV
+                📥 Export All Data
               </Button>
             </div>
             {/* Right group: Sticky toggle, Clear Table */}

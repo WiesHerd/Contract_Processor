@@ -128,23 +128,85 @@ b, strong { font-weight: bold !important; }
       const runDate = new Date().toISOString().split('T')[0];
       const fileName = getContractFileName(contractYear, provider.name, runDate);
       
-      // For bulk operations, skip individual S3 uploads and DynamoDB logging
-      // We'll do batch operations later for better performance
+      // Upload to S3 for individual download capability
       const contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
+      const generationTimestamp = new Date().toISOString();
       
-      // Add to Redux state for immediate UI update (without S3/DynamoDB overhead)
+      let s3Status: 'SUCCESS' | 'FAILED' = 'FAILED';
+      let dynamoDbStatus: 'SUCCESS' | 'FAILED' = 'FAILED';
+      let error: string | undefined = undefined;
+      
+      try {
+        // Convert Blob to File for S3 upload
+        const file = new File([docxBlob], fileName, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        
+        console.log('🔍 Uploading to S3:', {
+          fileName,
+          contractId,
+          fileSize: file.size,
+          generationTimestamp
+        });
+        
+        // Upload to S3
+        const { saveContractFile } = await import('@/utils/s3Storage');
+        const s3Key = await saveContractFile(file, contractId, {
+          generatedAt: generationTimestamp,
+          contractYear: contractYear,
+          providerName: provider.name,
+          templateName: assignedTemplate.name
+        });
+        
+        console.log('✅ S3 upload successful:', s3Key);
+        s3Status = 'SUCCESS';
+        
+        // Log to DynamoDB
+        const { ContractGenerationLogService } = await import('@/services/contractGenerationLogService');
+        await ContractGenerationLogService.createLog({
+          providerId: provider.id,
+          contractYear: contractYear,
+          templateId: assignedTemplate.id,
+          generatedAt: generationTimestamp,
+          status: 'SUCCESS',
+          fileUrl: fileName,
+          notes: 'Generated via bulk operation'
+        });
+        dynamoDbStatus = 'SUCCESS';
+        
+      } catch (uploadError) {
+        console.error('Failed to upload contract to S3:', uploadError);
+        error = uploadError instanceof Error ? uploadError.message : 'Upload failed';
+        
+        // Still log to DynamoDB even if S3 fails
+        try {
+          const { ContractGenerationLogService } = await import('@/services/contractGenerationLogService');
+          await ContractGenerationLogService.createLog({
+            providerId: provider.id,
+            contractYear: contractYear,
+            templateId: assignedTemplate.id,
+            generatedAt: generationTimestamp,
+            status: 'PARTIAL_SUCCESS',
+            fileUrl: fileName,
+            notes: `S3 upload failed: ${error}`
+          });
+          dynamoDbStatus = 'SUCCESS';
+        } catch (dbError) {
+          console.error('Failed to log to DynamoDB:', dbError);
+        }
+      }
+      
+      // Add to Redux state with actual upload status
       const contractToAdd = {
         providerId: provider.id,
         templateId: assignedTemplate.id,
-        status: 'SUCCESS' as const, // Mark as success for bulk operations
-        generatedAt: new Date().toISOString(),
-        fileUrl: fileName, // Local file name for now
+        status: s3Status === 'SUCCESS' ? 'SUCCESS' as const : 'PARTIAL_SUCCESS' as const,
+        generatedAt: generationTimestamp,
+        fileUrl: fileName,
         fileName: fileName,
         s3Key: contractId,
         localFilePath: `ZIP/${fileName}`,
-        s3Status: 'SUCCESS' as const,
-        dynamoDbStatus: 'SUCCESS' as const,
-        error: undefined,
+        s3Status,
+        dynamoDbStatus,
+        error,
         dynamoDbId: undefined,
       };
       
@@ -398,32 +460,11 @@ b, strong { font-weight: bold !important; }
     setSelectedProviderIds([]);
     
     // Quick refresh - no need for long delays
-    console.log('🔍 Bulk generation completed, refreshing contracts...');
+    console.log('🔍 Bulk generation completed successfully');
     
-    // Refresh contracts from database to ensure Processed tab shows correctly
-    console.log('🔍 Refreshing contracts from database...');
-    let hydrationSuccess = false;
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    while (!hydrationSuccess && retryCount < maxRetries) {
-      try {
-        await hydrateGeneratedContracts();
-        console.log('✅ Contracts refreshed from database successfully');
-        hydrationSuccess = true;
-      } catch (hydrationError) {
-        retryCount++;
-        console.error(`❌ Failed to refresh contracts from database (attempt ${retryCount}/${maxRetries}):`, hydrationError);
-        
-        if (retryCount < maxRetries) {
-          console.log(`🔄 Waiting 2 seconds before retry ${retryCount + 1}...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } else {
-          console.error('❌ Failed to refresh contracts after all retries');
-          // Don't fail the entire operation if hydration fails
-        }
-      }
-    }
+    // NOTE: Removed hydration call here because it was overwriting the Redux state
+    // with empty database results, causing contracts to disappear from the UI
+    // The contracts are already in Redux state from the generation process
     console.log('Bulk generation completed. Contracts added to Redux state:', successful.length);
     
     // Log bulk generation operation

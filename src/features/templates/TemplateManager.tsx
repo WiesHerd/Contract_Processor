@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Edit, Eye, Info, Download, MoreHorizontal, FileText, Calendar, Tag, Check, X, Save, Edit3 } from 'lucide-react';
+import { Plus, Trash2, Edit, Eye, Info, Download, MoreHorizontal, FileText, Calendar, Tag, Check, X, Save, Edit3, Upload } from 'lucide-react';
 import mammoth from 'mammoth';
 import { addTemplate, updateTemplate, deleteTemplate, setTemplates, clearTemplates, hydrateTemplates, hydrateTemplatesFromS3, fetchTemplatesIfNeeded, deleteAllTemplates } from './templatesSlice';
 import { Template, TemplateType } from '@/types/template';
@@ -387,10 +387,11 @@ export default function TemplateManager() {
           <hr className="my-3 border-gray-100" />
           <div className="flex flex-wrap items-center gap-3 justify-end">
             <Button variant="outline" onClick={handleDeleteAllTemplates} className="text-red-600 border-red-300 hover:bg-red-50" disabled={deletingAll}>
+              <Trash2 className="w-4 h-4 mr-2" />
               {deletingAll ? 'Deleting...' : 'Delete All Templates'}
             </Button>
             <Button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700 text-white">
-              <Plus className="w-4 h-4 mr-2" />
+              <Upload className="w-4 h-4 mr-2" />
               Upload DOCX
             </Button>
             <input

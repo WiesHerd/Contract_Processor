@@ -191,7 +191,7 @@ export async function saveContractFile(
   contractId: string, 
   metadata?: Record<string, string>
 ): Promise<string> {
-  const key = `${PATHS.CONTRACTS}${contractId}/${file.name}`;
+  const key = `${PATHS.CONTRACTS}immutable/${contractId}/${file.name}`;
   const arrayBuffer = await file.arrayBuffer();
   
   const fileMetadata = {
@@ -213,7 +213,7 @@ export async function saveContractFile(
 }
 
 export async function getContractFile(contractId: string, fileName: string): Promise<{ url: string; metadata: Record<string, string> | null }> {
-  const key = `${PATHS.CONTRACTS}${contractId}/${fileName}`;
+  const key = `${PATHS.CONTRACTS}immutable/${contractId}/${fileName}`;
   
   try {
     // First check if the file exists permanently in S3
@@ -269,7 +269,7 @@ export async function checkFileExists(key: string): Promise<boolean> {
  * @returns Promise with new signed URL and metadata
  */
 export async function regenerateContractDownloadUrl(contractId: string, fileName: string): Promise<{ url: string; metadata: Record<string, string> | null }> {
-  const key = `${PATHS.CONTRACTS}${contractId}/${fileName}`;
+  const key = `${PATHS.CONTRACTS}immutable/${contractId}/${fileName}`;
   
   try {
     // Verify the file exists permanently
@@ -291,7 +291,7 @@ export async function regenerateContractDownloadUrl(contractId: string, fileName
 }
 
 export async function listContractFiles(contractId: string): Promise<string[]> {
-  const prefix = `${PATHS.CONTRACTS}${contractId}/`;
+  const prefix = `${PATHS.CONTRACTS}immutable/${contractId}/`;
   const files = await listFiles(prefix);
   return files.map(file => file.replace(prefix, ''));
 }

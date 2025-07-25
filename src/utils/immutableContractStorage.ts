@@ -64,8 +64,8 @@ class ImmutableContractStorage {
       timestamp
     });
     
-    // Create immutable file path with timestamp
-    const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${timestamp}/${fileName}`;
+    // Create immutable file path without timestamp (matches actual S3 structure)
+    const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${fileName}`;
     const metadataKey = `${this.METADATA_PREFIX}${contractId}/${timestamp}.json`;
     
     console.log('🔍 Amplify Storage Keys:', { immutableKey, metadataKey });
@@ -198,7 +198,9 @@ class ImmutableContractStorage {
         
         const getCommand = new GetObjectCommand({
           Bucket: this.BUCKET_NAME,
-          Key: key
+          Key: key,
+          ResponseContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          ResponseContentDisposition: 'inline'
         });
         
         // Create a presigned URL that expires in 1 hour
@@ -243,7 +245,7 @@ class ImmutableContractStorage {
    * Get download URL for a contract (uses presigned URL for private buckets)
    */
   async getPermanentDownloadUrl(contractId: string, timestamp: string, fileName: string): Promise<string> {
-    const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${timestamp}/${fileName}`;
+    const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${fileName}`;
     
     try {
       // First try to get the permanent URL from metadata
@@ -261,7 +263,9 @@ class ImmutableContractStorage {
       
       const getCommand = new GetObjectCommand({
         Bucket: this.BUCKET_NAME,
-        Key: immutableKey
+        Key: immutableKey,
+        ResponseContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ResponseContentDisposition: 'inline'
       });
       
       // Create a presigned URL that expires in 1 hour
@@ -280,7 +284,7 @@ class ImmutableContractStorage {
    * Verify contract integrity
    */
   async verifyContractIntegrity(contractId: string, timestamp: string, fileName: string): Promise<boolean> {
-    const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${timestamp}/${fileName}`;
+    const immutableKey = `${this.CONTRACTS_PREFIX}${contractId}/${fileName}`;
     
     try {
       const getCommand = new GetObjectCommand({

@@ -35,8 +35,11 @@ export const useGeneratorStatus = ({
       contract = generatedContracts.find(c => c.providerId === providerId);
     }
     
+
+    
     if (!contract) return 'Not Generated';
     if (contract.status === 'SUCCESS') return 'Success';
+    if (contract.status === 'PARTIAL_SUCCESS') return 'Partial Success';
     if (contract.status === 'FAILED') return 'Failed';
     return 'Needs Review';
   }, [generatedContracts]);

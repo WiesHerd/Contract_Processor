@@ -1,0 +1,31 @@
+[33m18f779af[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m fix: completely exclude Generation Status and Contract Actions columns from non-processed tabs - fix allPossibleColumns array to not include null columns - add debug logging to track column visibility
+[33m3c89dbb9[m feat(welcome): Enhance branding and clean up UI
+[33me05fcc44[m fix: resolve column manager infinite loop and revert issues
+[33m5a3eb69d[m remove: clear test data button and related functionality
+[33m0d9334e5[m fix: resolve contract preview modal template assignment and improve UI
+[33m033f7122[m fix(generator): restore /generate screen functionality after refactoring
+[33m1e767cc9[m fix: Comprehensive system improvements and error handling\n\n- Fix preview functionality to properly open preview modal\n- Add error handling for S3 permanent URL creation\n- Improve merge process with empty content validation\n- Add UI delays to prevent freezing during bulk operations\n- Enhance template assignment validation with provider names\n- Add success messages for download operations\n- Improve session restoration with accurate template counts\n- Add comprehensive error handling throughout the system\n- Ensure all contract generation scenarios work correctly\n- Fix tab count calculations to prevent negative numbers\n- Add progress tracking improvements for better UX
+[33mdc3edb73[m fix: Move getRealTabCounts function before usage to prevent initialization error
+[33ma018001d[m fix: Update Processed tab to show real contract counts from database
+[33mcc9b4998[m fix: Clear All now deletes all processed contracts including Partial Success
+[33m49dcb53e[m fix: Fix Clear All functionality for processed contracts
+[33m77a5315f[m fix: Resolve contract generation and upload issues
+[33ma4dfeb5e[m feat: Add comprehensive audit logging for all generate screen operations
+[33m95e4bd8a[m feat(ui): Redesign control bar with Epic EMR-inspired compact layout
+[33m24addece[m feat(ui): improve reset filters container and ensure GeneratorPreferences type in schema for AWS persistence
+[33m06fd8992[m feat(ui): modernize bulk status container and actions on Contract Generator screen
+[33m47994989[m feat: Major UI/UX improvements and contract generation fixes
+[33m874116a0[m Refactor user onboarding: let Cognito handle temp passwords, improve invite flow
+[33m96d1194e[m feat(clauses): migrate ClauseManager to use DynamoDB for all CRUD operations; remove S3 clause storage; update templates ClauseManager as well. Fixes import issues and ensures all clause changes are persisted to AWS. [skip env]
+[33m8d10b66d[m feat(ui): Professional enterprise-grade UI redesign across all screens
+[33mb8c0b7b8[m feat: Add provider caching and auto-loading for ContractGenerator
+[33mc39bb68c[m feat: Major UI/UX improvements and bug fixes
+[33m3958f738[m feat: complete AWS-native migration - Remove all localStorage and redux-persist dependencies - Create comprehensive AWS services layer - Add GraphQL integration with AppSync - Implement type-safe AWS operations - Add AWS data initialization - Create migration guide and best practices - Ensure 100% AWS-native architecture for production deployment
+[33m8219636c[m fix(templates): update TemplateEditor to use compensationModel and fix type imports
+[33m0b24e864[m final: ensure amplify.yml and vite config are correct for Amplify deploy
+[33m83228d98[m feat(generate): Move TinyMCE contract editor to modal for focused editing. Adds 'Edit Contract' button to open modal when provider/template selected. Editor is no longer always visible, improving UX. Modal dims background for professional, user-friendly experience.
+[33mc52aec3b[m Fix: Improve Word doc formatting and set margins to 0.5in for contract generation
+[33m07429697[m Robust DOCX generation: add defensive checks, user feedback, and error handling for htmlDocx.js; ensure template/provider selection and content validation before generation
+[33mc76240a2[m feat: searchable provider dropdown in contract preview with react-select, HTML editing, and DOCX download
+[33mfce2bdfc[m Fix: robust Redux-persist root reducer, array safety, and upload flow for template persistence
+[33mc037c9a5[m Refactor: Move Test Merge to generate screen, improve accessibility, and streamline mapping workflow

@@ -3,8 +3,8 @@ import { AgGridReact } from 'ag-grid-react';
 import { ColDef, GridReadyEvent, CellClickedEvent } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
+
+
 import { formatCurrency, formatNumber, formatDate } from '@/utils/formattingUtils';
 import type { Provider } from '@/types/provider';
 import type { Template } from '@/types/template';
@@ -337,188 +337,70 @@ export const useGeneratorGrid = ({
         whiteSpace: 'nowrap'
       },
     },
-    assignedTemplate: {
-      headerName: 'Template',
-      field: 'assignedTemplate',
-      width: 250,
-      minWidth: 200,
-      maxWidth: 300,
-      cellRenderer: (params: any) => {
-        const provider = params.data;
-        const assignedTemplate = getAssignedTemplate(provider);
-        
-        return (
-          <div className="w-full">
-            <Select
-              value={assignedTemplate?.id || "no-template"}
-              onValueChange={(templateId) => {
-                if (templateId === "no-template") {
-                  updateProviderTemplate(provider.id, null);
-                } else {
-                  updateProviderTemplate(provider.id, templateId);
-                }
-              }}
-            >
-              <SelectTrigger className="w-full h-8 text-xs">
-                <SelectValue>
-                  {assignedTemplate ? (
-                    <div className="flex items-center gap-1 min-w-0">
-                      <span className="truncate text-xs" title={assignedTemplate.name}>
-                        {assignedTemplate.name}
-                      </span>
-                      <span className="text-xs text-gray-500 flex-shrink-0">
-                        (v{assignedTemplate.version || '1'})
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-gray-500">No template</span>
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="no-template">
-                  <span className="text-gray-500">No template</span>
-                </SelectItem>
-                {templates
-                  .filter(t => t?.id && t?.name)
-                  .map(template => (
-                    <SelectItem key={template.id} value={template.id}>
-                      <div>
-                        <div className="font-medium">{template.name}</div>
-                        <div className="text-xs text-gray-500">v{template.version || '1'}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-        );
-      },
-              sortable: true,
-        filter: false,
-        suppressSizeToFit: false,
-      suppressAutoSize: false,
-      resizable: true,
-      cellStyle: { 
-        padding: '0',
-        overflow: 'hidden'
-      },
-    },
-  }), [templates, getAssignedTemplate, updateProviderTemplate]);
 
-  // Generation Status column (only for Processed tab)
-  const generationStatusColumn = statusTab === 'processed' ? {
+    }), [templates, getAssignedTemplate, updateProviderTemplate]);
+
+  // Generation Status column - Always show
+  const generationStatusColumn = {
     headerName: 'Generation Status',
     field: 'generationStatus',
-    width: 160,
+    width: 140,
     minWidth: 140,
-    cellRenderer: (params: any) => {
+    maxWidth: 140,
+    headerClass: 'whitespace-nowrap',
+    valueGetter: (params: any) => {
       const provider = params.data;
       const assignedTemplate = getAssignedTemplate(provider);
       const contract = generatedContracts.find(c => c.providerId === provider.id);
       
-      // If no template assigned, show "No Template"
       if (!assignedTemplate) {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-            <span className="w-3 h-3 text-center">—</span> No Template
-          </span>
-        );
+        return '— No Template';
       }
       
-      // If template assigned but no contract generated, show "Ready to Generate"
       if (!contract) {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-            <span className="w-3 h-3 text-center">⚡</span> Ready to Generate
-          </span>
-        );
+        return '⚡ Ready to Generate';
       }
       
-      // If contract exists, show appropriate status
       const status = contract.status;
       if (status === 'SUCCESS') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            <CheckCircle className="w-3 h-3" /> Generated
-          </span>
-        );
+        return '✅ Generated';
       }
       if (status === 'PARTIAL_SUCCESS') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-            <AlertTriangle className="w-3 h-3" /> Partial Success
-          </span>
-        );
+        return '⚠️ Partial Success';
       }
       if (status === 'FAILED') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            <XCircle className="w-3 h-3" /> Failed
-          </span>
-        );
+        return '❌ Failed';
       }
       
-      // Default case
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-          <span className="w-3 h-3 text-center">—</span> Unknown
-        </span>
-      );
+      return '— Unknown';
     },
     sortable: true,
     filter: false,
-    suppressMovableColumns: false, // Enable column dragging
-    resizable: true, // Enable column resizing
-    tooltipValueGetter: (params: any) => {
-      const generationDate = getGenerationDate(params.data.id, selectedTemplate?.id || '');
-      return generationDate ? `Last generated: ${formatDate(generationDate.toISOString())}` : 'Not generated yet';
-    },
-  } : null;
+    suppressMovableColumns: false,
+    resizable: true,
+  };
 
-  // Contract Actions column (only for Processed tab) - Shows Generate button or S3 document link and preview
-  const contractActionsColumn = statusTab === 'processed' ? {
+  // Contract Actions column - Always show, with different content based on status
+  const contractActionsColumn = {
     headerName: 'Contract Actions',
     field: 'actions',
-    width: 160,
-    minWidth: 140,
-    cellRenderer: (params: any) => {
+    width: 120,
+    minWidth: 120,
+    maxWidth: 120,
+    headerClass: 'whitespace-nowrap',
+    valueGetter: (params: any) => {
       const provider = params.data;
       const assignedTemplate = getAssignedTemplate(provider);
       const contract = generatedContracts.find(c => c.providerId === provider.id);
       
       // If no template assigned, show "Assign Template"
       if (!assignedTemplate) {
-        return (
-          <span className="text-gray-400 text-xs">Assign Template</span>
-        );
+        return 'Assign Template';
       }
       
-      // If template assigned but no contract generated, show "Generate" button
+      // If template assigned but no contract generated, show "Generate"
       if (!contract) {
-        return (
-          <div className="flex items-center gap-1">
-            <button
-              className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1 h-8 w-8 flex items-center justify-center rounded transition-colors cursor-pointer"
-              style={{ 
-                pointerEvents: 'auto',
-                zIndex: 9999,
-                position: 'relative'
-              }}
-              title="Generate Contract"
-              onClick={() => {
-                // This would trigger contract generation for this provider
-                console.log('Generate contract for:', provider.name);
-                // You can implement the actual generation logic here
-              }}
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </button>
-            <span className="text-blue-600 text-xs">Generate</span>
-          </div>
-        );
+        return '⚡ Generate';
       }
       
       // If contract exists, show download and preview actions
@@ -527,64 +409,70 @@ export const useGeneratorGrid = ({
       const isFailed = !isSuccess && !isPartialSuccess;
       
       if (isFailed) {
-        return (
-          <div className="flex items-center gap-1">
-            <span className="text-red-500 text-xs">Generation Failed</span>
-          </div>
-        );
+        return '❌ Failed';
       }
       
+      // For successful contracts, return a special value to trigger cell renderer
+      return 'ACTIONS_BUTTONS';
+    },
+    cellRenderer: (params: any) => {
+      const provider = params.data;
+      const assignedTemplate = getAssignedTemplate(provider);
+      const contract = generatedContracts.find(c => c.providerId === provider.id);
+      
+      // Only render buttons for successful contracts
+      if (!contract || (contract.status !== 'SUCCESS' && contract.status !== 'PARTIAL_SUCCESS')) {
+        return null; // Let valueGetter handle the display
+      }
+      
+      const isPartialSuccess = contract.status === 'PARTIAL_SUCCESS';
+      
       return (
-        <div className="flex items-center gap-1">
-          {/* Document/Download Icon - Links to S3 */}
-          <div
-            className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
-            style={{ 
-              pointerEvents: 'auto',
-              zIndex: 9999,
-              position: 'relative'
-            }}
+        <div className="flex items-center justify-center gap-1 h-full">
+          {/* Document/Download Icon */}
+          <button
+            className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer border-0 bg-transparent`}
             title={isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract from S3"}
-            onMouseDown={() => downloadContract(provider, contract.templateId)}
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadContract(provider, contract.templateId);
+            }}
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-          </div>
+          </button>
           
           {/* Eye/Preview Icon */}
-          <div
-            className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
-            style={{ 
-              pointerEvents: 'auto',
-              zIndex: 9999,
-              position: 'relative'
-            }}
+          <button
+            className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer border-0 bg-transparent`}
             title="Preview Contract"
-            onMouseDown={() => handlePreviewGenerate(provider.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePreviewGenerate(provider.id);
+            }}
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
-          </div>
+          </button>
         </div>
       );
     },
     sortable: false,
     filter: false,
-    resizable: false,
-    suppressMovableColumns: false, // Enable column dragging
-    pinned: null, // Explicitly set to null to prevent any pinning
-  } : null;
+    suppressMovableColumns: false,
+    resizable: true,
+  };
 
   // Comprehensive column definitions for all tabs - column manager will handle visibility
   const allPossibleColumns = useMemo(() => [
     selectColumn,
     ...Object.values(allColumnDefs),
-    // Only include these columns if they exist (not null)
-    ...(generationStatusColumn ? [generationStatusColumn] : []),
-    ...(contractActionsColumn ? [contractActionsColumn] : [])
+    // Always include these columns
+    generationStatusColumn,
+    contractActionsColumn
   ], [selectColumn, allColumnDefs, generationStatusColumn, contractActionsColumn]);
 
   // Extract pinning from columnPreferences to avoid circular dependency
@@ -628,24 +516,13 @@ export const useGeneratorGrid = ({
       }
     });
     
-    // Add generation status and actions columns ONLY for processed tab
-    // Also ensure these columns are completely hidden for other tabs
-    if (statusTab === 'processed') {
-      if (generationStatusColumn) {
-        orderedColumns.push(generationStatusColumn);
-      }
-      if (contractActionsColumn) {
-        orderedColumns.push(contractActionsColumn);
-      }
-    }
-    // For non-processed tabs, explicitly exclude these columns
-    // This prevents any rendering issues or column bleeding
+    // Add generation status and actions columns for all tabs
+    orderedColumns.push(generationStatusColumn);
+    orderedColumns.push(contractActionsColumn);
     
     // Debug logging
     console.log('🔍 Column Debug:', {
       statusTab,
-      generationStatusColumn: !!generationStatusColumn,
-      contractActionsColumn: !!contractActionsColumn,
       totalColumns: orderedColumns.length,
       columnNames: orderedColumns.map(col => col.headerName || col.field)
     });
@@ -655,6 +532,10 @@ export const useGeneratorGrid = ({
 
   // Grid options and configuration - optimized for performance
   const gridOptions = useMemo(() => ({
+    // Add CSS to ensure contract actions are clickable
+    getRowClass: (params: any) => {
+      return 'contract-actions-row';
+    },
     domLayout: "normal" as const,
     suppressRowClickSelection: true, // Disable row click selection to prevent interference
     pagination: false,
@@ -703,8 +584,6 @@ export const useGeneratorGrid = ({
         fontFamily: 'var(--font-sans, sans-serif)', 
         fontWeight: 400, 
         color: '#111827', 
-        display: 'flex', 
-        alignItems: 'center', 
         height: '100%',
         paddingLeft: '12px',
         paddingRight: '12px',

@@ -116,7 +116,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           For your security, you will be logged out after 20 minutes of inactivity.
         </div>
       )}
-      <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${showNav ? 'pt-20' : ''}`}>
+      <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${showNav ? 'pt-28' : ''}`}>
         {children}
       </main>
       <footer className="w-full py-4 px-6 border-t border-gray-200 bg-white">
@@ -248,15 +248,15 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
   const groupOrder = ['setup', 'action'];
 
   return (
-    <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-200">
+    <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-200 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex">
             <Link to="/" className="flex items-center">
-              <Logo size={32} />
+              <Logo size={40} />
             </Link>
             {isAuthenticated && (
-              <div className="hidden sm:ml-6 sm:flex items-center space-x-4">
+              <div className="hidden sm:ml-6 sm:flex items-center space-x-4 bg-gradient-to-r from-gray-50/50 to-white/50 rounded-lg px-2 py-1">
                 {groupOrder.map((group) => {
                   if (!groupedNav[group]) return null;
                   if (group === 'setup') {
@@ -267,10 +267,10 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                           <Link
                             key={item.path}
                             to={item.path}
-                            className={`inline-flex items-center px-3 pt-1 border-b-2 text-sm font-medium ${
+                            className={`inline-flex items-center px-3 pt-1 border-b-2 text-base font-semibold tracking-wide transition-all duration-200 ${
                               isActive(item.path)
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                ? 'border-blue-500 text-blue-700 shadow-sm'
+                                : 'border-transparent text-gray-600 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm'
                             }`}
                           >
                             {item.title}
@@ -286,10 +286,10 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                         <Link
                           key={item.path}
                           to={item.path}
-                          className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                          className={`inline-flex items-center px-1 pt-1 border-b-2 text-base font-semibold tracking-wide transition-all duration-200 ${
                             isActive(item.path)
-                              ? 'border-blue-500 text-blue-600'
-                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                              ? 'border-blue-500 text-blue-700 shadow-sm'
+                              : 'border-transparent text-gray-600 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm'
                           }`}
                         >
                           {item.title}
@@ -315,6 +315,8 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
             )}
           </div>
         </div>
+        
+
       </div>
     </nav>
   );

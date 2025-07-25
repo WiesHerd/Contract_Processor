@@ -135,20 +135,39 @@ export const useGeneratorDataManagement = ({
     try {
       setIsClearing(true);
       setClearingProgress(30); // Start clearing phase
-      showInfo(`Clearing ${contractsToClear.length} processed contracts...`);
+      showInfo(`Clearing ${contractsToClear.length} processed contracts from database and S3...`);
       
       // Get the actual DynamoDB IDs from the database logs
       const contractIds = contractsToClear.map(log => log.id);
       
       console.log('Found DynamoDB IDs to clear:', contractIds);
       
-      // Delete contracts from DynamoDB with progress tracking
+      // Delete contracts from DynamoDB and S3 with progress tracking
       let deletedCount = 0;
       const totalContracts = contractIds.length;
       
       for (let i = 0; i < contractIds.length; i++) {
         try {
+          const contractLog = contractsToClear[i];
+          
+          // Delete from DynamoDB
           await ContractGenerationLogService.deleteLog(contractIds[i]);
+          
+          // Delete from S3 if we can construct the S3 key
+          if (contractLog.providerId && contractLog.templateId && contractLog.contractYear) {
+            try {
+              const { deleteFile } = await import('@/utils/s3Storage');
+              // Construct S3 key based on the standardized pattern
+              const contractId = `${contractLog.providerId}-${contractLog.templateId}-${contractLog.contractYear}`;
+              const s3Key = `contracts/immutable/${contractId}/${contractLog.fileUrl || 'contract.docx'}`;
+              await deleteFile(s3Key);
+              console.log(`✅ Deleted S3 file: ${s3Key}`);
+            } catch (s3Error) {
+              console.warn(`⚠️ Failed to delete S3 file for contract ${contractLog.id}:`, s3Error);
+              // Continue even if S3 deletion fails
+            }
+          }
+          
           deletedCount++;
           
           // Update progress (30% to 90% for deletion phase)

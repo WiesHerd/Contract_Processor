@@ -179,9 +179,17 @@ export default function ContractGenerator() {
   const [selectedTemplateForFiltered, setSelectedTemplateForFiltered] = useState<string>("");
   const [bulkOpen, setBulkOpen] = useState(true);
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
+  const [showAssignedProviders, setShowAssignedProviders] = useState(true);
 
   const [statusTab, setStatusTab] = useState<'notGenerated' | 'processed' | 'all'>('notGenerated');
   const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
+  
+  // Debug Redux state
+  console.log('🔍 Redux State Debug:', {
+    generatedContractsCount: generatedContracts.length,
+    generatedContracts: generatedContracts,
+    statusTab
+  });
 
   // Create a temporary gridRef that will be updated by useGeneratorGrid
   const tempGridRef = useRef<any>(null);
@@ -624,7 +632,11 @@ export default function ContractGenerator() {
 
         // Only update Redux state if we actually have contracts from the database
         if (generatedContractsFromDb.length > 0) {
+          console.log('🔄 Loading contracts from database:', generatedContractsFromDb.length, 'contracts');
           dispatch(setGeneratedContracts(generatedContractsFromDb));
+          console.log('✅ Redux state updated with contracts from database');
+        } else {
+          console.log('⚠️ No contracts found in database to load');
         }
         
       } catch (e) {
@@ -1032,6 +1044,17 @@ export default function ContractGenerator() {
       generationStatus = 'Not Generated';
     }
     
+    // Debug logging for newly generated contracts
+    if (latestProcessedContract && (latestProcessedContract.status === 'SUCCESS' || latestProcessedContract.status === 'PARTIAL_SUCCESS')) {
+      console.log('🔍 Provider with contract:', {
+        providerId: provider.id,
+        providerName: provider.name,
+        contractStatus: latestProcessedContract.status,
+        generationStatus: generationStatus,
+        generatedAt: latestProcessedContract.generatedAt
+      });
+    }
+    
     return {
       ...provider,
       generationStatus,
@@ -1044,33 +1067,16 @@ export default function ContractGenerator() {
     row => row.generationStatus === 'Success' || row.generationStatus === 'Partial Success'
   );
 
-
   const notGeneratedRows = allFilteredProvidersWithStatus.filter(row => row.generationStatus === 'Not Generated');
+  
+
+  
+
   const allRows = allFilteredProvidersWithStatus;
   
-  // Minimal debug logging - only log when there are issues - moved to useEffect to prevent infinite loops
-  useEffect(() => {
-    const realTabCounts = getRealTabCounts();
-    const hasTabCountMismatch = realTabCounts.processed !== processedRows.length || realTabCounts.notGenerated !== notGeneratedRows.length;
-    
-    if (hasTabCountMismatch) {
-      console.log('🔍 Tab Count Issue:', {
-        expected: realTabCounts,
-        actual: { processed: processedRows.length, notGenerated: notGeneratedRows.length },
-        contracts: generatedContracts.length
-      });
-    }
-  }, [processedRows.length, notGeneratedRows.length, generatedContracts.length]);
+
   
-  // Only log contract issues - moved to useEffect to prevent infinite loops
-  useEffect(() => {
-    if (generatedContracts.length > 0) {
-      const partialContracts = generatedContracts.filter(c => c.status === 'PARTIAL_SUCCESS');
-      if (partialContracts.length > 0) {
-        console.log('⚠️ Partial Success Contracts:', partialContracts.length);
-      }
-    }
-  }, [generatedContracts]);
+
   
   const tabCounts = getRealTabCounts();
 
@@ -1104,6 +1110,7 @@ export default function ContractGenerator() {
     visibleRows,
     columnOrder,
     hiddenColumns,
+    columnPreferences: defaultColumnPreferences,
     templates,
     generatedContracts,
     statusTab,
@@ -1216,6 +1223,19 @@ export default function ContractGenerator() {
     showError,
     showWarning,
     showInfo,
+    
+    // Contract action handlers
+    onDownloadContract: downloadContract,
+    onPreviewContract: (provider: Provider, templateId: string) => {
+      handlePreviewGenerateHook(provider.id || '');
+    },
+    onViewInS3: (provider: Provider, templateId: string) => {
+      // TODO: Implement S3 view functionality
+      showInfo('S3 view functionality not yet implemented');
+    },
+    
+    // Generated contracts data
+    generatedContracts,
   });
   
 
@@ -1804,22 +1824,32 @@ export default function ContractGenerator() {
             border: none !important;
           }
 
-          /* Ensure Contract Actions links are clickable */
+          /* Ensure Contract Actions buttons are clickable */
           .ag-theme-alpine .ag-cell[col-id="actions"] {
             pointer-events: auto !important;
           }
-          .ag-theme-alpine .ag-cell[col-id="actions"] a {
+          .ag-theme-alpine .ag-cell[col-id="actions"] button {
             pointer-events: auto !important;
             z-index: 1000 !important;
             position: relative !important;
-            text-decoration: none !important;
             cursor: pointer !important;
+            border: none !important;
+            background: transparent !important;
+            padding: 4px !important;
+            border-radius: 4px !important;
+            transition: all 0.15s ease !important;
           }
-          .ag-theme-alpine .ag-cell[col-id="actions"] a:hover {
+          .ag-theme-alpine .ag-cell[col-id="actions"] button:hover {
             background-color: #f3f4f6 !important;
+            transform: scale(1.05) !important;
           }
-          .ag-theme-alpine .ag-cell[col-id="actions"] a:active {
+          .ag-theme-alpine .ag-cell[col-id="actions"] button:active {
             background-color: #e5e7eb !important;
+            transform: scale(0.95) !important;
+          }
+          .ag-theme-alpine .ag-cell[col-id="actions"] button:focus {
+            outline: 2px solid #3b82f6 !important;
+            outline-offset: 2px !important;
           }
           .ag-theme-alpine .ag-body {
             border: none !important;
@@ -2564,49 +2594,113 @@ export default function ContractGenerator() {
                         )}
                       </Button>
                     </div>
+                    
+                    {/* Quick Actions */}
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <div className="flex gap-1">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="flex-1 h-6 text-xs text-gray-600 hover:text-blue-600"
+                          onClick={() => setShowAssignedProviders(!showAssignedProviders)}
+                        >
+                          {showAssignedProviders ? 'Hide Assigned' : 'Show All'}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="flex-1 h-6 text-xs text-gray-600 hover:text-orange-600"
+                          onClick={() => {
+                            const unassignedCount = getFilteredProviderIds.filter(id => !templateAssignments[id]).length;
+                            showInfo(`${unassignedCount} providers still need template assignment`);
+                          }}
+                        >
+                          Show Pending
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 
                 {/* Right Panel - Provider List */}
                 <div className="w-3/5 bg-white rounded border border-gray-200 flex flex-col">
                   <div className="flex-shrink-0 p-3 border-b border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-900">
-                          Provider List
-                        </h3>
-                        <p className="text-xs text-gray-600 mt-0.5">
+                                      <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">
+                        Provider List
+                      </h3>
+                      <div className="flex items-center gap-4 mt-0.5">
+                        <p className="text-xs text-gray-600">
                           {getFilteredProviderIds.length} providers match filters
                         </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Input 
-                          placeholder="Search providers..." 
-                          className="w-56 h-7 text-xs"
-                          onChange={(e) => {
-                            // Add search functionality here
-                          }}
-                        />
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-green-600 font-medium">
+                            ✓ {getFilteredProviderIds.filter(id => templateAssignments[id]).length} assigned
+                          </span>
+                          <span className="text-xs text-orange-600 font-medium">
+                            ⏳ {getFilteredProviderIds.filter(id => !templateAssignments[id]).length} pending
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={showAssignedProviders ? "show-all" : "hide-assigned"}
+                        onValueChange={(value) => setShowAssignedProviders(value === "show-all")}
+                      >
+                        <SelectTrigger className="w-32 h-7 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="show-all">Show All</SelectItem>
+                          <SelectItem value="hide-assigned">Hide Assigned</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input 
+                        placeholder="Search providers..." 
+                        className="w-48 h-7 text-xs"
+                        onChange={(e) => {
+                          // Add search functionality here
+                        }}
+                      />
+                    </div>
+                  </div>
                   </div>
                   
                   {/* Provider List */}
                   <div className="flex-1 overflow-y-auto">
                     <div className="p-2 space-y-1">
-                      {/* Always show only filtered providers when filters are active */}
-                      {getFilteredProviderIds.slice(0, 100).map(providerId => {
+                      {/* Filter providers based on showAssignedProviders setting */}
+                      {getFilteredProviderIds
+                        .filter(providerId => {
+                          if (showAssignedProviders) return true;
+                          return !templateAssignments[providerId]; // Hide assigned providers
+                        })
+                        .slice(0, 100)
+                        .map(providerId => {
                         const provider = providers.find(p => p.id === providerId);
                         const currentTemplate = templates.find(t => t.id === templateAssignments[providerId]);
                         
                         if (!provider) return null;
                         
                         return (
-                          <div key={providerId} className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100 transition-colors">
+                          <div key={providerId} className={`flex items-center justify-between p-2 border rounded transition-colors ${
+                            templateAssignments[providerId] 
+                              ? 'bg-green-50 border-green-200 hover:bg-green-100' 
+                              : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                          }`}>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
+                                {templateAssignments[providerId] && (
+                                  <div className="flex-shrink-0 w-2 h-2 bg-green-500 rounded-full" title="Template assigned" />
+                                )}
                                 <div className="flex-1 min-w-0">
-                                  <h4 className="font-medium text-gray-900 truncate text-sm">{provider.name}</h4>
+                                  <h4 className={`font-medium truncate text-sm ${
+                                    templateAssignments[providerId] ? 'text-green-800' : 'text-gray-900'
+                                  }`}>
+                                    {provider.name}
+                                  </h4>
                                   <p className="text-xs text-gray-500 truncate">
                                     {provider.specialty} • {provider.providerType}
                                   </p>
@@ -2974,7 +3068,7 @@ export default function ContractGenerator() {
                       size="sm"
                     >
                       <FileText className="w-4 h-4 mr-2" />
-                      Create
+                      ⚡ Generate Contracts
                     </Button>
                     
                     {(() => {

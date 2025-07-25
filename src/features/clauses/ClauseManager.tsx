@@ -305,7 +305,7 @@ export default function ClauseManager() {
                   }}
                   className="h-10 px-3"
                 >
-                  Force Load
+                  🔄 Force Load
                 </Button>
                 <Button
                   variant="outline"
@@ -317,7 +317,7 @@ export default function ClauseManager() {
                   }}
                   className="h-10 px-3"
                 >
-                  Refresh
+                  🔄 Refresh
                 </Button>
                 <Button
                   variant="outline"
@@ -334,7 +334,7 @@ export default function ClauseManager() {
                   }}
                   className="h-10 px-3"
                 >
-                  Debug DB
+                  🔍 Debug DB
                 </Button>
               </div>
             </div>

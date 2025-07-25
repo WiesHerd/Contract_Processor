@@ -129,21 +129,20 @@ export const useContractGeneration = ({
           
           let foundPath = null;
           
-          // Try each timestamp variation
-          for (const timestamp of possibleTimestamps) {
-            const immutablePath = `contracts/immutable/${contractId}/${timestamp}/${fileName}`;
-            console.log(`🔍 Checking path: ${immutablePath}`);
-            
-            try {
-              const fileExists = await checkFileExists(immutablePath);
-              if (fileExists) {
-                foundPath = immutablePath;
-                console.log(`✅ Found file with timestamp: ${timestamp}`);
-                break;
-              }
-            } catch (checkError) {
-              console.log(`❌ Path not found: ${immutablePath}`);
+          // Use the standardized path (without timestamp) - this matches the actual S3 structure
+          const standardizedPath = `contracts/immutable/${contractId}/${fileName}`;
+          console.log(`🔍 Checking standardized path: ${standardizedPath}`);
+          
+          try {
+            const fileExists = await checkFileExists(standardizedPath);
+            if (fileExists) {
+              foundPath = standardizedPath;
+              console.log(`✅ Found file with standardized path`);
+            } else {
+              console.log(`❌ File not found at standardized path: ${standardizedPath}`);
             }
+          } catch (checkError) {
+            console.log(`❌ Error checking standardized path: ${standardizedPath}`, checkError);
           }
           
           if (foundPath) {
@@ -180,13 +179,14 @@ export const useContractGeneration = ({
         }
       }
       
-      // Open download URL in new tab
-      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      // Open document in Microsoft Office Online Viewer for inline display
+      const officeOnlineUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(downloadUrl)}`;
+      window.open(officeOnlineUrl, '_blank', 'noopener,noreferrer');
       
       // Show success message with status info
       const statusMessage = contract.status === 'PARTIAL_SUCCESS' 
-        ? `Downloading contract for ${provider.name} (Note: S3 storage may have failed during generation)`
-        : `Downloading contract for ${provider.name}`;
+        ? `Opening contract for ${provider.name} in browser (Note: S3 storage may have failed during generation)`
+        : `Opening contract for ${provider.name} in browser`;
       showSuccess(statusMessage);
       
     } catch (error) {
