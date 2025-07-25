@@ -406,52 +406,63 @@ export const useGeneratorGrid = ({
     },
   }), [templates, getAssignedTemplate, updateProviderTemplate]);
 
-  // Generation Status column (only for All tab)
-  const generationStatusColumn = {
+  // Generation Status column (only for Processed tab)
+  const generationStatusColumn = statusTab === 'processed' ? {
     headerName: 'Generation Status',
     field: 'generationStatus',
     width: 160,
     minWidth: 140,
     cellRenderer: (params: any) => {
-      const status = params.value;
-      if (status === 'Success') {
+      const provider = params.data;
+      const assignedTemplate = getAssignedTemplate(provider);
+      const contract = generatedContracts.find(c => c.providerId === provider.id);
+      
+      // If no template assigned, show "No Template"
+      if (!assignedTemplate) {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+            <span className="w-3 h-3 text-center">—</span> No Template
+          </span>
+        );
+      }
+      
+      // If template assigned but no contract generated, show "Ready to Generate"
+      if (!contract) {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+            <span className="w-3 h-3 text-center">⚡</span> Ready to Generate
+          </span>
+        );
+      }
+      
+      // If contract exists, show appropriate status
+      const status = contract.status;
+      if (status === 'SUCCESS') {
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
             <CheckCircle className="w-3 h-3" /> Generated
           </span>
         );
       }
-      if (status === 'Partial Success') {
+      if (status === 'PARTIAL_SUCCESS') {
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-            <AlertTriangle className="w-3 h-3" /> Partial
+            <AlertTriangle className="w-3 h-3" /> Partial Success
           </span>
         );
       }
-      if (status === 'Failed') {
+      if (status === 'FAILED') {
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
             <XCircle className="w-3 h-3" /> Failed
           </span>
         );
       }
-      if (status === 'Needs Review') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-            <AlertTriangle className="w-3 h-3" /> Review
-          </span>
-        );
-      }
-      if (status === 'Not Generated') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-            <span className="w-3 h-3 text-center">—</span> Ready
-          </span>
-        );
-      }
+      
+      // Default case
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-          <Loader2 className="w-3 h-3 animate-spin" /> Processing
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+          <span className="w-3 h-3 text-center">—</span> Unknown
         </span>
       );
     },
@@ -463,71 +474,101 @@ export const useGeneratorGrid = ({
       const generationDate = getGenerationDate(params.data.id, selectedTemplate?.id || '');
       return generationDate ? `Last generated: ${formatDate(generationDate.toISOString())}` : 'Not generated yet';
     },
-  };
+  } : null;
 
-  // Contract Actions column (only for Processed tab) - Using simple HTML instead of AG Grid cell renderer
-  const contractActionsColumn = {
+  // Contract Actions column (only for Processed tab) - Shows Generate button or S3 document link and preview
+  const contractActionsColumn = statusTab === 'processed' ? {
     headerName: 'Contract Actions',
     field: 'actions',
     width: 160,
     minWidth: 140,
     cellRenderer: (params: any) => {
       const provider = params.data;
-      // Find any contract for this provider (including partial success ones)
-      const contract = generatedContracts.find(
-        c => c.providerId === provider.id
-      );
+      const assignedTemplate = getAssignedTemplate(provider);
+      const contract = generatedContracts.find(c => c.providerId === provider.id);
       
-      if (contract) {
-        const isPartialSuccess = contract.status === 'PARTIAL_SUCCESS';
-        const isSuccess = contract.status === 'SUCCESS';
-        const isFailed = !isSuccess && !isPartialSuccess;
-        
-        if (isFailed) {
-          return (
-            <div className="flex items-center gap-1">
-              <span className="text-red-500 text-xs">Generation Failed</span>
-            </div>
-          );
-        }
-        
+      // If no template assigned, show "Assign Template"
+      if (!assignedTemplate) {
+        return (
+          <span className="text-gray-400 text-xs">Assign Template</span>
+        );
+      }
+      
+      // If template assigned but no contract generated, show "Generate" button
+      if (!contract) {
         return (
           <div className="flex items-center gap-1">
-            <div
-              className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
+            <button
+              className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1 h-8 w-8 flex items-center justify-center rounded transition-colors cursor-pointer"
               style={{ 
                 pointerEvents: 'auto',
                 zIndex: 9999,
                 position: 'relative'
               }}
-              title={isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract"}
-              onMouseDown={() => downloadContract(provider, contract.templateId)}
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <div
-              className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
-              style={{ 
-                pointerEvents: 'auto',
-                zIndex: 9999,
-                position: 'relative'
+              title="Generate Contract"
+              onClick={() => {
+                // This would trigger contract generation for this provider
+                console.log('Generate contract for:', provider.name);
+                // You can implement the actual generation logic here
               }}
-              title="Preview Contract"
-              onMouseDown={() => handlePreviewGenerate(provider.id)}
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-            </div>
+            </button>
+            <span className="text-blue-600 text-xs">Generate</span>
+          </div>
+        );
+      }
+      
+      // If contract exists, show download and preview actions
+      const isPartialSuccess = contract.status === 'PARTIAL_SUCCESS';
+      const isSuccess = contract.status === 'SUCCESS';
+      const isFailed = !isSuccess && !isPartialSuccess;
+      
+      if (isFailed) {
+        return (
+          <div className="flex items-center gap-1">
+            <span className="text-red-500 text-xs">Generation Failed</span>
           </div>
         );
       }
       
       return (
-        <span className="text-gray-400 text-sm">Not Generated</span>
+        <div className="flex items-center gap-1">
+          {/* Document/Download Icon - Links to S3 */}
+          <div
+            className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
+            style={{ 
+              pointerEvents: 'auto',
+              zIndex: 9999,
+              position: 'relative'
+            }}
+            title={isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract from S3"}
+            onMouseDown={() => downloadContract(provider, contract.templateId)}
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          
+          {/* Eye/Preview Icon */}
+          <div
+            className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer`}
+            style={{ 
+              pointerEvents: 'auto',
+              zIndex: 9999,
+              position: 'relative'
+            }}
+            title="Preview Contract"
+            onMouseDown={() => handlePreviewGenerate(provider.id)}
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </div>
+        </div>
       );
     },
     sortable: false,
@@ -535,14 +576,15 @@ export const useGeneratorGrid = ({
     resizable: false,
     suppressMovableColumns: false, // Enable column dragging
     pinned: null, // Explicitly set to null to prevent any pinning
-  };
+  } : null;
 
   // Comprehensive column definitions for all tabs - column manager will handle visibility
   const allPossibleColumns = useMemo(() => [
     selectColumn,
     ...Object.values(allColumnDefs),
-    generationStatusColumn,
-    contractActionsColumn
+    // Only include these columns if they exist (not null)
+    ...(generationStatusColumn ? [generationStatusColumn] : []),
+    ...(contractActionsColumn ? [contractActionsColumn] : [])
   ], [selectColumn, allColumnDefs, generationStatusColumn, contractActionsColumn]);
 
   // Extract pinning from columnPreferences to avoid circular dependency
@@ -586,13 +628,27 @@ export const useGeneratorGrid = ({
       }
     });
     
-    // Add generation status and actions columns if they exist
-    if (generationStatusColumn) {
-      orderedColumns.push(generationStatusColumn);
+    // Add generation status and actions columns ONLY for processed tab
+    // Also ensure these columns are completely hidden for other tabs
+    if (statusTab === 'processed') {
+      if (generationStatusColumn) {
+        orderedColumns.push(generationStatusColumn);
+      }
+      if (contractActionsColumn) {
+        orderedColumns.push(contractActionsColumn);
+      }
     }
-    if (contractActionsColumn) {
-      orderedColumns.push(contractActionsColumn);
-    }
+    // For non-processed tabs, explicitly exclude these columns
+    // This prevents any rendering issues or column bleeding
+    
+    // Debug logging
+    console.log('🔍 Column Debug:', {
+      statusTab,
+      generationStatusColumn: !!generationStatusColumn,
+      contractActionsColumn: !!contractActionsColumn,
+      totalColumns: orderedColumns.length,
+      columnNames: orderedColumns.map(col => col.headerName || col.field)
+    });
     
     return orderedColumns;
   }, [selectColumn, allColumnDefs, columnOrder, hiddenColumns, leftPinned, rightPinned, generationStatusColumn, contractActionsColumn]);
