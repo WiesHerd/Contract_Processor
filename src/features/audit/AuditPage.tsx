@@ -34,6 +34,8 @@ export default function AuditPage() {
   const [templateFilter, setTemplateFilter] = useState<string>('all');
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [userFilter, setUserFilter] = useState<string>('all');
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [showConfirm, setShowConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -66,25 +68,27 @@ export default function AuditPage() {
     return providerId;
   };
 
-  // Handler for clearing logs with progress
+  // Handler for clearing logs with progress - OPTIMIZED VERSION
   const handleClearLogs = async () => {
-    setShowConfirm(false); // Close confirmation immediately for clean modal UX
+    setShowConfirm(false);
     setClearing(true);
     setProgress(0);
     setClearResult(null);
+    
     try {
-      let deleted = 0;
-      let total = logs.length;
-      if (total === 0) {
+      if (logs.length === 0) {
         setProgress(100);
         setClearResult(0);
         setClearing(false);
         return;
       }
-      // Fetch all log IDs
+
+      // Fetch all log IDs first
       let nextToken: string | null = null;
       let allIds: string[] = [];
       const client = generateClient();
+      
+      console.log('🔄 Fetching all audit log IDs...');
       do {
         let result: any;
         try {
@@ -100,21 +104,53 @@ export default function AuditPage() {
         allIds.push(...items.map((item: any) => item.id));
         nextToken = result.data.listAuditLogs?.nextToken || null;
       } while (nextToken);
-      total = allIds.length;
-      for (let i = 0; i < allIds.length; i++) {
-        try {
-          await client.graphql({
-            query: deleteAuditLog,
-            variables: { input: { id: allIds[i] } },
-          });
-        } catch (err) {
-          console.error(`Failed to delete audit log with id ${allIds[i]}:`, err);
-        }
-        setProgress(Math.round(((i + 1) / total) * 100));
+      
+      const total = allIds.length;
+      console.log(`🗑️ Deleting ${total} audit log entries...`);
+      
+      // OPTIMIZATION: Batch deletions in parallel chunks
+      const BATCH_SIZE = 25; // Process 25 deletions at a time
+      const batches = [];
+      
+      for (let i = 0; i < allIds.length; i += BATCH_SIZE) {
+        batches.push(allIds.slice(i, i + BATCH_SIZE));
       }
-      setClearResult(total);
+      
+      let deletedCount = 0;
+      
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        
+        // Process batch in parallel
+        const batchPromises = batch.map(async (id) => {
+          try {
+            await client.graphql({
+              query: deleteAuditLog,
+              variables: { input: { id } },
+            });
+            return { success: true, id };
+          } catch (err) {
+            console.error(`Failed to delete audit log ${id}:`, err);
+            return { success: false, id, error: err };
+          }
+        });
+        
+        // Wait for batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        deletedCount += batchResults.filter(r => r.success).length;
+        
+        // Update progress
+        const progress = Math.round(((batchIndex + 1) / batches.length) * 100);
+        setProgress(progress);
+        
+        console.log(`✅ Batch ${batchIndex + 1}/${batches.length} completed: ${batchResults.filter(r => r.success).length}/${batch.length} deleted`);
+      }
+      
+      console.log(`🎉 Successfully deleted ${deletedCount}/${total} audit log entries`);
+      setClearResult(deletedCount);
       dispatch(clearLogs());
       await dispatch(fetchAuditLogs(undefined));
+      
     } catch (err) {
       console.error('Failed to clear logs:', err);
       alert('Failed to clear logs. See console for details.');
@@ -159,6 +195,20 @@ export default function AuditPage() {
       }
     }
     return status;
+  }).filter(Boolean)));
+
+  // Get unique severities for filter
+  const uniqueSeverities = Array.from(new Set(logs.map(log => {
+    const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
+    const meta = parsed.metadata || {};
+    return parsed.severity || meta.severity || 'LOW';
+  }).filter(Boolean)));
+
+  // Get unique categories for filter
+  const uniqueCategories = Array.from(new Set(logs.map(log => {
+    const parsed = log.details ? (() => { try { return JSON.parse(log.details); } catch { return {}; } })() : {};
+    const meta = parsed.metadata || {};
+    return parsed.category || meta.category || 'SYSTEM';
   }).filter(Boolean)));
 
   // Filter logs based on search and filters
@@ -223,7 +273,15 @@ export default function AuditPage() {
     // User filter
     const matchesUser = userFilter === 'all' || log.user === userFilter;
     
-    return matchesSearch && matchesStatus && matchesTemplate && matchesYear && matchesUser;
+    // Severity filter
+    const severity = parsed.severity || meta.severity || 'LOW';
+    const matchesSeverity = severityFilter === 'all' || severity === severityFilter;
+    
+    // Category filter
+    const category = parsed.category || meta.category || 'SYSTEM';
+    const matchesCategory = categoryFilter === 'all' || category === categoryFilter;
+    
+    return matchesSearch && matchesStatus && matchesTemplate && matchesYear && matchesUser && matchesSeverity && matchesCategory;
   });
 
   // Debug logging to help identify filter issues
@@ -250,6 +308,12 @@ export default function AuditPage() {
     const outputType = meta.outputType || parsed.outputType || 'DOCX';
     const fileUrl = meta.fileUrl || parsed.fileUrl || '';
     
+    // Extract enhanced audit fields
+    const severity = parsed.severity || meta.severity || 'LOW';
+    const category = parsed.category || meta.category || 'SYSTEM';
+    const resourceType = parsed.resourceType || meta.resourceType || '';
+    const resourceId = parsed.resourceId || meta.resourceId || '';
+    
     // Derive status from action type if not explicitly set
     let status = meta.status || parsed.status;
     if (!status) {
@@ -274,6 +338,10 @@ export default function AuditPage() {
       outputType: outputType,
       action: log.action || '-',
       fileUrl: fileUrl,
+      severity: severity,
+      category: category,
+      resourceType: resourceType,
+      resourceId: resourceId,
       details: log.details, // Keep original details for download functionality
     };
   });
@@ -297,6 +365,10 @@ export default function AuditPage() {
       Status: row.status,
       Output: row.outputType,
       Action: row.action,
+      Severity: row.severity,
+      Category: row.category,
+      ResourceType: row.resourceType,
+      ResourceID: row.resourceId,
       FileUrl: row.fileUrl,
     })));
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -357,6 +429,43 @@ export default function AuditPage() {
         <span className="text-xs font-semibold text-gray-700">{label}</span>
       );
     }, sortable: true },
+    { headerName: 'Severity', field: 'severity', minWidth: 100, cellRenderer: (params: any) => {
+      const severity = (params.value || '').toLowerCase();
+      const severityColors = {
+        'critical': 'text-red-700 bg-red-50 border-red-200',
+        'high': 'text-orange-700 bg-orange-50 border-orange-200',
+        'medium': 'text-yellow-700 bg-yellow-50 border-yellow-200',
+        'low': 'text-green-700 bg-green-50 border-green-200'
+      };
+      const colorClass = severityColors[severity as keyof typeof severityColors] || 'text-gray-700 bg-gray-50 border-gray-200';
+      return (
+        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${colorClass}`}>
+          {severity.toUpperCase()}
+        </span>
+      );
+    }, sortable: true },
+    { headerName: 'Category', field: 'category', minWidth: 120, cellRenderer: (params: any) => {
+      const category = (params.value || '').toLowerCase();
+      const categoryColors = {
+        'security': 'text-red-600 bg-red-50',
+        'admin': 'text-purple-600 bg-purple-50',
+        'auth': 'text-blue-600 bg-blue-50',
+        'data': 'text-green-600 bg-green-50',
+        'system': 'text-gray-600 bg-gray-50'
+      };
+      const colorClass = categoryColors[category as keyof typeof categoryColors] || 'text-gray-600 bg-gray-50';
+      return (
+        <span className={`px-2 py-1 rounded text-xs font-medium ${colorClass}`}>
+          {category.toUpperCase()}
+        </span>
+      );
+    }, sortable: true },
+    { headerName: 'Resource Type', field: 'resourceType', minWidth: 120, cellRenderer: (params: any) => (
+      <span className="text-sm text-gray-700">{params.value || '-'}</span>
+    ), sortable: true },
+    { headerName: 'Resource ID', field: 'resourceId', minWidth: 120, cellRenderer: (params: any) => (
+      <span className="text-sm text-gray-600 font-mono">{params.value || '-'}</span>
+    ), sortable: true },
     { headerName: 'Actions', field: 'fileUrl', minWidth: 100, cellRenderer: (params: any) => (
       params.value ? (
         <TooltipProvider>
@@ -454,7 +563,7 @@ export default function AuditPage() {
           </div>
           
           {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
@@ -519,6 +628,34 @@ export default function AuditPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            <Select value={severityFilter} onValueChange={setSeverityFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by severity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Severities</SelectItem>
+                {uniqueSeverities.map(severity => (
+                  <SelectItem key={severity} value={severity}>
+                    {severity.charAt(0).toUpperCase() + severity.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {uniqueCategories.map(category => (
+                  <SelectItem key={category} value={category}>
+                    {category.charAt(0).toUpperCase() + category.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 justify-between">
@@ -540,6 +677,8 @@ export default function AuditPage() {
                   setTemplateFilter('all');
                   setYearFilter('all');
                   setUserFilter('all');
+                  setSeverityFilter('all');
+                  setCategoryFilter('all');
                 }}
                 className="text-gray-600"
               >

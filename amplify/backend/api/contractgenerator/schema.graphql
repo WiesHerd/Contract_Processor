@@ -99,6 +99,7 @@ type Mapping @model @auth(rules: [{ allow: owner, ownerField: "owner", operation
 
 type Clause @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
   id: ID!
+  title: String
   text: String!
   tags: [String]
   condition: String

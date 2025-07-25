@@ -329,6 +329,7 @@ export const listMappings = /* GraphQL */ `query ListMappings(
 export const getClause = /* GraphQL */ `query GetClause($id: ID!) {
   getClause(id: $id) {
     id
+    title
     text
     tags
     condition
@@ -347,6 +348,7 @@ export const listClauses = /* GraphQL */ `query ListClauses(
   listClauses(filter: $filter, limit: $limit, nextToken: $nextToken) {
     items {
       id
+      title
       text
       tags
       condition

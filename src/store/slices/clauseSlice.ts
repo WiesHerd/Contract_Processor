@@ -22,13 +22,13 @@ const initialState: ClauseState = {
 const transformAPIClauseToClause = (apiClause: APIClause): Clause => {
   return {
     id: apiClause.id,
-    title: apiClause.text.substring(0, 50) + (apiClause.text.length > 50 ? '...' : ''), // Use first 50 chars as title
+    title: apiClause.title || apiClause.text.substring(0, 100),
     content: apiClause.text,
     type: 'standard',
-    category: 'other', // Default category
+    category: 'other', // or your category logic
     tags: apiClause.tags?.filter((tag): tag is string => tag !== null) || [],
-    applicableProviderTypes: ['physician'], // Default
-    applicableCompensationModels: ['base'], // Default
+    applicableProviderTypes: ['physician'],
+    applicableCompensationModels: ['base'],
     createdAt: apiClause.createdAt,
     updatedAt: apiClause.updatedAt,
     version: '1.0.0',
@@ -63,14 +63,14 @@ export const fetchClausesIfNeeded = createAsyncThunk(
     if (clauses.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS)) {
       try {
         console.log('Fetching clauses from DynamoDB...');
-        const result = await awsClauses.list();
-        
-        if (result?.items && result.items.length > 0) {
-          console.log(`Found ${result.items.length} clauses in DynamoDB`);
-          // Transform API clauses to internal format
-          const transformedClauses = result.items
-            .filter(isValidAPIClause)
-            .map(transformAPIClauseToClause);
+        const items = await awsClauses.listAll();
+        console.log('RAW items from DynamoDB:', items);
+        const validClauses = items.filter(isValidAPIClause);
+        console.log('Valid clauses after filter:', validClauses);
+        const transformedClauses = validClauses.map(transformAPIClauseToClause);
+        console.log('Transformed clauses:', transformedClauses);
+        if (transformedClauses.length > 0) {
+          console.log(`Found ${transformedClauses.length} clauses in DynamoDB`);
           return transformedClauses;
         } else {
           // If DynamoDB is empty, use the static clauses as fallback

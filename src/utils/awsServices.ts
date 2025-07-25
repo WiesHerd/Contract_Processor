@@ -787,6 +787,26 @@ export const awsClauses = {
         throw error;
       }
     });
+  },
+
+  async listAll(): Promise<ListClausesQuery['listClauses']['items']> {
+    let allClauses: ListClausesQuery['listClauses']['items'] = [];
+    let nextToken: string | undefined = undefined;
+    let pageCount = 0;
+    do {
+      pageCount++;
+      console.log(`Fetching page ${pageCount} with nextToken:`, nextToken);
+      const result = await this.list(100, nextToken);
+      console.log(`Page ${pageCount} result:`, result);
+      if (result?.items) {
+        console.log(`Page ${pageCount} returned ${result.items.length} items`);
+        allClauses = allClauses.concat(result.items);
+      }
+      nextToken = result?.nextToken;
+      console.log(`Page ${pageCount} nextToken:`, nextToken);
+    } while (nextToken);
+    console.log(`Total clauses fetched: ${allClauses.length}`);
+    return allClauses;
   }
 };
 

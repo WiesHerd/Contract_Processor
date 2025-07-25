@@ -464,6 +464,7 @@ export const onCreateClause = /* GraphQL */ `subscription OnCreateClause(
 ) {
   onCreateClause(filter: $filter, owner: $owner) {
     id
+    title
     text
     tags
     condition
@@ -483,6 +484,7 @@ export const onUpdateClause = /* GraphQL */ `subscription OnUpdateClause(
 ) {
   onUpdateClause(filter: $filter, owner: $owner) {
     id
+    title
     text
     tags
     condition
@@ -502,6 +504,7 @@ export const onDeleteClause = /* GraphQL */ `subscription OnDeleteClause(
 ) {
   onDeleteClause(filter: $filter, owner: $owner) {
     id
+    title
     text
     tags
     condition

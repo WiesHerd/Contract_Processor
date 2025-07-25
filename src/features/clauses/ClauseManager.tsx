@@ -71,6 +71,15 @@ export default function ClauseManager() {
 
   // Use clauses from Redux state, with fallback to static clauses
   const displayClauses = clauses.length > 0 ? clauses : SHARED_CLAUSES;
+  
+  // Debug info
+  console.log('ClauseManager Debug:', {
+    reduxClausesCount: clauses.length,
+    displayClausesCount: displayClauses.length,
+    usingStaticFallback: clauses.length === 0,
+    loading,
+    error
+  });
 
 
   // Filter clauses
@@ -297,6 +306,35 @@ export default function ClauseManager() {
                   className="h-10 px-3"
                 >
                   Force Load
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    console.log('Clearing cache and fetching fresh data...');
+                    dispatch({ type: 'clauses/clearClauses' });
+                    dispatch(fetchClausesIfNeeded());
+                  }}
+                  className="h-10 px-3"
+                >
+                  Refresh
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      console.log('Debug: Fetching all clauses from DynamoDB...');
+                      const items = await awsClauses.listAll();
+                      console.log('Debug: All clauses from DynamoDB:', items);
+                      console.log('Debug: Clause owners:', items?.map(c => ({ id: c.id, owner: c.owner, text: c.text?.substring(0, 50) })));
+                    } catch (error) {
+                      console.error('Debug: Error fetching clauses:', error);
+                    }
+                  }}
+                  className="h-10 px-3"
+                >
+                  Debug DB
                 </Button>
               </div>
             </div>

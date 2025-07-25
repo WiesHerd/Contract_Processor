@@ -497,6 +497,7 @@ export type DeleteMappingInput = {
 
 export type CreateClauseInput = {
   id?: string | null,
+  title?: string | null,
   text: string,
   tags?: Array< string | null > | null,
   condition?: string | null,
@@ -504,6 +505,7 @@ export type CreateClauseInput = {
 };
 
 export type ModelClauseConditionInput = {
+  title?: ModelStringInput | null,
   text?: ModelStringInput | null,
   tags?: ModelStringInput | null,
   condition?: ModelStringInput | null,
@@ -518,6 +520,7 @@ export type ModelClauseConditionInput = {
 export type Clause = {
   __typename: "Clause",
   id: string,
+  title?: string | null,
   text: string,
   tags?: Array< string | null > | null,
   condition?: string | null,
@@ -528,6 +531,7 @@ export type Clause = {
 
 export type UpdateClauseInput = {
   id: string,
+  title?: string | null,
   text?: string | null,
   tags?: Array< string | null > | null,
   condition?: string | null,
@@ -861,6 +865,7 @@ export type ModelMappingConnection = {
 
 export type ModelClauseFilterInput = {
   id?: ModelIDInput | null,
+  title?: ModelStringInput | null,
   text?: ModelStringInput | null,
   tags?: ModelStringInput | null,
   condition?: ModelStringInput | null,
@@ -1121,6 +1126,7 @@ export type ModelSubscriptionMappingFilterInput = {
 
 export type ModelSubscriptionClauseFilterInput = {
   id?: ModelSubscriptionIDInput | null,
+  title?: ModelSubscriptionStringInput | null,
   text?: ModelSubscriptionStringInput | null,
   tags?: ModelSubscriptionStringInput | null,
   condition?: ModelSubscriptionStringInput | null,
@@ -1619,6 +1625,7 @@ export type CreateClauseMutation = {
   createClause?:  {
     __typename: "Clause",
     id: string,
+    title?: string | null,
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
@@ -1637,6 +1644,7 @@ export type UpdateClauseMutation = {
   updateClause?:  {
     __typename: "Clause",
     id: string,
+    title?: string | null,
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
@@ -1655,6 +1663,7 @@ export type DeleteClauseMutation = {
   deleteClause?:  {
     __typename: "Clause",
     id: string,
+    title?: string | null,
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
@@ -2181,6 +2190,7 @@ export type GetClauseQuery = {
   getClause?:  {
     __typename: "Clause",
     id: string,
+    title?: string | null,
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
@@ -2202,6 +2212,7 @@ export type ListClausesQuery = {
     items:  Array< {
       __typename: "Clause",
       id: string,
+      title?: string | null,
       text: string,
       tags?: Array< string | null > | null,
       condition?: string | null,
@@ -3064,6 +3075,7 @@ export type OnCreateClauseSubscription = {
   onCreateClause?:  {
     __typename: "Clause",
     id: string,
+    title?: string | null,
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
@@ -3082,6 +3094,7 @@ export type OnUpdateClauseSubscription = {
   onUpdateClause?:  {
     __typename: "Clause",
     id: string,
+    title?: string | null,
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,
@@ -3100,6 +3113,7 @@ export type OnDeleteClauseSubscription = {
   onDeleteClause?:  {
     __typename: "Clause",
     id: string,
+    title?: string | null,
     text: string,
     tags?: Array< string | null > | null,
     condition?: string | null,

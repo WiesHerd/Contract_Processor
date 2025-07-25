@@ -464,6 +464,7 @@ export const createClause = /* GraphQL */ `mutation CreateClause(
 ) {
   createClause(input: $input, condition: $condition) {
     id
+    title
     text
     tags
     condition
@@ -483,6 +484,7 @@ export const updateClause = /* GraphQL */ `mutation UpdateClause(
 ) {
   updateClause(input: $input, condition: $condition) {
     id
+    title
     text
     tags
     condition
@@ -502,6 +504,7 @@ export const deleteClause = /* GraphQL */ `mutation DeleteClause(
 ) {
   deleteClause(input: $input, condition: $condition) {
     id
+    title
     text
     tags
     condition
