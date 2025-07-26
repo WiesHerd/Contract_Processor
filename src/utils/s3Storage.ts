@@ -10,6 +10,10 @@ import { saveAs } from 'file-saver';
 import pako from 'pako';
 import { withRetry, isRetryableError } from './retry';
 import config from '../amplifyconfiguration.json';
+import { Amplify } from 'aws-amplify';
+
+// Configure Amplify for storage
+Amplify.configure(config);
 
 // Get AWS configuration from Amplify config with fallbacks
 const getAWSConfig = () => {
@@ -55,6 +59,13 @@ const PATHS = {
   METADATA: 'metadata/',
   TEMP: 'temp/',
 } as const;
+
+// Check if we're in a browser environment with Amplify credentials
+const isAmplifyEnvironment = () => {
+  return typeof window !== 'undefined' && 
+         config.aws_user_files_s3_bucket && 
+         config.aws_cognito_identity_pool_id;
+};
 
 // Base file operations with enhanced error handling
 export async function uploadFile(
@@ -139,6 +150,20 @@ export async function listFiles(prefix: string): Promise<string[]> {
       return (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
     } catch (error) {
       console.error('S3 list error:', error);
+      
+      // If we're in Amplify environment and get credential errors, try using Amplify Storage
+      if (isAmplifyEnvironment() && error.message?.includes('Credential is missing')) {
+        console.log('🔄 Falling back to Amplify Storage for listing files...');
+        try {
+          // Import Amplify Storage dynamically
+          const { Storage } = await import('aws-amplify/storage');
+          const result = await Storage.list(prefix);
+          return result.results.map(item => item.key).filter(Boolean);
+        } catch (amplifyError) {
+          console.error('Amplify Storage fallback also failed:', amplifyError);
+        }
+      }
+      
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
