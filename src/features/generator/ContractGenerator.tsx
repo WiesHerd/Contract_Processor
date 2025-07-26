@@ -1710,14 +1710,14 @@ export default function ContractGenerator() {
                         <TooltipTrigger asChild>
                           <button
                             onClick={() => setIsColumnSidebarOpen(true)}
-                            className="w-32 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 rounded-md shadow-sm transition-all duration-200 group justify-center"
+                            className="min-w-32 max-w-40 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 rounded-md shadow-sm transition-all duration-200 group justify-center whitespace-nowrap"
                             title={`Active: ${preferences[statusTab].activeView === 'default' ? 'Default View' : preferences[statusTab].activeView} - Click to customize`}
                           >
-                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                            <span className="text-white group-hover:text-white">
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse flex-shrink-0"></div>
+                            <span className="text-white group-hover:text-white truncate">
                               {preferences[statusTab].activeView === 'default' ? 'Default' : preferences[statusTab].activeView}
                             </span>
-                            <svg className="w-3 h-3 text-white group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3 h-3 text-white group-hover:text-white transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>

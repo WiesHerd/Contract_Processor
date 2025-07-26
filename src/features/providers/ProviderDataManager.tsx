@@ -490,7 +490,7 @@ export default function ProviderDataManager() {
       // Also include dynamic fields that have data
       if (provider.dynamicFields) {
         try {
-          const dynamicData = JSON.parse(provider.dynamicFields);
+          const dynamicData = JSON.parse(String(provider.dynamicFields));
           Object.keys(dynamicData).forEach(key => {
             const value = dynamicData[key];
             // Only include fields with actual data (not empty strings, null, undefined)
@@ -529,7 +529,7 @@ export default function ProviderDataManager() {
         // If field not found in main provider object, check dynamic fields
         if (value === undefined && provider.dynamicFields) {
           try {
-            const dynamicData = JSON.parse(provider.dynamicFields);
+            const dynamicData = JSON.parse(String(provider.dynamicFields));
             value = dynamicData[fieldName];
           } catch (e) {
             // Ignore parsing errors

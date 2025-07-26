@@ -123,7 +123,7 @@ export const checkSystemHealth = async () => {
   try {
     // Check storage connectivity
     const { list } = await import('aws-amplify/storage');
-    await list('', { maxKeys: 1 });
+    await list();
     healthChecks.storage = true;
   } catch (error) {
     console.error('Storage health check failed:', error);

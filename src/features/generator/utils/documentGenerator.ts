@@ -3,7 +3,9 @@ import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import { Template } from '@/types/template';
 import { Provider } from '@/types/provider';
-import { TemplateMapping } from '../../templates/mappingsSlice';
+import { Clause } from '@/types/clause';
+import { AuditLogEntry } from '@/store/slices/auditSlice';
+import { LocalTemplateMapping } from '../../templates/mappingsSlice';
 import localforage from 'localforage';
 
 export async function loadTemplate(template: Template): Promise<Docxtemplater> {
@@ -30,7 +32,7 @@ export async function loadTemplate(template: Template): Promise<Docxtemplater> {
 
 export function prepareTemplateData(
   provider: Provider,
-  mapping: TemplateMapping
+  mapping: LocalTemplateMapping
 ): Record<string, any> {
   const data: Record<string, any> = {};
 
@@ -62,7 +64,7 @@ export function prepareTemplateData(
 export async function generateDocument(
   template: Template,
   provider: Provider,
-  mapping: TemplateMapping
+  mapping: LocalTemplateMapping
 ): Promise<Blob> {
   try {
     const doc = await loadTemplate(template);

@@ -1,7 +1,5 @@
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { Card, CardContent } from './card';
-import { Badge } from './badge';
 import { CheckCircle, Clock, AlertCircle, Play } from 'lucide-react';
 import { ContractProgress } from '../../features/generator/hooks/useContractProgress';
 
@@ -15,32 +13,27 @@ const COLORS = {
   inProgress: '#3b82f6', // Blue
   notStarted: '#e5e7eb', // Gray
   failed: '#ef4444', // Red
-  background: '#f8fafc' // Light gray background
 };
 
 const STATUS_CONFIG = {
   idle: {
     icon: Clock,
     color: 'text-gray-500',
-    bgColor: 'bg-gray-100',
     text: 'Ready to Start'
   },
   'in-progress': {
     icon: Play,
     color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
     text: 'In Progress'
   },
   completed: {
     icon: CheckCircle,
     color: 'text-green-600',
-    bgColor: 'bg-green-100',
     text: 'Completed'
   },
   error: {
     icon: AlertCircle,
     color: 'text-red-600',
-    bgColor: 'bg-red-100',
     text: 'Errors Found'
   }
 };
@@ -51,114 +44,95 @@ export const ContractProgressChart: React.FC<ContractProgressChartProps> = ({
 }) => {
   const { completionPercentage, total, processed, inProgress, failed, status } = progress;
   
-  // Prepare data for the donut chart
+  // Create chart data - ensure we always have data
   const chartData = [
     {
       name: 'Completed',
-      value: processed,
-      color: COLORS.completed,
-      percentage: total > 0 ? Math.round((processed / total) * 100) : 0
+      value: Math.max(processed, 0),
+      color: COLORS.completed
     },
     {
       name: 'In Progress',
-      value: inProgress,
-      color: COLORS.inProgress,
-      percentage: total > 0 ? Math.round((inProgress / total) * 100) : 0
-    },
-    {
-      name: 'Not Started',
-      value: total - processed - inProgress - failed,
-      color: COLORS.notStarted,
-      percentage: total > 0 ? Math.round(((total - processed - inProgress - failed) / total) * 100) : 0
+      value: Math.max(inProgress, 0),
+      color: COLORS.inProgress
     },
     {
       name: 'Failed',
-      value: failed,
-      color: COLORS.failed,
-      percentage: total > 0 ? Math.round((failed / total) * 100) : 0
+      value: Math.max(failed, 0),
+      color: COLORS.failed
+    },
+    {
+      name: 'Not Started',
+      value: Math.max(total - processed - inProgress - failed, 0),
+      color: COLORS.notStarted
     }
-  ].filter(item => item.value > 0); // Only show segments with data
+  ].filter(item => item.value > 0);
+
+  // If no data, show a default segment
+  const displayData = chartData.length > 0 ? chartData : [
+    {
+      name: 'Not Started',
+      value: 1,
+      color: COLORS.notStarted
+    }
+  ];
 
   const statusConfig = STATUS_CONFIG[status];
   const StatusIcon = statusConfig.icon;
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-white p-2 rounded-lg shadow-lg border border-gray-200 text-xs">
-          <p className="font-medium text-gray-900">{data.name}</p>
-          <p className="text-gray-600">
-            {data.value} contracts ({data.percentage}%)
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
-    <div className={`${className} p-2`}>
-      <div className="flex items-center gap-2">
-        {/* Compact Donut Chart */}
-        <div className="relative">
-          <ResponsiveContainer width={65} height={65}>
+    <div className={`${className} flex items-center gap-3 p-2`}>
+      {/* Large Donut Chart */}
+      <div className="relative flex-shrink-0">
+        <div style={{ width: '100px', height: '100px' }}>
+          <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={chartData}
+                data={displayData}
                 cx="50%"
                 cy="50%"
-                innerRadius={20}
-                outerRadius={28}
-                paddingAngle={1}
+                innerRadius={30}
+                outerRadius={45}
+                paddingAngle={3}
                 dataKey="value"
                 startAngle={90}
                 endAngle={-270}
               >
-                {chartData.map((entry, index) => (
+                {displayData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
-          
-          {/* Center Content */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <div className="text-center">
-              <div className="text-sm font-bold text-gray-900">
-                {completionPercentage}%
-              </div>
-            </div>
-          </div>
         </div>
+      </div>
 
-        {/* Compact Progress Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-gray-700">Progress</span>
-          </div>
-          
-          {/* Progress Bar */}
-          <div className="w-full bg-gray-200 rounded-full h-1 mb-1">
-            <div 
-              className="bg-gradient-to-r from-green-500 to-blue-500 h-1 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${completionPercentage}%` }}
-            />
-          </div>
-          
-          {/* Compact Stats */}
-          <div className="text-xs text-gray-600">
-            <span>{processed} completed</span>
-            <span className="mx-1">•</span>
-            <span>{total - processed - inProgress - failed} remaining</span>
-            {failed > 0 && (
-              <>
-                <span className="mx-1">•</span>
-                <span className="text-red-600">{failed} failed</span>
-              </>
-            )}
-          </div>
+      {/* Progress Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-sm font-medium text-gray-700">Progress</span>
+          <StatusIcon className={`w-4 h-4 ${statusConfig.color}`} />
+        </div>
+        
+        {/* Progress Bar */}
+        <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
+          <div 
+            className="bg-gradient-to-r from-green-500 to-blue-500 h-2 rounded-full transition-all duration-500 ease-out"
+            style={{ width: `${completionPercentage}%` }}
+          />
+        </div>
+        
+        {/* Stats */}
+        <div className="text-xs text-gray-600">
+          <span>{processed} completed</span>
+          <span className="mx-1">•</span>
+          <span>{total - processed - inProgress - failed} remaining</span>
+          {failed > 0 && (
+            <>
+              <span className="mx-1">•</span>
+              <span className="text-red-600">{failed} failed</span>
+            </>
+          )}
         </div>
       </div>
     </div>

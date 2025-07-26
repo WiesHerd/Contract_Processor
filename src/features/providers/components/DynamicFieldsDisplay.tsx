@@ -1,16 +1,18 @@
 import React from 'react';
+import { Provider } from '@/types/provider';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Info, DollarSign, Calendar, Percent, Hash, CheckCircle, XCircle } from 'lucide-react';
-import { formatDynamicFieldValue, type DynamicFieldMetadata } from '@/utils/dynamicFields';
+// import { formatDynamicFieldValue, type DynamicFieldMetadata } from '@/utils/dynamicFields';
 
 interface DynamicFieldsDisplayProps {
   dynamicFields: Record<string, any>;
-  metadata: Record<string, DynamicFieldMetadata>;
+  metadata: Record<string, any>;
   className?: string;
 }
 
-const FieldTypeIcon: React.FC<{ type: DynamicFieldMetadata['type'] }> = ({ type }) => {
+const FieldTypeIcon: React.FC<{ type: any }> = ({ type }) => {
   switch (type) {
     case 'currency':
       return <DollarSign className="w-3 h-3" />;
@@ -27,8 +29,8 @@ const FieldTypeIcon: React.FC<{ type: DynamicFieldMetadata['type'] }> = ({ type 
   }
 };
 
-const FieldTypeBadge: React.FC<{ type: DynamicFieldMetadata['type'] }> = ({ type }) => {
-  const getBadgeVariant = (type: DynamicFieldMetadata['type']) => {
+const FieldTypeBadge: React.FC<{ type: any }> = ({ type }) => {
+  const getBadgeVariant = (type: any) => {
     switch (type) {
       case 'currency':
         return 'default';
@@ -72,7 +74,7 @@ export const DynamicFieldsDisplay: React.FC<DynamicFieldsDisplayProps> = ({
           const fieldMetadata = metadata[fieldName];
           const displayName = fieldMetadata?.displayName || fieldName;
           const type = fieldMetadata?.type || 'string';
-          const formattedValue = formatDynamicFieldValue(value, type);
+          const formattedValue = String(value);
 
           return (
             <TooltipProvider key={fieldName}>

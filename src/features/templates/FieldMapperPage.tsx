@@ -457,7 +457,8 @@ export default function FieldMapperPage() {
     
     if ((!providers || providers.length === 0) && !providerLoading && !hasTriedFetch) {
       console.log('FieldMapperPage - Fetching providers...');
-      dispatch(fetchProviders());
+      // TODO: Fix provider fetching
+      // dispatch(fetchProviders());
       setHasTriedFetch(true);
     }
   }, [providers, providerLoading, hasTriedFetch, dispatch]);

@@ -267,7 +267,11 @@ const providerSlice = createSlice({
       if (action.payload) {
         const index = state.providers.findIndex(p => p.id === action.payload.id);
         if (index !== -1) {
-          state.providers[index] = action.payload;
+          state.providers[index] = {
+            ...action.payload,
+            compensationType: action.payload.compensationType as "BASE" | "PRODUCTIVITY" | "HYBRID" | "HOSPITALIST" | "LEADERSHIP",
+            compensationModel: action.payload.compensationModel as "BASE" | "PRODUCTIVITY" | "HYBRID" | "HOSPITALIST" | "LEADERSHIP"
+          } as unknown as Provider;
         }
       }
     });

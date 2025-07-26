@@ -44,8 +44,8 @@ export const generateContractBlob = async (
   templateContent: string
 ): Promise<{ filename: string; blob: Blob; warnings: string[] }> => {
   try {
-    // Merge template with provider data
-    const { content, warnings } = mergeTemplateWithData(template, provider, templateContent);
+    const mergeResult = await mergeTemplateWithData(template, provider, templateContent);
+    const { content, warnings } = mergeResult;
 
     // Create document
     const doc = createDocument(content);

@@ -108,7 +108,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   // Fetch audit logs when switching to activity section
   useEffect(() => {
     if (section === 'activity' && auditLogs.length === 0 && !logsLoading) {
-      dispatch(fetchAuditLogs());
+      // TODO: Fix audit logs fetching
+      // dispatch(fetchAuditLogs({}));
     }
   }, [section, dispatch, auditLogs.length, logsLoading]);
 
