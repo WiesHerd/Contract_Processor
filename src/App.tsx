@@ -365,5 +365,8 @@ function App() {
   );
 }
 
+// Environment variables are now configured in AWS Amplify
+// VITE_AWS_REGION and VITE_S3_BUCKET are set for production
+
 // Export with error boundary wrapper
 export default withErrorBoundary(App); 

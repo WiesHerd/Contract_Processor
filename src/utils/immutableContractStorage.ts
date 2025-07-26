@@ -2,8 +2,24 @@
 // Enterprise-grade immutable contract storage with permanent URLs
 
 import { withRetry } from './retry';
-import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import config from '../amplifyconfiguration.json';
+
+// Get AWS configuration from Amplify config with fallbacks
+const getAWSConfig = () => {
+  // Try environment variables first (for local development)
+  const region = import.meta.env.VITE_AWS_REGION || config.aws_project_region || 'us-east-2';
+  const accessKeyId = import.meta.env.VITE_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY;
+  
+  // Use Amplify S3 bucket if available, otherwise fall back to environment variable
+  const bucket = import.meta.env.VITE_S3_BUCKET || config.aws_user_files_s3_bucket || 'contractengine-storage-wherdzik';
+  
+  return { region, accessKeyId, secretAccessKey, bucket };
+};
+
+const awsConfig = getAWSConfig();
 
 interface ImmutableContract {
   contractId: string;
@@ -34,14 +50,14 @@ class ImmutableContractStorage {
   private readonly METADATA_PREFIX = 'contracts/metadata/';
   
   // S3 Configuration
-  private readonly AWS_REGION = import.meta.env.VITE_AWS_REGION || 'us-east-2';
-  private readonly BUCKET_NAME = import.meta.env.VITE_S3_BUCKET || 'contractengine-storage-wherdzik';
+  private readonly AWS_REGION = awsConfig.region;
+  private readonly BUCKET_NAME = awsConfig.bucket;
   private readonly s3Client = new S3Client({
     region: this.AWS_REGION,
-    credentials: {
-      accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID || '',
-      secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY || ''
-    }
+    credentials: awsConfig.accessKeyId && awsConfig.secretAccessKey ? {
+      accessKeyId: awsConfig.accessKeyId,
+      secretAccessKey: awsConfig.secretAccessKey,
+    } : undefined, // Let AWS SDK use default credential chain
   });
 
   /**

@@ -192,7 +192,7 @@ export const WelcomeScreen = () => {
                 }`}
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'} group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors`}>
+                  <div className={`p-2 rounded-lg ${isDark ? 'bg-gray-800 text-gray-400 group-hover:bg-gray-700 group-hover:text-blue-400' : 'bg-gray-100 text-gray-600 group-hover:bg-blue-100 group-hover:text-blue-600'} transition-colors`}>
                     {feature.icon}
                   </div>
                   <h4 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>

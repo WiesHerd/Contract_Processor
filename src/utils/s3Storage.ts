@@ -9,19 +9,42 @@ import { v4 as uuidv4 } from 'uuid';
 import { saveAs } from 'file-saver';
 import pako from 'pako';
 import { withRetry, isRetryableError } from './retry';
+import config from '../amplifyconfiguration.json';
+
+// Get AWS configuration from Amplify config with fallbacks
+const getAWSConfig = () => {
+  // Try environment variables first (for local development)
+  const region = import.meta.env.VITE_AWS_REGION || config.aws_project_region || 'us-east-2';
+  const accessKeyId = import.meta.env.VITE_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY;
+  
+  // Use Amplify S3 bucket if available, otherwise fall back to environment variable
+  const bucket = import.meta.env.VITE_S3_BUCKET || config.aws_user_files_s3_bucket;
+  
+  console.log('🔍 S3 Configuration:', {
+    region,
+    hasAccessKey: !!accessKeyId,
+    hasSecretKey: !!secretAccessKey,
+    bucket: bucket || 'NOT_SET'
+  });
+  
+  return { region, accessKeyId, secretAccessKey, bucket };
+};
+
+const awsConfig = getAWSConfig();
 
 // Initialize S3 client with retry configuration
 const s3Client = new S3Client({
-  region: import.meta.env.VITE_AWS_REGION,
-  credentials: {
-    accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID,
-    secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY,
-  },
+  region: awsConfig.region,
+  credentials: awsConfig.accessKeyId && awsConfig.secretAccessKey ? {
+    accessKeyId: awsConfig.accessKeyId,
+    secretAccessKey: awsConfig.secretAccessKey,
+  } : undefined, // Let AWS SDK use default credential chain
   maxAttempts: 3,
 });
 
 // S3 bucket and path constants
-const BUCKET = import.meta.env.VITE_S3_BUCKET;
+const BUCKET = awsConfig.bucket;
 const PATHS = {
   TEMPLATES: 'templates/',
   CONTRACTS: 'contracts/',
@@ -42,6 +65,10 @@ export async function uploadFile(
 ): Promise<string> {
   return withRetry(async () => {
     try {
+      if (!BUCKET) {
+        throw new Error('S3 bucket not configured');
+      }
+      
       const command = new PutObjectCommand({
         Bucket: BUCKET,
         Key: key,
@@ -63,6 +90,10 @@ export async function uploadFile(
 export async function getSignedDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
   return withRetry(async () => {
     try {
+      if (!BUCKET) {
+        throw new Error('S3 bucket not configured');
+      }
+      
       const command = new GetObjectCommand({
         Bucket: BUCKET,
         Key: key,
@@ -78,6 +109,10 @@ export async function getSignedDownloadUrl(key: string, expiresIn = 3600): Promi
 export async function deleteFile(key: string): Promise<void> {
   return withRetry(async () => {
     try {
+      if (!BUCKET) {
+        throw new Error('S3 bucket not configured');
+      }
+      
       await s3Client.send(new DeleteObjectCommand({
         Bucket: BUCKET,
         Key: key,
@@ -92,6 +127,10 @@ export async function deleteFile(key: string): Promise<void> {
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
     try {
+      if (!BUCKET) {
+        throw new Error('S3 bucket not configured');
+      }
+      
       const command = new ListObjectsV2Command({
         Bucket: BUCKET,
         Prefix: prefix,
@@ -243,6 +282,9 @@ export async function getContractFile(contractId: string, fileName: string): Pro
 export async function checkFileExists(key: string): Promise<boolean> {
   return withRetry(async () => {
     try {
+      if (!BUCKET) {
+        throw new Error('S3 bucket not configured');
+      }
       await s3Client.send(new HeadObjectCommand({
         Bucket: BUCKET,
         Key: key

@@ -1,8 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { listFiles } from '@/utils/s3Storage';
+import { listFiles } from '../utils/s3Storage';
+import config from '../amplifyconfiguration.json';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
+
+// Get AWS configuration from Amplify config with fallbacks
+const getAWSConfig = () => {
+  // Try environment variables first (for local development)
+  const region = import.meta.env.VITE_AWS_REGION || config.aws_project_region || 'us-east-2';
+  const accessKeyId = import.meta.env.VITE_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY;
+  
+  return { region, accessKeyId, secretAccessKey };
+};
+
+const awsConfig = getAWSConfig();
 
 interface YearContextType {
   selectedYear: number;

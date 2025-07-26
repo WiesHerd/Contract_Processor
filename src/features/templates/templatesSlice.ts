@@ -17,7 +17,7 @@ const initialState: TemplatesState = {
   lastSync: null,
 };
 
-// Async thunk to hydrate templates from S3
+// Async thunk to hydrate templates from S3 with fallback to local storage
 export const hydrateTemplatesFromS3 = createAsyncThunk(
   'templates/hydrateFromS3',
   async (_, { rejectWithValue }) => {
@@ -37,7 +37,20 @@ export const hydrateTemplatesFromS3 = createAsyncThunk(
       }
       return templates;
     } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to hydrate templates from S3');
+      console.warn('S3 storage not available, falling back to local storage:', error);
+      // Fallback to local storage when S3 is not available
+      try {
+        const localTemplates: Template[] = [];
+        await localforage.iterate((value: Template, key) => {
+          if (key.startsWith('template_')) {
+            localTemplates.push(value);
+          }
+        });
+        return localTemplates;
+      } catch (localError) {
+        console.error('Both S3 and local storage failed:', localError);
+        return rejectWithValue('Failed to load templates from any storage');
+      }
     }
   }
 );

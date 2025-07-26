@@ -1,14 +1,27 @@
 import { CognitoIdentityProviderClient, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
+import config from '../amplifyconfiguration.json';
 
-const REGION = import.meta.env.VITE_AWS_REGION || 'us-east-2';
+// Get AWS configuration from Amplify config with fallbacks
+const getAWSConfig = () => {
+  // Try environment variables first (for local development)
+  const region = import.meta.env.VITE_AWS_REGION || config.aws_project_region || 'us-east-2';
+  const accessKeyId = import.meta.env.VITE_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY;
+  
+  return { region, accessKeyId, secretAccessKey };
+};
+
+const awsConfig = getAWSConfig();
+
+const REGION = awsConfig.region;
 const USER_POOL_ID = 'contractgenerator7e5dfb2d_userpool_7e5dfb2d-production';
 
 const client = new CognitoIdentityProviderClient({
   region: REGION,
-  credentials: {
-    accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID,
-    secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY,
-  },
+  credentials: awsConfig.accessKeyId && awsConfig.secretAccessKey ? {
+    accessKeyId: awsConfig.accessKeyId,
+    secretAccessKey: awsConfig.secretAccessKey,
+  } : undefined, // Let AWS SDK use default credential chain
 });
 
 export async function listCognitoUsers() {

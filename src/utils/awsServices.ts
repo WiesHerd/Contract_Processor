@@ -73,17 +73,30 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, BatchWriteCommand, ScanCommand, ScanCommandInput, ScanCommandOutput, BatchWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { Provider as LocalProvider } from '../types/provider';
 import { withRetry, isRetryableError, AWSError } from './retry';
+import config from '../amplifyconfiguration.json';
+
+// Get AWS configuration from Amplify config with fallbacks
+const getAWSConfig = () => {
+  // Try environment variables first (for local development)
+  const region = import.meta.env.VITE_AWS_REGION || config.aws_project_region || 'us-east-2';
+  const accessKeyId = import.meta.env.VITE_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY;
+  
+  return { region, accessKeyId, secretAccessKey };
+};
+
+const awsConfig = getAWSConfig();
 
 // NOTE: Amplify is configured in main.tsx to use VITE_AWS_APPSYNC_GRAPHQL_ENDPOINT if present.
 const client = generateClient();
 
 // Initialize DynamoDB client
 const dynamoClient = new DynamoDBClient({
-  region: import.meta.env.VITE_AWS_REGION,
-  credentials: {
-    accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID,
-    secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY,
-  },
+  region: awsConfig.region,
+  credentials: awsConfig.accessKeyId && awsConfig.secretAccessKey ? {
+    accessKeyId: awsConfig.accessKeyId,
+    secretAccessKey: awsConfig.secretAccessKey,
+  } : undefined, // Let AWS SDK use default credential chain
 });
 
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
