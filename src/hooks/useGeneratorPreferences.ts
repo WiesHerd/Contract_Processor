@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { createGeneratorPreferences, updateGeneratorPreferences } from '@/graphql/mutations';
 
 interface ColumnPreferences {
   columnVisibility: Record<string, boolean>;
@@ -139,30 +140,60 @@ export function useGeneratorPreferences() {
       const preferencesString = JSON.stringify(newPreferences);
       console.log('🔧 Preferences: Saving to database:', preferencesString);
       
-      await client.graphql({
+      // First, try to find existing preferences
+      const existingResult = await client.graphql({
         query: /* GraphQL */ `
-          mutation CreateGeneratorPreferences($input: CreateGeneratorPreferencesInput!) {
-            createGeneratorPreferences(input: $input) {
-              id
-              userId
-              columnPreferences
-              createdAt
-              updatedAt
+          query GetGeneratorPreferences($userId: String!) {
+            generatorPreferencesByUserId(userId: $userId) {
+              items {
+                id
+                userId
+                columnPreferences
+                createdAt
+                updatedAt
+              }
             }
           }
         `,
-        variables: {
-          input: {
-            userId: user.username,
-            columnPreferences: preferencesString,
-          },
-        },
+        variables: { userId: user.username },
       });
 
+      const existingData = (existingResult as any).data?.generatorPreferencesByUserId?.items?.[0];
+      
+      let result;
+      if (existingData) {
+        // Update existing record
+        console.log('🔧 Preferences: Updating existing record with ID:', existingData.id);
+        result = await client.graphql({
+          query: updateGeneratorPreferences,
+          variables: {
+            input: {
+              id: existingData.id,
+              userId: user.username,
+              columnPreferences: preferencesString,
+            },
+          },
+        });
+      } else {
+        // Create new record
+        console.log('🔧 Preferences: Creating new record');
+        result = await client.graphql({
+          query: createGeneratorPreferences,
+          variables: {
+            input: {
+              userId: user.username,
+              columnPreferences: preferencesString,
+            },
+          },
+        });
+      }
+
       console.log('🔧 Preferences: Successfully saved to database');
+      console.log('🔧 Database result:', result);
       setPreferences(newPreferences);
     } catch (err: any) {
       console.error('🔧 Preferences: Failed to save generator preferences:', err);
+      console.error('🔧 Error details:', err.message, err.errors);
       setError('Failed to save preferences');
     }
   }, [user?.username, client]);
@@ -219,6 +250,9 @@ export function useGeneratorPreferences() {
 
   // Create saved view for a specific tab
   const createSavedView = useCallback((name: string, viewData: any, tab: 'notGenerated' | 'processed' | 'all' = 'notGenerated') => {
+    console.log('🔧 createSavedView called with:', { name, viewData, tab });
+    console.log('🔧 Current preferences before update:', preferences);
+    
     const newPreferences = {
       ...preferences,
       [tab]: {
@@ -229,8 +263,12 @@ export function useGeneratorPreferences() {
         },
       },
     };
+    console.log('🔧 New preferences after update:', newPreferences);
+    
     setPreferences(newPreferences);
     savePreferences(newPreferences);
+    
+    console.log('🔧 createSavedView completed');
   }, [preferences, savePreferences]);
 
   // Set active view for a specific tab

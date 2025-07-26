@@ -64,6 +64,12 @@ const getAssignedTemplate = vi.fn();
 const mockConfirm = vi.fn();
 const mockWindowOpen = vi.fn();
 
+// Mock window.htmlDocx globally
+Object.defineProperty(window, 'htmlDocx', {
+  value: mockHtmlDocx,
+  writable: true
+});
+
 // Copy the functions from ContractGenerator.tsx
 const downloadContract = async (provider: Provider, templateId: string) => {
   try {
@@ -277,15 +283,7 @@ b, strong { font-weight: bold !important; }
 
 describe('Contract Generation Functions - Baseline Tests (Before Extraction)', () => {
   beforeEach(() => {
-    // Reset all mocks and state
     vi.clearAllMocks();
-    generatedContracts = [];
-    templates = [];
-    mappings = {};
-    selectedTemplate = null;
-    userError = null;
-    successMessage = null;
-    warningMessage = null;
     
     // Setup test data
     const testProvider: Provider = {
@@ -533,6 +531,38 @@ describe('Contract Generation Functions - Baseline Tests (Before Extraction)', (
         success: false,
         error: 'Merge failed'
       });
+    });
+
+    it('should handle contract generation with HTML content', async () => {
+      const provider = providers[0];
+      const template = templates[0];
+      
+      // Mock the HTML to DOCX conversion
+      const mockBlob = new Blob(['test'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      mockHtmlDocx.asBlob.mockResolvedValue(mockBlob);
+      
+      await generateAndDownloadDocx(provider, template);
+      
+      expect(mockHtmlDocx.asBlob).toHaveBeenCalled();
+      expect(mockSaveDocxFile).toHaveBeenCalled();
+      expect(showSuccess).toHaveBeenCalledWith('Contract generated successfully for Dr. Smith');
+    });
+
+    it('should handle contract generation failure gracefully', async () => {
+      const provider = providers[0];
+      const templateId = 'template-1';
+      
+      // Make mergeTemplateWithData fail
+      mockMergeTemplateWithData.mockRejectedValue(new Error('Template merge failed'));
+      
+      await generateAndDownloadDocx(provider, templates[0]);
+      
+      expect(mockMergeTemplateWithData).toHaveBeenCalledWith(
+        templates[0],
+        provider,
+        mappings
+      );
+      expect(setUserError).toHaveBeenCalledWith('Failed to generate document. Please try again.');
     });
   });
 }); 

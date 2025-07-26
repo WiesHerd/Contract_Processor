@@ -1,0 +1,5 @@
+[33md50fbb61[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix: restore contract generation workflow and document viewing
+[33m18f779af[m fix: completely exclude Generation Status and Contract Actions columns from non-processed tabs - fix allPossibleColumns array to not include null columns - add debug logging to track column visibility
+[33m6319ed23[m fix: resolve clause data issues - update all clause owners to current user - add title field to GraphQL schema and queries - regenerate API types with title field - fix data transformation to use proper title field - deploy schema changes to AWS
+[33m3c89dbb9[m feat(welcome): Enhance branding and clean up UI
+[33me05fcc44[m fix: resolve column manager infinite loop and revert issues

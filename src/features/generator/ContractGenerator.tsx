@@ -87,7 +87,7 @@ const defaultColumnPreferences = {
     showTooltips: true,
   },
 };
-import { useProviderPreferences } from '@/hooks/useUserPreferences';
+import { useGeneratorPreferences } from '@/hooks/useGeneratorPreferences';
 import { useLegacyNotifications } from '@/components/ui/enterprise-notifications';
 import ProgressModal from '@/components/ui/ProgressModal';
 import { useYear } from '@/contexts/YearContext';
@@ -123,7 +123,17 @@ export default function ContractGenerator() {
   const generatedFiles = useSelector((state: RootState) => state.generator.generatedFiles);
   const { generatedContracts } = useSelector((state: RootState) => state.generator);
   const { showError, showSuccess, showWarning, showInfo } = useLegacyNotifications();
-  const { preferences: userPreferences } = useProviderPreferences();
+  const { 
+    preferences, 
+    loading: preferencesLoading, 
+    updateColumnVisibility, 
+    updateColumnOrder, 
+    updateColumnPinning, 
+    createSavedView, 
+    setActiveView, 
+    deleteSavedView, 
+    updateDisplaySettings 
+  } = useGeneratorPreferences();
   const { selectedYear } = useYear();
 
   // Load providers for the selected year with caching (same pattern as ProviderDataManager)
@@ -183,6 +193,8 @@ export default function ContractGenerator() {
 
   const [statusTab, setStatusTab] = useState<'notGenerated' | 'processed' | 'all'>('notGenerated');
   const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
+  const [createViewModalOpen, setCreateViewModalOpen] = useState(false);
+  const [newViewName, setNewViewName] = useState('');
   
   // Debug Redux state
   console.log('🔍 Redux State Debug:', {
@@ -470,7 +482,21 @@ export default function ContractGenerator() {
 
   const updateColumns = useCallback((newColumns: any[]) => {
     setColumns(newColumns);
-  }, []);
+    
+    // Sync with preferences
+    if (preferences && statusTab) {
+      const columnVisibility = Object.fromEntries(newColumns.map(col => [col.field, col.visible]));
+      const columnOrder = newColumns.map(col => col.field);
+      const columnPinning = {
+        left: newColumns.filter(col => col.pinned === 'left').map(col => col.field),
+        right: newColumns.filter(col => col.pinned === 'right').map(col => col.field),
+      };
+      
+      updateColumnVisibility(columnVisibility, statusTab);
+      updateColumnOrder(columnOrder, statusTab);
+      updateColumnPinning(columnPinning, statusTab);
+    }
+  }, [preferences, statusTab, updateColumnVisibility, updateColumnOrder, updateColumnPinning]);
 
   const agGridColumns = useMemo(() => {
     return columns.map(col => ({
@@ -545,6 +571,41 @@ export default function ContractGenerator() {
     clause.title.toLowerCase().includes(clauseSearch.toLowerCase()) ||
     clause.content.toLowerCase().includes(clauseSearch.toLowerCase())
   );
+
+  // Load and apply preferences when they change
+  useEffect(() => {
+    if (preferences && statusTab && preferences[statusTab]) {
+      const tabPreferences = preferences[statusTab];
+      
+      // Apply saved column visibility, order, and pinning
+      if (tabPreferences.columnOrder && tabPreferences.columnOrder.length > 0) {
+        const newColumns = tabPreferences.columnOrder.map(field => {
+          const existingColumn = columns.find(col => col.field === field);
+          return {
+            field,
+            headerName: existingColumn?.headerName || field,
+            visible: tabPreferences.columnVisibility?.[field] ?? true,
+            pinned: tabPreferences.columnPinning?.left?.includes(field) ? 'left' as const :
+                   tabPreferences.columnPinning?.right?.includes(field) ? 'right' as const : undefined
+          };
+        });
+        
+        // Add any missing columns that aren't in the saved order
+        columns.forEach(col => {
+          if (!newColumns.find(nc => nc.field === col.field)) {
+            newColumns.push({
+              ...col,
+              visible: tabPreferences.columnVisibility?.[col.field] ?? col.visible,
+              pinned: tabPreferences.columnPinning?.left?.includes(col.field) ? 'left' as const :
+                     tabPreferences.columnPinning?.right?.includes(col.field) ? 'right' as const : undefined
+            });
+          }
+        });
+        
+        setColumns(newColumns);
+      }
+    }
+  }, [preferences, statusTab, columns]);
 
   // REMOVED: This useEffect was causing column order to reset to default
   // The preferences system now handles default column order properly
@@ -941,14 +1002,49 @@ export default function ContractGenerator() {
     return getRealTabCountsHook();
   };
 
+  // Handle creating a new saved view
+  const handleCreateView = () => {
+    if (!newViewName.trim()) {
+      showWarning('Please enter a valid view name.');
+      return;
+    }
 
-
-
-
-
-
-
-
+    try {
+      console.log('🔧 handleCreateView called with:', { newViewName, statusTab, columns });
+      
+      const currentColumns = columns.map(col => ({
+        field: col.field,
+        visible: col.visible,
+        pinned: col.pinned
+      }));
+      console.log('🔧 Current columns data:', currentColumns);
+      
+      const viewData = {
+        columnVisibility: Object.fromEntries(currentColumns.map(col => [col.field, col.visible])),
+        columnOrder: currentColumns.map(col => col.field),
+        columnPinning: {
+          left: currentColumns.filter(col => col.pinned === 'left').map(col => col.field),
+          right: currentColumns.filter(col => col.pinned === 'right').map(col => col.field)
+        }
+      };
+      console.log('🔧 View data to save:', viewData);
+      
+      createSavedView(
+        newViewName.trim(),
+        viewData,
+        statusTab
+      );
+      
+      // Show success message and close modal
+      showSuccess(`View "${newViewName.trim()}" saved successfully!`);
+      setCreateViewModalOpen(false);
+      setNewViewName('');
+      
+    } catch (error) {
+      console.error('Error saving view:', error);
+      showError({ message: 'Failed to save view. Please try again.', severity: 'error' });
+    }
+  };
 
 
   // Pagination logic - apply to ALL filtered providers, not just tab-filtered ones
@@ -1311,6 +1407,8 @@ export default function ContractGenerator() {
           <hr className="my-3 border-gray-100" />
         </div>
 
+
+
         {/* Main Content Card */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
           {/* Bulk Processing Section */}
@@ -1584,7 +1682,7 @@ export default function ContractGenerator() {
                       setPageIndex(0);
                     }}
                   >
-                    <SelectTrigger className="w-48">
+                    <SelectTrigger className="w-32 h-9">
                       <SelectValue placeholder="All Types" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1596,52 +1694,53 @@ export default function ContractGenerator() {
                   </Select>
                   
                   <Button
-                    onClick={async () => {
-                      await hydrateGeneratedContracts();
-                      showSuccess('Contract status refreshed from database');
-                    }}
-                    variant="outline"
-                    size="sm"
-                    className="px-3 flex items-center gap-2"
-                    title="Refresh contract status from database"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    Refresh
-                  </Button>
-                  
-
-                  
-
-                  
-
-                  
-
-                  
-
-                  
-
-                  
-
-                  
-
-                  
-                  <Button
                     onClick={handleExportCSV}
                     variant="outline"
                     size="sm"
-                    className="px-3 flex items-center gap-2"
+                    className="w-32 px-3 flex items-center gap-2 justify-center"
                   >
                     <FileDown className="w-4 h-4" />
                     Export CSV
                   </Button>
-                  
 
+                  {/* Active View Indicator - Positioned next to Columns button */}
+                  {preferences?.[statusTab]?.activeView && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => setIsColumnSidebarOpen(true)}
+                            className="w-32 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 rounded-md shadow-sm transition-all duration-200 group justify-center"
+                            title={`Active: ${preferences[statusTab].activeView === 'default' ? 'Default View' : preferences[statusTab].activeView} - Click to customize`}
+                          >
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                            <span className="text-white group-hover:text-white">
+                              {preferences[statusTab].activeView === 'default' ? 'Default' : preferences[statusTab].activeView}
+                            </span>
+                            <svg className="w-3 h-3 text-white group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <div className="text-center">
+                            <div className="font-medium">Active View</div>
+                            <div className="text-sm text-gray-600">
+                              {preferences[statusTab].activeView === 'default' ? 'Default View' : preferences[statusTab].activeView}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">Click to customize</div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                   
                   <Button
                     onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
                     variant="default"
                     size="sm"
-                    className="px-3 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+                    className="w-32 px-3 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white border-blue-600 justify-center"
                     title="Manage column visibility, order, and pinning"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2071,16 +2170,28 @@ export default function ContractGenerator() {
                   {/* View Management */}
                   <div>
                     <div className="text-sm font-medium text-gray-700 mb-3">Saved Views</div>
+                    
                     <div className="flex gap-2 mb-3">
                       <select 
-                        value="default" 
+                        value={preferences?.[statusTab]?.activeView || 'default'} 
                         onChange={(e) => {
-                          // TODO: Implement saved views functionality
-                          alert('Saved views coming soon!');
+                          const viewName = e.target.value;
+                          setActiveView(viewName, statusTab);
+                          if (preferences?.[statusTab]?.savedViews?.[viewName]) {
+                            const savedView = preferences[statusTab].savedViews[viewName];
+                            updateColumnOrder(savedView.columnOrder || [], statusTab);
+                            updateColumnVisibility(savedView.columnVisibility || {}, statusTab);
+                            if (savedView.columnPinning) {
+                              updateColumnPinning(savedView.columnPinning, statusTab);
+                            }
+                          }
                         }}
                         className="flex-1 text-sm border rounded px-2 py-1"
                       >
                         <option value="default">Default View</option>
+                        {Object.keys(preferences?.[statusTab]?.savedViews || {}).map(viewName => (
+                          <option key={viewName} value={viewName}>{viewName}</option>
+                        ))}
                       </select>
                     </div>
                     <div className="flex gap-2">
@@ -2088,7 +2199,14 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          alert('Save view functionality coming soon!');
+                          console.log('🔧 Save View button clicked');
+                          console.log('🔧 Current statusTab:', statusTab);
+                          console.log('🔧 Current columns:', columns);
+                          console.log('🔧 Current preferences:', preferences);
+                          
+                          // Open the create view modal
+                          setNewViewName('');
+                          setCreateViewModalOpen(true);
                         }}
                         className="flex-1 text-xs"
                       >
@@ -2098,13 +2216,43 @@ export default function ContractGenerator() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          alert('Advanced arrangement features coming soon!');
+                          // Pin first 2 visible columns to left by default
+                          const visibleColumns = columns.filter(col => col.visible);
+                          const firstTwoColumns = visibleColumns.slice(0, 2);
+                          const newColumns = columns.map(col => ({
+                            ...col,
+                            pinned: firstTwoColumns.some(fc => fc.field === col.field) ? 'left' as const : undefined
+                          }));
+                          updateColumns(newColumns);
+                          showSuccess(`Pinned first 2 visible columns to left: ${firstTwoColumns.map(col => col.headerName).join(', ')}`);
                         }}
                         className="flex-1 text-xs"
+                        title="Pin the first 2 visible columns to the left side of the grid"
                       >
                         Arrange...
                       </Button>
                     </div>
+                    
+                    {/* Delete View Button - only show if there are saved views and not on default view */}
+                    {Object.keys(preferences?.[statusTab]?.savedViews || {}).length > 0 && 
+                     preferences?.[statusTab]?.activeView !== 'default' && (
+                      <div className="mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const currentView = preferences?.[statusTab]?.activeView;
+                            if (currentView && currentView !== 'default') {
+                              deleteSavedView(currentView, statusTab);
+                              showSuccess(`View "${currentView}" deleted successfully!`);
+                            }
+                          }}
+                          className="w-full text-xs text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          Delete Current View
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Column Pinning */}
@@ -3383,7 +3531,63 @@ export default function ContractGenerator() {
           }}
         />
 
-
+        {/* Create View Modal */}
+        <Dialog open={createViewModalOpen} onOpenChange={setCreateViewModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Save Current View</DialogTitle>
+              <DialogDescription>
+                Save your current column layout as a named view for easy access later.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="viewName" className="block text-sm font-medium text-gray-700 mb-2">
+                  View Name
+                </label>
+                <Input
+                  id="viewName"
+                  type="text"
+                  placeholder="Enter a name for this view..."
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newViewName.trim()) {
+                      handleCreateView();
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+              
+              <div className="text-xs text-gray-500">
+                <p>This will save:</p>
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li>Column visibility settings</li>
+                  <li>Column order</li>
+                  <li>Column pinning (left/right)</li>
+                </ul>
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setCreateViewModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateView}
+                disabled={!newViewName.trim()}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Save View
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       </div>
     </div>

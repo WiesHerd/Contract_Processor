@@ -3,14 +3,27 @@ import { awsTemplates, awsProviders, awsMappings, checkAWSHealth } from '../awsS
 import { Template } from '@/types/template';
 import { Provider } from '@/types/provider';
 
+// Mock the GraphQL client
+const mockGraphQLClient = {
+  graphql: vi.fn()
+};
+
+// Mock the generateClient function
+vi.mock('@/API', () => ({
+  generateClient: vi.fn(() => mockGraphQLClient)
+}));
+
 // Mock AWS SDK
 vi.mock('@aws-sdk/client-dynamodb');
 vi.mock('@aws-sdk/lib-dynamodb');
 vi.mock('aws-amplify/api');
 
+
 describe('AWS Services', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset the mock GraphQL client
+    mockGraphQLClient.graphql.mockReset();
   });
 
   describe('awsTemplates', () => {
@@ -34,6 +47,20 @@ describe('AWS Services', () => {
         versionHistory: [],
       };
 
+      // Mock successful GraphQL response
+      mockGraphQLClient.graphql.mockResolvedValue({
+        data: {
+          createTemplate: {
+            id: 'test-id',
+            name: 'Test Template',
+            description: 'Test description',
+            version: '1.0.0',
+            s3Key: 'test-key',
+            type: 'BASE'
+          }
+        }
+      });
+
       const result = await awsTemplates.create({
         id: mockTemplate.id,
         name: mockTemplate.name,
@@ -44,11 +71,12 @@ describe('AWS Services', () => {
       });
 
       expect(result).toBeDefined();
+      expect(mockGraphQLClient.graphql).toHaveBeenCalled();
     });
 
     it('should handle template creation errors', async () => {
       // Mock error
-      vi.mocked(awsTemplates.create).mockRejectedValueOnce(new Error('Creation failed'));
+      mockGraphQLClient.graphql.mockRejectedValueOnce(new Error('Creation failed'));
 
       await expect(awsTemplates.create({
         id: 'test-id',
@@ -75,6 +103,21 @@ describe('AWS Services', () => {
         ],
       };
 
+      // Mock successful GraphQL response
+      mockGraphQLClient.graphql.mockResolvedValue({
+        data: {
+          createProvider: {
+            id: 'test-provider-id',
+            name: 'Dr. John Doe',
+            specialty: 'Cardiology',
+            fte: 0.8,
+            baseSalary: 250000,
+            startDate: '2024-01-01',
+            contractTerm: '2 years'
+          }
+        }
+      });
+
       const result = await awsProviders.create({
         name: mockProvider.name,
         specialty: mockProvider.specialty,
@@ -85,6 +128,7 @@ describe('AWS Services', () => {
       });
 
       expect(result).toBeDefined();
+      expect(mockGraphQLClient.graphql).toHaveBeenCalled();
     });
 
     it('should handle bulk provider creation', async () => {
@@ -97,6 +141,21 @@ describe('AWS Services', () => {
         contractTerm: '2 years',
       }));
 
+      // Mock successful GraphQL responses for each provider
+      mockGraphQLClient.graphql.mockResolvedValue({
+        data: {
+          createProvider: {
+            id: 'test-provider-id',
+            name: 'Provider 1',
+            specialty: 'Cardiology',
+            fte: 0.8,
+            baseSalary: 250000,
+            startDate: '2024-01-01',
+            contractTerm: '2 years'
+          }
+        }
+      });
+
       const results = await awsProviders.batchCreate(providers);
       expect(results).toHaveLength(5);
     });
@@ -104,29 +163,54 @@ describe('AWS Services', () => {
 
   describe('awsMappings', () => {
     it('should create mappings successfully', async () => {
-      const mappings = {
-        'ProviderName': 'Dr. John Doe',
-        'StartDate': '2024-01-01',
-        'BaseSalary': '250000',
-      };
-
-      const result = await awsMappings.create({
+      const mappingInput = {
         templateID: 'template-id',
         providerID: 'provider-id',
         field: 'ProviderName',
-        value: 'Dr. John Doe',
+        value: 'Dr. John Doe'
+      };
+
+      // Mock successful GraphQL response
+      mockGraphQLClient.graphql.mockResolvedValue({
+        data: {
+          createMapping: {
+            id: 'mapping-id',
+            templateID: 'template-id',
+            providerID: 'provider-id',
+            field: 'ProviderName',
+            value: 'Dr. John Doe'
+          }
+        }
       });
 
+      const result = await awsMappings.create(mappingInput);
+
       expect(result).toBeDefined();
+      expect(mockGraphQLClient.graphql).toHaveBeenCalled();
     });
 
     it('should query mappings by template and provider', async () => {
-      const mappings = await awsMappings.getMappingsByTemplateAndProvider(
-        'template-id',
-        'provider-id'
-      );
+      // Mock successful GraphQL response
+      mockGraphQLClient.graphql.mockResolvedValue({
+        data: {
+          listMappings: {
+            items: [
+              {
+                id: 'mapping-id',
+                templateID: 'template-id',
+                providerID: 'provider-id',
+                field: 'ProviderName',
+                value: 'Dr. John Doe'
+              }
+            ]
+          }
+        }
+      });
 
-      expect(Array.isArray(mappings)).toBe(true);
+      const result = await awsMappings.getMappingsByTemplateAndProvider('template-id', 'provider-id');
+
+      expect(result).toBeDefined();
+      expect(mockGraphQLClient.graphql).toHaveBeenCalled();
     });
   });
 

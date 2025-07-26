@@ -35,7 +35,8 @@ vi.mock('@/utils/immutableContractStorage', () => ({
 
 vi.mock('@/utils/s3Storage', () => ({
   getContractFile: vi.fn(),
-  checkFileExists: vi.fn()
+  checkFileExists: vi.fn(),
+  getSignedDownloadUrl: vi.fn()
 }));
 
 // Mock window.htmlDocx
@@ -147,7 +148,7 @@ describe('useContractGeneration Hook', () => {
         '2024_Dr_Smith_2024-01-15.docx'
       );
       expect(mockWindowOpen).toHaveBeenCalledWith(
-        'https://example.com/contract.pdf',
+        'https://view.officeapps.live.com/op/embed.aspx?src=https%3A%2F%2Fexample.com%2Fcontract.pdf',
         '_blank',
         'noopener,noreferrer'
       );

@@ -452,7 +452,7 @@ export const useGeneratorGrid = ({
       });
       
       if (!assignedTemplate) {
-        return '⬜ Not Processed';
+        return '☒ Not Processed';
       }
       
       if (!contract) {
