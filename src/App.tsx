@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Avatar from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, Settings, BarChart3 } from 'lucide-react';
+import { LogOut, User, Settings, BarChart3, Zap } from 'lucide-react';
 import ProfilePage from './features/auth/ProfilePage';
 import PublicRoute from './components/PublicRoute';
 import { AuthLayout } from './components/AuthLayout';
@@ -235,7 +235,8 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
     {
       title: 'Generate',
       path: '/generate',
-      group: 'action'
+      group: 'action',
+      icon: <Zap className="w-4 h-4" />
     }
   ];
 
@@ -267,7 +268,7 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                           <Link
                             key={item.path}
                             to={item.path}
-                            className={`inline-flex items-center px-3 pt-1 border-b-2 text-base font-semibold tracking-wide transition-all duration-200 ${
+                            className={`inline-flex items-center px-3 pt-1 border-b-2 text-sm font-semibold tracking-wide transition-all duration-200 ${
                               isActive(item.path)
                                 ? 'border-blue-500 text-blue-700 shadow-sm'
                                 : 'border-transparent text-gray-600 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm'
@@ -286,12 +287,13 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
                         <Link
                           key={item.path}
                           to={item.path}
-                          className={`inline-flex items-center px-1 pt-1 border-b-2 text-base font-semibold tracking-wide transition-all duration-200 ${
+                          className={`inline-flex items-center gap-2 px-1 pt-1 border-b-2 text-sm font-semibold tracking-wide transition-all duration-200 ${
                             isActive(item.path)
                               ? 'border-blue-500 text-blue-700 shadow-sm'
                               : 'border-transparent text-gray-600 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm'
                           }`}
                         >
+                          {item.icon && item.icon}
                           {item.title}
                         </Link>
                       ))}

@@ -209,9 +209,30 @@ export default function ClauseManager() {
     });
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('Clause content copied to clipboard');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Clause content copied to clipboard');
+    } catch (error) {
+      // Fallback for older browsers or when clipboard API is not available
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        document.execCommand('copy');
+        toast.success('Clause content copied to clipboard');
+      } catch (fallbackError) {
+        toast.error('Failed to copy to clipboard');
+      } finally {
+        document.body.removeChild(textArea);
+      }
+    }
   };
 
 
@@ -296,46 +317,7 @@ export default function ClauseManager() {
                     className="w-48"
                   />
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    console.log('Force loading static clauses...');
-                    dispatch({ type: 'clauses/loadStaticClauses' });
-                  }}
-                  className="h-10 px-3"
-                >
-                  🔄 Force Load
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    console.log('Clearing cache and fetching fresh data...');
-                    dispatch({ type: 'clauses/clearClauses' });
-                    dispatch(fetchClausesIfNeeded());
-                  }}
-                  className="h-10 px-3"
-                >
-                  🔄 Refresh
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    try {
-                      console.log('Debug: Fetching all clauses from DynamoDB...');
-                      const items = await awsClauses.listAll();
-                      console.log('Debug: All clauses from DynamoDB:', items);
-                      console.log('Debug: Clause owners:', items?.map(c => ({ id: c.id, owner: c.owner, text: c.text?.substring(0, 50) })));
-                    } catch (error) {
-                      console.error('Debug: Error fetching clauses:', error);
-                    }
-                  }}
-                  className="h-10 px-3"
-                >
-                  🔍 Debug DB
-                </Button>
+
               </div>
             </div>
           </div>

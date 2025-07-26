@@ -606,8 +606,7 @@ export default function ProviderDataManager() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={loading}
               >
-                <Upload className="w-4 h-4 mr-2" />
-                📊 Upload CSV
+                Upload CSV
               </Button>
               <Button
                 variant="outline"
@@ -615,8 +614,7 @@ export default function ProviderDataManager() {
                 onClick={downloadTemplate}
                 disabled={loading}
               >
-                <Download className="w-4 h-4 mr-2" />
-                📋 Download Template
+                Download Template
               </Button>
               <Button
                 variant="outline"
@@ -624,8 +622,7 @@ export default function ProviderDataManager() {
                 onClick={downloadFullCSV}
                 disabled={loading || providers.length === 0}
               >
-                <Download className="w-4 h-4 mr-2" />
-                📥 Export All Data
+                Export All Data
               </Button>
             </div>
             {/* Right group: Sticky toggle, Clear Table */}
@@ -635,7 +632,6 @@ export default function ProviderDataManager() {
                 onClick={() => setShowConfirm(true)}
                 disabled={loading || providers.length === 0}
               >
-                <Trash2 className="w-4 h-4 mr-2" />
                 Clear Table
               </Button>
             </div>
