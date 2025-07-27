@@ -24,7 +24,7 @@ const getAWSConfig = () => {
   
   // Use Amplify S3 bucket if available, otherwise fall back to environment variable
   // In production, always use the Amplify bucket for proper authentication
-  const bucket = import.meta.env.VITE_S3_BUCKET || config.aws_user_files_s3_bucket;
+  const bucket = import.meta.env.VITE_S3_BUCKET || config.aws_user_files_s3_bucket || 'contractengine-storage-wherdzik';
   
   console.log('🔍 S3 Configuration:', {
     region,
