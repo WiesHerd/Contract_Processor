@@ -175,42 +175,26 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
-    // Use authenticated S3 client for enterprise-grade access
+    // Use Amplify Storage for enterprise-grade access (handles CORS properly)
     try {
-      console.log('🔍 Using authenticated S3 client for listing files with prefix:', prefix);
-      if (!BUCKET) {
-        throw new Error('S3 bucket not configured');
-      }
-
-      // Create authenticated client
-      const authenticatedClient = await createAuthenticatedS3Client();
+      console.log('🔍 Using Amplify Storage for listing files with prefix:', prefix);
+      const { list } = await import('aws-amplify/storage');
+      const result = await list({ prefix });
       
-      const command = new ListObjectsV2Command({
-        Bucket: BUCKET,
-        Prefix: prefix,
-      });
-      const response = await authenticatedClient.send(command);
-      const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
-      console.log('📁 Files found via authenticated S3 client:', files);
-      return files;
+      if (result.items && Array.isArray(result.items)) {
+        const files = result.items.map(item => item.key).filter(Boolean);
+        console.log('📁 Files found via Amplify Storage:', files);
+        return files;
+      } else if (Array.isArray(result)) {
+        const files = result.map(item => item.key).filter(Boolean);
+        console.log('📁 Files found via Amplify Storage (array):', files);
+        return files;
+      } else {
+        console.warn('Unexpected Amplify Storage result structure:', result);
+        return [];
+      }
     } catch (error) {
-      console.error('❌ Authenticated S3 list error:', error);
-      
-      // Fallback to Amplify Storage if authenticated access fails
-      try {
-        console.log('🔄 Falling back to Amplify Storage...');
-        const { list } = await import('aws-amplify/storage');
-        const result = await list({ prefix });
-        
-        if (result.items && Array.isArray(result.items)) {
-          const files = result.items.map(item => item.key).filter(Boolean);
-          console.log('📁 Files found via Amplify Storage fallback:', files);
-          return files;
-        }
-      } catch (amplifyError) {
-        console.error('❌ Amplify Storage fallback also failed:', amplifyError);
-      }
-      
+      console.error('❌ Amplify Storage list error:', error);
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
