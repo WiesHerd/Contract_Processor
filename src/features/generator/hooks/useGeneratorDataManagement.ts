@@ -142,46 +142,62 @@ export const useGeneratorDataManagement = ({
       
       console.log('Found DynamoDB IDs to clear:', contractIds);
       
-      // Delete contracts from DynamoDB and S3 with progress tracking
+      // OPTIMIZATION: Batch parallel deletion for much faster performance
+      const BATCH_SIZE = 25; // Process 25 contracts at a time
+      const batches = [];
+      
+      for (let i = 0; i < contractIds.length; i += BATCH_SIZE) {
+        batches.push(contractsToClear.slice(i, i + BATCH_SIZE));
+      }
+      
+      console.log(`🚀 Processing ${contractIds.length} contracts in ${batches.length} batches of ${BATCH_SIZE}`);
+      
       let deletedCount = 0;
       const totalContracts = contractIds.length;
       
-      for (let i = 0; i < contractIds.length; i++) {
-        try {
-          const contractLog = contractsToClear[i];
-          
-          // Delete from DynamoDB
-          await ContractGenerationLogService.deleteLog(contractIds[i]);
-          
-          // Delete from S3 if we can construct the S3 key
-          if (contractLog.providerId && contractLog.templateId && contractLog.contractYear) {
-            try {
-              const { deleteFile } = await import('@/utils/s3Storage');
-              // Construct S3 key based on the standardized pattern
-              const contractId = `${contractLog.providerId}-${contractLog.templateId}-${contractLog.contractYear}`;
-              const s3Key = `contracts/immutable/${contractId}/${contractLog.fileUrl || 'contract.docx'}`;
-              await deleteFile(s3Key);
-              console.log(`✅ Deleted S3 file: ${s3Key}`);
-            } catch (s3Error) {
-              console.warn(`⚠️ Failed to delete S3 file for contract ${contractLog.id}:`, s3Error);
-              // Continue even if S3 deletion fails
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        const startIndex = batchIndex * BATCH_SIZE;
+        
+        // Process batch in parallel
+        const batchPromises = batch.map(async (contractLog, batchItemIndex) => {
+          try {
+            const contractId = contractIds[startIndex + batchItemIndex];
+            
+            // Delete from DynamoDB
+            await ContractGenerationLogService.deleteLog(contractId);
+            
+            // Delete from S3 if we can construct the S3 key
+            if (contractLog.providerId && contractLog.templateId && contractLog.contractYear) {
+              try {
+                const { deleteFile } = await import('@/utils/s3Storage');
+                // Construct S3 key based on the standardized pattern
+                const s3ContractId = `${contractLog.providerId}-${contractLog.templateId}-${contractLog.contractYear}`;
+                const s3Key = `contracts/immutable/${s3ContractId}/${contractLog.fileUrl || 'contract.docx'}`;
+                await deleteFile(s3Key);
+                console.log(`✅ Deleted S3 file: ${s3Key}`);
+              } catch (s3Error) {
+                console.warn(`⚠️ Failed to delete S3 file for contract ${contractLog.id}:`, s3Error);
+                // Continue even if S3 deletion fails
+              }
             }
+            
+            return { success: true, id: contractId };
+          } catch (deleteError) {
+            console.error(`Failed to delete contract ${contractIds[startIndex + batchItemIndex]}:`, deleteError);
+            return { success: false, id: contractIds[startIndex + batchItemIndex], error: deleteError };
           }
-          
-          deletedCount++;
-          
-          // Update progress (30% to 90% for deletion phase)
-          const deletionProgress = 30 + Math.round((deletedCount / totalContracts) * 60);
-          setClearingProgress(deletionProgress);
-          
-          // Small delay to show progress
-          if (i < contractIds.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-          }
-        } catch (deleteError) {
-          console.error(`Failed to delete contract ${contractIds[i]}:`, deleteError);
-          // Continue with other deletions even if one fails
-        }
+        });
+        
+        // Wait for batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        deletedCount += batchResults.filter(r => r.success).length;
+        
+        // Update progress (30% to 90% for deletion phase)
+        const deletionProgress = 30 + Math.round(((batchIndex + 1) / batches.length) * 60);
+        setClearingProgress(deletionProgress);
+        
+        console.log(`✅ Batch ${batchIndex + 1}/${batches.length} completed: ${batchResults.filter(r => r.success).length}/${batch.length} deleted`);
       }
       
       setClearingProgress(90); // Almost done
