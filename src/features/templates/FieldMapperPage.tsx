@@ -370,8 +370,6 @@ async function saveTemplateMappings(mapping: LocalMapping[], templateId: string)
       notes: m.notes || '',
     };
     
-    console.log('Saving mapping:', input);
-    
     // Check if mapping already exists
     const existingMapping = existingMappings.find((existing: any) => 
       existing.templateID === templateId && existing.field === m.placeholder
@@ -385,19 +383,17 @@ async function saveTemplateMappings(mapping: LocalMapping[], templateId: string)
           ...input
         };
         
-      const updateResult = await client.graphql({
-        query: updateTemplateMapping,
+        const updateResult = await client.graphql({
+          query: updateTemplateMapping,
           variables: { input: updateInput },
-      });
-      console.log('Update result:', updateResult);
+        });
         results.push(input);
       } else {
         // Create new mapping (let DynamoDB auto-generate the ID)
-      const createResult = await client.graphql({
-        query: createTemplateMapping,
+        const createResult = await client.graphql({
+          query: createTemplateMapping,
           variables: { input },
-      });
-      console.log('Create result:', createResult);
+        });
         results.push(input);
       }
     } catch (err) {
@@ -436,7 +432,6 @@ export default function FieldMapperPage() {
       try {
         const blocks = await DynamicBlockService.listDynamicBlocks();
         setDynamicBlocks(blocks);
-        console.log('Loaded dynamic blocks:', blocks);
       } catch (error) {
         console.error('Error loading dynamic blocks:', error);
       } finally {
@@ -448,15 +443,7 @@ export default function FieldMapperPage() {
 
   // Fetch providers if missing on mount
   useEffect(() => {
-    console.log('FieldMapperPage - Provider state check:', {
-      providersCount: providers?.length || 0,
-      providerLoading,
-      hasTriedFetch,
-      firstProvider: providers?.[0] ? Object.keys(providers[0]) : 'No providers'
-    });
-    
     if ((!providers || providers.length === 0) && !providerLoading && !hasTriedFetch) {
-      console.log('FieldMapperPage - Fetching providers...');
       // TODO: Fix provider fetching
       // dispatch(fetchProviders());
       setHasTriedFetch(true);
@@ -464,12 +451,6 @@ export default function FieldMapperPage() {
   }, [providers, providerLoading, hasTriedFetch, dispatch]);
 
   useEffect(() => {
-    console.log('FieldMapperPage - Column detection triggered:', {
-      providersCount: providers?.length || 0,
-      firstProviderKeys: providers?.[0] ? Object.keys(providers[0]) : 'No providers',
-      firstProviderDynamicFields: providers?.[0]?.dynamicFields ? Object.keys(providers[0].dynamicFields) : 'No dynamic fields'
-    });
-    
     if (providers && providers.length > 0) {
       // Collect all fields from all providers (both flat fields and dynamicFields)
       const allFields = new Set<string>();
@@ -498,9 +479,6 @@ export default function FieldMapperPage() {
             
             if (dynamicFieldsObj && typeof dynamicFieldsObj === 'object') {
               const dynamicKeys = Object.keys(dynamicFieldsObj);
-              if (index < 3) {
-                console.log(`Provider ${index} dynamicFields keys:`, dynamicKeys.slice(0, 10), '... (showing first 10)');
-              }
               
               dynamicKeys.forEach(key => {
                 allFields.add(key);
@@ -512,9 +490,7 @@ export default function FieldMapperPage() {
               });
             }
           } catch (e) {
-            if (index < 3) {
-              console.warn(`Provider ${index} dynamicFields parsing failed:`, e);
-            }
+            // Ignore parsing errors for preview
           }
         }
       });
@@ -541,11 +517,6 @@ export default function FieldMapperPage() {
       
       setColumns(sortedFields);
       setFieldDataCount(dataCount);
-      console.log('Available columns for mapping:', sortedFields);
-      console.log('Total columns detected:', sortedFields.length);
-      console.log('All fields before sorting:', Array.from(allFields));
-      console.log('FTE fields found:', Array.from(allFields).filter(f => f.toLowerCase().includes('fte')));
-      console.log('Columns with data counts:', Object.fromEntries(Array.from(dataCount.entries()).sort((a, b) => b[1] - a[1])));
     }
   }, [providers]);
 
@@ -571,9 +542,7 @@ export default function FieldMapperPage() {
       setIsLoading(true);
       setError(null);
       try {
-        console.log('Loading mappings for template:', templateId);
         const mappingRecords = await fetchTemplateMappingsByTemplateId(templateId);
-        console.log('Loaded mapping records:', mappingRecords);
         if (mappingRecords && mappingRecords.length > 0) {
           const hydrated = template?.placeholders.map((ph: string) => {
             const found = mappingRecords.find((rec: any) => rec.field === ph);
@@ -600,7 +569,6 @@ export default function FieldMapperPage() {
             }
             return { placeholder: ph, mappingType: 'field' as const };
           }) || [];
-          console.log('Hydrated mappings:', hydrated);
           setMappingState(hydrated);
           dispatch(setMapping({
             templateId,
@@ -611,22 +579,26 @@ export default function FieldMapperPage() {
             },
           }));
         } else {
-          console.log('No existing mappings found');
-          setMappingState(template?.placeholders.map((ph: string) => ({ 
-            placeholder: ph, 
-            mappingType: 'field' as const 
-          })) || []);
+          // No existing mappings, initialize with empty mappings
+          const emptyMappings = template?.placeholders.map((ph: string) => ({
+            placeholder: ph,
+            mappingType: 'field' as const,
+          })) || [];
+          setMappingState(emptyMappings);
         }
-      } catch (err) {
-        console.error('Error loading template mappings:', err);
-        setError(`Failed to load template mappings: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } catch (error) {
+        console.error('Error loading template mappings:', error);
+        setError('Failed to load template mappings. Please try again.');
       } finally {
         setIsLoading(false);
+        setHasTriedFetch(true);
       }
     };
-    loadTemplateMappings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId, template, dispatch]);
+
+    if (template && template.placeholders && template.placeholders.length > 0) {
+      loadTemplateMappings();
+    }
+  }, [template, templateId, dispatch]);
 
   // Hydrate columns from localforage if empty
   /*

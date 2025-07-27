@@ -35,7 +35,6 @@ export const fetchMappingsIfNeeded = createAsyncThunk(
     // Always fetch from backend for freshest data
     try {
       const result = await awsTemplateMappings.list();
-      console.log('DEBUG: Raw awsTemplateMappings.list() result:', result);
       if (result?.items) {
         const allMappingItems = result.items.filter((item): item is TemplateMapping => !!item);
 
@@ -59,7 +58,6 @@ export const fetchMappingsIfNeeded = createAsyncThunk(
           return acc;
         }, {});
 
-        console.log('DEBUG: Grouped mappings for Redux:', groupedMappings);
         return groupedMappings;
       }
       return {};

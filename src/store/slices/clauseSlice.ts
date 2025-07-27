@@ -62,19 +62,13 @@ export const fetchClausesIfNeeded = createAsyncThunk(
     // Always fetch if no clauses loaded or cache is stale
     if (clauses.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS)) {
       try {
-        console.log('Fetching clauses from DynamoDB...');
         const items = await awsClauses.listAll();
-        console.log('RAW items from DynamoDB:', items);
         const validClauses = items.filter(isValidAPIClause);
-        console.log('Valid clauses after filter:', validClauses);
         const transformedClauses = validClauses.map(transformAPIClauseToClause);
-        console.log('Transformed clauses:', transformedClauses);
         if (transformedClauses.length > 0) {
-          console.log(`Found ${transformedClauses.length} clauses in DynamoDB`);
           return transformedClauses;
         } else {
           // If DynamoDB is empty, use the static clauses as fallback
-          console.log('No clauses found in DynamoDB, using static fallback');
           return SHARED_CLAUSES;
         }
       } catch (error) {
@@ -85,7 +79,6 @@ export const fetchClausesIfNeeded = createAsyncThunk(
     }
     
     // Return existing data if cache is still valid
-    console.log('Using cached clauses');
     return clauses;
   }
 );
