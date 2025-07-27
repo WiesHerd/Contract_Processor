@@ -50,20 +50,33 @@ const s3Client = new S3Client({
   maxAttempts: 3,
 });
 
-// Create authenticated S3 client using Cognito Identity Pool
+// Create authenticated S3 client using Cognito User Pool credentials
 const createAuthenticatedS3Client = async () => {
   try {
-    const cognitoIdentity = await import('@aws-sdk/client-cognito-identity');
-    const { fromCognitoIdentityPool } = await import('@aws-sdk/credential-provider-cognito-identity');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     
-    const identityClient = new cognitoIdentity.CognitoIdentityClient({ region: awsConfig.region });
+    // Get current authenticated user
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    // Get authenticated session with credentials
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated user credentials for S3 access');
     
     return new S3Client({
       region: awsConfig.region,
-      credentials: fromCognitoIdentityPool({
-        client: identityClient,
-        identityPoolId: config.aws_cognito_identity_pool_id,
-      }),
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
       maxAttempts: 3,
     });
   } catch (error) {
