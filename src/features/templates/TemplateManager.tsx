@@ -27,8 +27,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { debugS3Contents } from '@/utils/s3Storage';
 
-// FORCE DEPLOYMENT - Template loading fix v1.9 - Amplify Storage only (CORS fix)
-console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V1.9 - AMPLIFY STORAGE CORS FIX');
+// FORCE DEPLOYMENT - Template loading fix v2.0 - Correct bucket configuration
+console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V2.0 - CORRECT BUCKET CONFIG');
 
 export default function TemplateManager() {
   const dispatch: AppDispatch = useDispatch();
