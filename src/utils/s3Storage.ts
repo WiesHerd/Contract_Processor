@@ -137,28 +137,22 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
-    console.log('🔍 listFiles: Searching for prefix:', prefix);
-    
     // Force use of direct S3 client for local development to get accurate results
     // Amplify Storage seems to be returning incorrect results in local environment
     const forceDirectS3 = import.meta.env.DEV || !isAmplifyEnvironment();
     
     if (!forceDirectS3 && isAmplifyEnvironment()) {
-      console.log('🔄 Using Amplify Storage for listing files...');
       try {
         // Import Amplify Storage dynamically
         const { list } = await import('aws-amplify/storage');
         const result = await list({ prefix });
-        console.log('🔍 Amplify Storage list result:', result);
 
         // Try different possible result structures
         if (result.items && Array.isArray(result.items)) {
           const files = result.items.map(item => item.key).filter(Boolean);
-          console.log('✅ Amplify Storage successful, found files:', files);
           return files;
         } else if (Array.isArray(result)) {
           const files = result.map(item => item.key).filter(Boolean);
-          console.log('✅ Amplify Storage successful, found files:', files);
           return files;
         } else {
           console.warn('Unexpected Amplify Storage result structure:', result);
@@ -167,7 +161,6 @@ export async function listFiles(prefix: string): Promise<string[]> {
       } catch (amplifyError) {
         console.error('Amplify Storage failed:', amplifyError);
         // Fall back to direct S3 client
-        console.log('🔄 Falling back to direct S3 client...');
       }
     }
 
@@ -177,14 +170,12 @@ export async function listFiles(prefix: string): Promise<string[]> {
         throw new Error('S3 bucket not configured');
       }
 
-      console.log('🔍 listFiles: Using direct S3 client with bucket:', BUCKET);
       const command = new ListObjectsV2Command({
         Bucket: BUCKET,
         Prefix: prefix,
       });
       const response = await s3Client.send(command);
       const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
-      console.log('🔍 listFiles: Direct S3 client found files:', files);
       return files;
     } catch (error) {
       console.error('S3 list error:', error);

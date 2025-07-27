@@ -68,73 +68,8 @@ export default function TemplateManager() {
     }
   };
 
-  // Debug function to check S3 and local storage
-  const debugStorage = async () => {
-    console.log('🔍 DEBUG: Checking storage...');
-    
-    // Check S3 for templates
-    try {
-      const { listFiles } = await import('@/utils/s3Storage');
-      
-      // Check template folders
-      const templateFolders = await listFiles('templates/');
-      console.log('🔍 DEBUG: S3 template folders:', templateFolders);
-      
-      // Check template metadata
-      const templateKeys = await listFiles('metadata/templates/');
-      console.log('🔍 DEBUG: S3 template metadata keys:', templateKeys);
-      
-      // Check all metadata files
-      const allMetadataKeys = await listFiles('metadata/');
-      console.log('🔍 DEBUG: All S3 metadata keys:', allMetadataKeys);
-      
-      // Check all files in templates path
-      const allTemplateFiles = await listFiles('templates/');
-      console.log('🔍 DEBUG: All S3 template files:', allTemplateFiles);
-    } catch (error) {
-      console.error('🔍 DEBUG: S3 check failed:', error);
-    }
-    
-    // Check local storage
-    try {
-      const localTemplates: Template[] = [];
-      await localforage.iterate((value: Template, key) => {
-        if (key.startsWith('template_')) {
-          localTemplates.push(value);
-        }
-      });
-      console.log('🔍 DEBUG: Local storage templates:', localTemplates);
-    } catch (error) {
-      console.error('🔍 DEBUG: Local storage check failed:', error);
-    }
-  };
-
-  // Test S3 listing function
-  const testS3Listing = async () => {
-    console.log('🧪 TEST: Testing S3 listing function...');
-    try {
-      const { listFiles } = await import('@/utils/s3Storage');
-      
-      console.log('🧪 TEST: Testing templates/ prefix...');
-      const templatesResult = await listFiles('templates/');
-      console.log('🧪 TEST: templates/ result:', templatesResult);
-      
-      console.log('🧪 TEST: Testing metadata/templates/ prefix...');
-      const metadataResult = await listFiles('metadata/templates/');
-      console.log('🧪 TEST: metadata/templates/ result:', metadataResult);
-      
-    } catch (error) {
-      console.error('🧪 TEST: S3 listing test failed:', error);
-    }
-  };
-
   useEffect(() => {
-    console.log('🔍 TemplateManager: Starting template fetch...');
-    dispatch(fetchTemplatesIfNeeded()).then((result) => {
-      console.log('🔍 TemplateManager: fetchTemplatesIfNeeded result:', result);
-    }).catch((error) => {
-      console.error('🔍 TemplateManager: fetchTemplatesIfNeeded error:', error);
-    });
+    dispatch(fetchTemplatesIfNeeded());
   }, [dispatch]);
 
   const handleCreateTemplate = () => {
@@ -451,14 +386,6 @@ export default function TemplateManager() {
           </div>
           <hr className="my-3 border-gray-100" />
           <div className="flex flex-wrap items-center gap-3 justify-end">
-            <Button variant="outline" onClick={debugStorage} className="text-gray-600 border-gray-300 hover:bg-gray-50">
-              <Info className="w-4 h-4 mr-2" />
-              Debug Storage
-            </Button>
-            <Button variant="outline" onClick={testS3Listing} className="text-gray-600 border-gray-300 hover:bg-gray-50">
-              <FileText className="w-4 h-4 mr-2" />
-              Test S3 Listing
-            </Button>
             <Button variant="outline" onClick={handleDeleteAllTemplates} className="text-red-600 border-red-300 hover:bg-red-50" disabled={deletingAll}>
               <Trash2 className="w-4 h-4 mr-2" />
               {deletingAll ? 'Deleting...' : 'Delete All Templates'}
