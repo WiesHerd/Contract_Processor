@@ -162,11 +162,37 @@ export async function getSignedDownloadUrl(key: string, expiresIn = 3600): Promi
         throw new Error('S3 bucket not configured');
       }
       
+      // Get authenticated user credentials
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      // Create authenticated S3 client
+      const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const authenticatedS3Client = new S3Client({
+        region: awsConfig.region,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+        maxAttempts: 3,
+      });
+      
       const command = new GetObjectCommand({
         Bucket: BUCKET,
         Key: key,
       });
-      return getSignedUrl(s3Client, command, { expiresIn });
+      return getSignedUrl(authenticatedS3Client, command, { expiresIn });
     } catch (error) {
       console.error('Error generating signed URL:', error);
       throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -181,7 +207,33 @@ export async function deleteFile(key: string): Promise<void> {
         throw new Error('S3 bucket not configured');
       }
       
-      await s3Client.send(new DeleteObjectCommand({
+      // Get authenticated user credentials
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      // Create authenticated S3 client
+      const { S3Client, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+      const authenticatedS3Client = new S3Client({
+        region: awsConfig.region,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+        maxAttempts: 3,
+      });
+      
+      await authenticatedS3Client.send(new DeleteObjectCommand({
         Bucket: BUCKET,
         Key: key,
       }));
@@ -250,11 +302,37 @@ export async function listFiles(prefix: string): Promise<string[]> {
 export async function getFileMetadata(key: string): Promise<Record<string, string> | null> {
   return withRetry(async () => {
     try {
+      // Get authenticated user credentials
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      // Create authenticated S3 client
+      const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+      const authenticatedS3Client = new S3Client({
+        region: awsConfig.region,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+        maxAttempts: 3,
+      });
+      
       const command = new HeadObjectCommand({
         Bucket: BUCKET,
         Key: key,
       });
-      const response = await s3Client.send(command);
+      const response = await authenticatedS3Client.send(command);
       return response.Metadata || null;
     } catch (error) {
       console.error('S3 metadata error:', error);
@@ -388,7 +466,34 @@ export async function checkFileExists(key: string): Promise<boolean> {
       if (!BUCKET) {
         throw new Error('S3 bucket not configured');
       }
-      await s3Client.send(new HeadObjectCommand({
+      
+      // Get authenticated user credentials
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      // Create authenticated S3 client
+      const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+      const authenticatedS3Client = new S3Client({
+        region: awsConfig.region,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+        maxAttempts: 3,
+      });
+      
+      await authenticatedS3Client.send(new HeadObjectCommand({
         Bucket: BUCKET,
         Key: key
       }));
