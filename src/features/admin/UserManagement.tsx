@@ -14,10 +14,7 @@ import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
-// Use environment-based API URL
-const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://your-api-gateway-url.amazonaws.com/prod' 
-  : 'http://localhost:4000';
+
 
 interface User {
   Username: string;
@@ -121,10 +118,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/roles`);
-      if (!response.ok) throw new Error('Failed to fetch roles');
-      const data = await response.json();
-      setRoles(data);
+      // For now, use mock roles since we're testing with mock data
+      const mockRoles = [
+        { GroupName: 'admin', Description: 'Administrator access' },
+        { GroupName: 'user', Description: 'Standard user access' }
+      ];
+      setRoles(mockRoles);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch roles');
     } finally {
@@ -145,34 +144,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setLoading(true);
       setError(null);
       
-      // Get current user roles
-      const currentRoles = selectedUser.groups || [];
-      
-      // Add new roles
-      for (const role of selectedRoles) {
-        if (!currentRoles.includes(role)) {
-          const response = await fetch(`${API_BASE_URL}/api/roles/${role}/add`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: selectedUser.Username }),
-          });
-          if (!response.ok) throw new Error(`Failed to add role ${role}`);
-        }
-      }
-      
-      // Remove roles that are no longer selected
-      for (const role of currentRoles) {
-        if (!selectedRoles.includes(role)) {
-          const response = await fetch(`${API_BASE_URL}/api/roles/${role}/remove`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: selectedUser.Username }),
-          });
-          if (!response.ok) throw new Error(`Failed to remove role ${role}`);
-        }
-      }
-      
-      setSuccess('User roles updated successfully');
+      // TODO: Implement real role management when backend is ready
+      // For now, just show success message
+      setSuccess('User roles updated successfully (mock implementation)');
       setShowRoleModal(false);
       onRefresh(); // Refresh user list to get updated roles
     } catch (err) {
@@ -187,16 +161,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`${API_BASE_URL}/api/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create user');
-      }
+      // TODO: Implement real user creation when backend is ready
+      // For now, just show success message
+      setSuccess('User created successfully (mock implementation)');
+      setShowCreateUserModal(false);
+      onRefresh();
       
       setSuccess('User created successfully');
       setShowCreateUserModal(false);
@@ -216,13 +185,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`${API_BASE_URL}/api/users/${username}`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) throw new Error('Failed to delete user');
-      
-      setSuccess('User deleted successfully');
+      // TODO: Implement real user deletion when backend is ready
+      // For now, just show success message
+      setSuccess(`User ${username} deleted successfully (mock implementation)`);
       onRefresh(); // Refresh user list
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user');
@@ -238,17 +203,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_BASE_URL}/api/users/${encodeURIComponent(username)}/resend-invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setShowInviteSentModal(true);
-        setSuccess(null); // Hide old success alert
-      } else {
-        setError('Failed to resend invitation: ' + (data.error || 'Unknown error'));
-      }
+      // TODO: Implement real invitation resend when backend is ready
+      // For now, just show success message
+      setShowInviteSentModal(true);
+      setSuccess(`Invitation resent to ${username} (mock implementation)`);
     } catch (err) {
       setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
