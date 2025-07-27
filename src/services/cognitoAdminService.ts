@@ -61,10 +61,9 @@ export async function listCognitoUsers() {
       },
     });
     
-    // List all users from the User Pool
+    // List all users from the User Pool - removed AttributesToGet to avoid constraint errors
     const listUsersCommand = new ListUsersCommand({
       UserPoolId: USER_POOL_ID,
-      AttributesToGet: ['email', 'given_name', 'family_name', 'phone_number', 'email_verified', 'phone_number_verified'],
       Limit: 60
     });
     
