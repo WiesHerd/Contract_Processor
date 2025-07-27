@@ -31,36 +31,91 @@ const API_BASE_URL = process.env.NODE_ENV === 'production'
 
 export async function listCognitoUsers() {
   try {
-    // For now, return a simple mock response to test the UI
-    // This will help us verify the User Management interface works
-    const mockUsers = [
-      {
-        Username: 'wherdzik@gmail.com',
-        Attributes: [
-          { Name: 'email', Value: 'wherdzik@gmail.com' },
-          { Name: 'email_verified', Value: 'true' }
-        ],
-        Enabled: true,
-        UserStatus: 'CONFIRMED',
-        groups: ['admin']
-      },
-      {
-        Username: 'test@example.com',
-        Attributes: [
-          { Name: 'email', Value: 'test@example.com' },
-          { Name: 'email_verified', Value: 'true' }
-        ],
-        Enabled: true,
-        UserStatus: 'CONFIRMED',
-        groups: ['user']
-      }
-    ];
+    console.log('🔍 Fetching real Cognito users from User Pool:', USER_POOL_ID);
     
-    console.log('🔍 Mock users returned for User Management testing');
-    return mockUsers;
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, ListUsersCommand, AdminListGroupsForUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated credentials for Cognito access');
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // List all users from the User Pool
+    const listUsersCommand = new ListUsersCommand({
+      UserPoolId: USER_POOL_ID,
+      AttributesToGet: ['email', 'given_name', 'family_name', 'phone_number', 'email_verified', 'phone_number_verified'],
+      Limit: 60
+    });
+    
+    const result = await client.send(listUsersCommand);
+    
+    if (!result.Users) {
+      console.log('📝 No users found in Cognito User Pool');
+      return [];
+    }
+    
+    console.log(`📝 Found ${result.Users.length} users in Cognito User Pool`);
+    
+    // Get groups for each user
+    const usersWithGroups = await Promise.all(
+      result.Users.map(async (cognitoUser) => {
+        try {
+          const groupsCommand = new AdminListGroupsForUserCommand({
+            Username: cognitoUser.Username,
+            UserPoolId: USER_POOL_ID
+          });
+          
+          const groupsResult = await client.send(groupsCommand);
+          const groups = groupsResult.Groups?.map(group => group.GroupName) || [];
+          
+          console.log(`👤 User ${cognitoUser.Username} has groups:`, groups);
+          
+          return {
+            Username: cognitoUser.Username,
+            Attributes: cognitoUser.Attributes || [],
+            Enabled: cognitoUser.Enabled,
+            UserStatus: cognitoUser.UserStatus,
+            groups: groups
+          };
+        } catch (error) {
+          console.warn(`⚠️ Failed to get groups for user ${cognitoUser.Username}:`, error);
+          return {
+            Username: cognitoUser.Username,
+            Attributes: cognitoUser.Attributes || [],
+            Enabled: cognitoUser.Enabled,
+            UserStatus: cognitoUser.UserStatus,
+            groups: []
+          };
+        }
+      })
+    );
+    
+    console.log('✅ Successfully fetched real Cognito users with groups');
+    return usersWithGroups;
     
   } catch (error) {
-    console.error('Error fetching Cognito users:', error);
+    console.error('❌ Error fetching Cognito users:', error);
     throw new Error(`Failed to fetch users: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 } 

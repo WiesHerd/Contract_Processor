@@ -118,12 +118,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      // For now, use mock roles since we're testing with mock data
-      const mockRoles = [
-        { GroupName: 'admin', Description: 'Administrator access' },
-        { GroupName: 'user', Description: 'Standard user access' }
-      ];
-      setRoles(mockRoles);
+      // TODO: Implement real role fetching from Cognito when needed
+      // For now, we'll get roles dynamically from user data
+      setRoles([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch roles');
     } finally {
