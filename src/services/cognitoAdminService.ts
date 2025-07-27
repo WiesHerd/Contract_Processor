@@ -14,7 +14,7 @@ const getAWSConfig = () => {
 const awsConfig = getAWSConfig();
 
 const REGION = awsConfig.region;
-const USER_POOL_ID = 'contractgenerator7e5dfb2d_userpool_7e5dfb2d-production';
+const USER_POOL_ID = 'us-east-2_ldPO5ZKCR';
 
 const client = new CognitoIdentityProviderClient({
   region: REGION,
