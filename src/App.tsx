@@ -365,8 +365,9 @@ function App() {
   );
 }
 
-// Environment variables are now configured in AWS Amplify
-// VITE_AWS_REGION and VITE_S3_BUCKET are set for production
+// Environment variables configured - testing S3 bucket change
+// VITE_S3_BUCKET now points to contractengine-storage-wherdzik
+// Triggering redeploy for S3 permissions fix
 
 // Export with error boundary wrapper
 export default withErrorBoundary(App);
