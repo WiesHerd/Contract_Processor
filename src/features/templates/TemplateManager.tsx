@@ -75,12 +75,22 @@ export default function TemplateManager() {
     // Check S3 for templates
     try {
       const { listFiles } = await import('@/utils/s3Storage');
+      
+      // Check template folders
+      const templateFolders = await listFiles('templates/');
+      console.log('🔍 DEBUG: S3 template folders:', templateFolders);
+      
+      // Check template metadata
       const templateKeys = await listFiles('metadata/templates/');
-      console.log('🔍 DEBUG: S3 template keys:', templateKeys);
+      console.log('🔍 DEBUG: S3 template metadata keys:', templateKeys);
       
       // Check all metadata files
       const allMetadataKeys = await listFiles('metadata/');
       console.log('🔍 DEBUG: All S3 metadata keys:', allMetadataKeys);
+      
+      // Check all files in templates path
+      const allTemplateFiles = await listFiles('templates/');
+      console.log('🔍 DEBUG: All S3 template files:', allTemplateFiles);
     } catch (error) {
       console.error('🔍 DEBUG: S3 check failed:', error);
     }
