@@ -137,11 +137,41 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
+    // In production (Amplify environment), use Amplify Storage directly
+    if (isAmplifyEnvironment()) {
+      console.log('🔄 Using Amplify Storage for listing files...');
+      try {
+        // Import Amplify Storage dynamically
+        const { list } = await import('aws-amplify/storage');
+        const result = await list({ prefix });
+        console.log('🔍 Amplify Storage list result:', result);
+
+        // Try different possible result structures
+        if (result.items && Array.isArray(result.items)) {
+          const files = result.items.map(item => item.key).filter(Boolean);
+          console.log('✅ Amplify Storage successful, found files:', files);
+          return files;
+        } else if (Array.isArray(result)) {
+          const files = result.map(item => item.key).filter(Boolean);
+          console.log('✅ Amplify Storage successful, found files:', files);
+          return files;
+        } else {
+          console.warn('Unexpected Amplify Storage result structure:', result);
+          return [];
+        }
+      } catch (amplifyError) {
+        console.error('Amplify Storage failed:', amplifyError);
+        // Fall back to direct S3 client
+        console.log('🔄 Falling back to direct S3 client...');
+      }
+    }
+
+    // Use direct S3 client (for local development or as fallback)
     try {
       if (!BUCKET) {
         throw new Error('S3 bucket not configured');
       }
-      
+
       const command = new ListObjectsV2Command({
         Bucket: BUCKET,
         Prefix: prefix,
@@ -150,30 +180,6 @@ export async function listFiles(prefix: string): Promise<string[]> {
       return (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
     } catch (error) {
       console.error('S3 list error:', error);
-      
-      // If we're in Amplify environment and get credential errors, try using Amplify Storage
-      if (isAmplifyEnvironment() && error.message?.includes('Credential is missing')) {
-        console.log('🔄 Falling back to Amplify Storage for listing files...');
-        try {
-          // Import Amplify Storage dynamically with correct syntax
-          const { uploadData, downloadData, list, remove } = await import('aws-amplify/storage');
-          const result = await list({ prefix });
-          console.log('🔍 Amplify Storage list result:', result);
-          
-          // Try different possible result structures
-          if (result.items && Array.isArray(result.items)) {
-            return result.items.map(item => item.key).filter(Boolean);
-          } else if (Array.isArray(result)) {
-            return result.map(item => item.key).filter(Boolean);
-          } else {
-            console.warn('Unexpected Amplify Storage result structure:', result);
-            return [];
-          }
-        } catch (amplifyError) {
-          console.error('Amplify Storage fallback also failed:', amplifyError);
-        }
-      }
-      
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
