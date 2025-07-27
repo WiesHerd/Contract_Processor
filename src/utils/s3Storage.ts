@@ -139,8 +139,11 @@ export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
     console.log('🔍 listFiles: Searching for prefix:', prefix);
     
-    // In production (Amplify environment), use Amplify Storage directly
-    if (isAmplifyEnvironment()) {
+    // Force use of direct S3 client for local development to get accurate results
+    // Amplify Storage seems to be returning incorrect results in local environment
+    const forceDirectS3 = import.meta.env.DEV || !isAmplifyEnvironment();
+    
+    if (!forceDirectS3 && isAmplifyEnvironment()) {
       console.log('🔄 Using Amplify Storage for listing files...');
       try {
         // Import Amplify Storage dynamically

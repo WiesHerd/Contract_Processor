@@ -109,6 +109,25 @@ export default function TemplateManager() {
     }
   };
 
+  // Test S3 listing function
+  const testS3Listing = async () => {
+    console.log('🧪 TEST: Testing S3 listing function...');
+    try {
+      const { listFiles } = await import('@/utils/s3Storage');
+      
+      console.log('🧪 TEST: Testing templates/ prefix...');
+      const templatesResult = await listFiles('templates/');
+      console.log('🧪 TEST: templates/ result:', templatesResult);
+      
+      console.log('🧪 TEST: Testing metadata/templates/ prefix...');
+      const metadataResult = await listFiles('metadata/templates/');
+      console.log('🧪 TEST: metadata/templates/ result:', metadataResult);
+      
+    } catch (error) {
+      console.error('🧪 TEST: S3 listing test failed:', error);
+    }
+  };
+
   useEffect(() => {
     console.log('🔍 TemplateManager: Starting template fetch...');
     dispatch(fetchTemplatesIfNeeded()).then((result) => {
@@ -435,6 +454,10 @@ export default function TemplateManager() {
             <Button variant="outline" onClick={debugStorage} className="text-gray-600 border-gray-300 hover:bg-gray-50">
               <Info className="w-4 h-4 mr-2" />
               Debug Storage
+            </Button>
+            <Button variant="outline" onClick={testS3Listing} className="text-gray-600 border-gray-300 hover:bg-gray-50">
+              <FileText className="w-4 h-4 mr-2" />
+              Test S3 Listing
             </Button>
             <Button variant="outline" onClick={handleDeleteAllTemplates} className="text-red-600 border-red-300 hover:bg-red-50" disabled={deletingAll}>
               <Trash2 className="w-4 h-4 mr-2" />
