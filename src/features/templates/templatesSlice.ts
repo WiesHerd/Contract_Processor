@@ -22,19 +22,26 @@ export const hydrateTemplatesFromS3 = createAsyncThunk(
   'templates/hydrateFromS3',
   async (_, { rejectWithValue }) => {
     try {
+      console.log('🔍 hydrateTemplatesFromS3: Starting S3 template fetch...');
       const templateKeys = await listFiles('metadata/templates/');
+      console.log('🔍 hydrateTemplatesFromS3: Found template keys:', templateKeys);
+      
       const templates: Template[] = [];
       for (const key of templateKeys) {
         const templateId = key.split('/').pop()?.replace('.json', '');
+        console.log('🔍 hydrateTemplatesFromS3: Processing key:', key, 'templateId:', templateId);
         if (templateId) {
           const template = await getTemplateMetadata(templateId);
+          console.log('🔍 hydrateTemplatesFromS3: Retrieved template:', template);
           if (template && template.id && template.id.trim() !== '' && template.name && template.name.trim() !== '') {
             templates.push(template);
+            console.log('🔍 hydrateTemplatesFromS3: Added valid template:', template.name);
           } else {
             console.warn('Skipping invalid template:', template);
           }
         }
       }
+      console.log('🔍 hydrateTemplatesFromS3: Final templates array:', templates);
       return templates;
     } catch (error) {
       console.warn('S3 storage not available, falling back to local storage:', error);
@@ -46,6 +53,7 @@ export const hydrateTemplatesFromS3 = createAsyncThunk(
             localTemplates.push(value);
           }
         });
+        console.log('🔍 hydrateTemplatesFromS3: Fallback to local storage, found:', localTemplates.length, 'templates');
         return localTemplates;
       } catch (localError) {
         console.error('Both S3 and local storage failed:', localError);

@@ -137,6 +137,8 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
+    console.log('🔍 listFiles: Searching for prefix:', prefix);
+    
     // In production (Amplify environment), use Amplify Storage directly
     if (isAmplifyEnvironment()) {
       console.log('🔄 Using Amplify Storage for listing files...');
@@ -172,12 +174,15 @@ export async function listFiles(prefix: string): Promise<string[]> {
         throw new Error('S3 bucket not configured');
       }
 
+      console.log('🔍 listFiles: Using direct S3 client with bucket:', BUCKET);
       const command = new ListObjectsV2Command({
         Bucket: BUCKET,
         Prefix: prefix,
       });
       const response = await s3Client.send(command);
-      return (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
+      const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
+      console.log('🔍 listFiles: Direct S3 client found files:', files);
+      return files;
     } catch (error) {
       console.error('S3 list error:', error);
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);

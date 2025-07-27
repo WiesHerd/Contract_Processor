@@ -68,8 +68,44 @@ export default function TemplateManager() {
     }
   };
 
+  // Debug function to check S3 and local storage
+  const debugStorage = async () => {
+    console.log('🔍 DEBUG: Checking storage...');
+    
+    // Check S3 for templates
+    try {
+      const { listFiles } = await import('@/utils/s3Storage');
+      const templateKeys = await listFiles('metadata/templates/');
+      console.log('🔍 DEBUG: S3 template keys:', templateKeys);
+      
+      // Check all metadata files
+      const allMetadataKeys = await listFiles('metadata/');
+      console.log('🔍 DEBUG: All S3 metadata keys:', allMetadataKeys);
+    } catch (error) {
+      console.error('🔍 DEBUG: S3 check failed:', error);
+    }
+    
+    // Check local storage
+    try {
+      const localTemplates: Template[] = [];
+      await localforage.iterate((value: Template, key) => {
+        if (key.startsWith('template_')) {
+          localTemplates.push(value);
+        }
+      });
+      console.log('🔍 DEBUG: Local storage templates:', localTemplates);
+    } catch (error) {
+      console.error('🔍 DEBUG: Local storage check failed:', error);
+    }
+  };
+
   useEffect(() => {
-    dispatch(fetchTemplatesIfNeeded());
+    console.log('🔍 TemplateManager: Starting template fetch...');
+    dispatch(fetchTemplatesIfNeeded()).then((result) => {
+      console.log('🔍 TemplateManager: fetchTemplatesIfNeeded result:', result);
+    }).catch((error) => {
+      console.error('🔍 TemplateManager: fetchTemplatesIfNeeded error:', error);
+    });
   }, [dispatch]);
 
   const handleCreateTemplate = () => {
@@ -386,6 +422,10 @@ export default function TemplateManager() {
           </div>
           <hr className="my-3 border-gray-100" />
           <div className="flex flex-wrap items-center gap-3 justify-end">
+            <Button variant="outline" onClick={debugStorage} className="text-gray-600 border-gray-300 hover:bg-gray-50">
+              <Info className="w-4 h-4 mr-2" />
+              Debug Storage
+            </Button>
             <Button variant="outline" onClick={handleDeleteAllTemplates} className="text-red-600 border-red-300 hover:bg-red-50" disabled={deletingAll}>
               <Trash2 className="w-4 h-4 mr-2" />
               {deletingAll ? 'Deleting...' : 'Delete All Templates'}
