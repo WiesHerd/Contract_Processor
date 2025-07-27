@@ -58,7 +58,6 @@ export function YearProvider({ children }: YearProviderProps) {
     providers.forEach(provider => {
       if (provider.compensationYear) {
         const year = parseInt(provider.compensationYear.toString());
-        console.log('Provider year:', year, 'from provider:', provider.name);
         if (validateYear(year)) {
           years.add(year);
         }
