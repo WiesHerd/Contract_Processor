@@ -1,3 +1,4 @@
+// AMPLIFY REDEPLOY TRIGGER: 2025-07-27T17:25:00.218Z
 // Template loading fix deployment - 2025-07-27T16:02:48.482Z
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
@@ -27,8 +28,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { debugS3Contents } from '@/utils/s3Storage';
 
-// FORCE DEPLOYMENT - Template loading fix v2.0 - Correct bucket configuration
-console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V2.0 - CORRECT BUCKET CONFIG');
+// FORCE DEPLOYMENT - Template loading fix v2.1 - Force Amplify redeploy
+console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V2.1 - FORCE AMPLIFY REDEPLOY');
 
 export default function TemplateManager() {
   const dispatch: AppDispatch = useDispatch();
