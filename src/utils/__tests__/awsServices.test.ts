@@ -3,20 +3,33 @@ import { awsTemplates, awsProviders, awsMappings, checkAWSHealth } from '../awsS
 import { Template } from '@/types/template';
 import { Provider } from '@/types/provider';
 
-// Mock the GraphQL client
-const mockGraphQLClient = {
-  graphql: vi.fn()
-};
-
-// Mock the generateClient function
-vi.mock('@/API', () => ({
-  generateClient: vi.fn(() => mockGraphQLClient)
-}));
+// Mock the generateClient function from aws-amplify/api
+vi.mock('aws-amplify/api', () => {
+  const mockGraphQLClient = {
+    graphql: vi.fn()
+  };
+  return {
+    generateClient: vi.fn(() => mockGraphQLClient)
+  };
+});
 
 // Mock AWS SDK
 vi.mock('@aws-sdk/client-dynamodb');
 vi.mock('@aws-sdk/lib-dynamodb');
-vi.mock('aws-amplify/api');
+
+// Mock the amplify configuration
+vi.mock('../amplifyconfiguration.json', () => ({
+  default: {
+    aws_project_region: 'us-east-2',
+    aws_user_files_s3_bucket: 'test-bucket',
+    aws_cognito_identity_pool_id: 'test-pool-id'
+  }
+}));
+
+// Get the mocked client for test setup
+const mockGraphQLClient = {
+  graphql: vi.fn()
+};
 
 
 describe('AWS Services', () => {
