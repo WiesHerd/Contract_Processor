@@ -158,7 +158,17 @@ export async function listFiles(prefix: string): Promise<string[]> {
           // Import Amplify Storage dynamically with correct syntax
           const { uploadData, downloadData, list, remove } = await import('aws-amplify/storage');
           const result = await list({ prefix });
-          return result.results.map(item => item.key).filter(Boolean);
+          console.log('🔍 Amplify Storage list result:', result);
+          
+          // Try different possible result structures
+          if (result.items && Array.isArray(result.items)) {
+            return result.items.map(item => item.key).filter(Boolean);
+          } else if (Array.isArray(result)) {
+            return result.map(item => item.key).filter(Boolean);
+          } else {
+            console.warn('Unexpected Amplify Storage result structure:', result);
+            return [];
+          }
         } catch (amplifyError) {
           console.error('Amplify Storage fallback also failed:', amplifyError);
         }
