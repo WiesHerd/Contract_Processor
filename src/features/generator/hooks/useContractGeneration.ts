@@ -199,14 +199,20 @@ export const useContractGeneration = ({
         }
       }
       
-      // Open document in Microsoft Office Online Viewer for inline display
-      const officeOnlineUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(downloadUrl)}`;
-      window.open(officeOnlineUrl, '_blank', 'noopener,noreferrer');
+      // Download the file directly to user's computer
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       
       // Show success message with status info
       const statusMessage = contract.status === 'PARTIAL_SUCCESS' 
-        ? `Opening contract for ${provider.name} in browser (Note: S3 storage may have failed during generation)`
-        : `Opening contract for ${provider.name} in browser`;
+        ? `Downloading contract for ${provider.name} (Note: S3 storage may have failed during generation)`
+        : `Downloading contract for ${provider.name}`;
       showSuccess(statusMessage);
       
     } catch (error) {

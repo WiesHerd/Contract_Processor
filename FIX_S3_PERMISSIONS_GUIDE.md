@@ -84,3 +84,4 @@ The IAM role `amplify-contractgenerator-production-78963-authRole` lacks S3 perm
 2. Verify the bucket name matches exactly
 3. Ensure you're logged in as an authenticated user
 4. Check CloudWatch logs for additional errors 
+

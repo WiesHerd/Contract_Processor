@@ -441,15 +441,15 @@ export const useGeneratorGrid = ({
       const assignedTemplate = getAssignedTemplate(provider);
       const contract = generatedContracts.find(c => c.providerId === provider.id);
       
-      // Debug logging
-      console.log('Generation Status Debug:', {
-        providerId: provider?.id,
-        providerName: provider?.name,
-        assignedTemplate: assignedTemplate?.name,
-        contractFound: !!contract,
-        contractStatus: contract?.status,
-        generatedContractsLength: generatedContracts?.length
-      });
+      // Debug logging - DISABLED to prevent infinite loop
+      // console.log('Generation Status Debug:', {
+      //   providerId: provider?.id,
+      //   providerName: provider?.name,
+      //   assignedTemplate: assignedTemplate?.name,
+      //   contractFound: !!contract,
+      //   contractStatus: contract?.status,
+      //   generatedContractsLength: generatedContracts?.length
+      // });
       
       if (!assignedTemplate) {
         return '☒ Not Processed';
@@ -491,15 +491,15 @@ export const useGeneratorGrid = ({
       const assignedTemplate = getAssignedTemplate(provider);
       const contract = generatedContracts.find(c => c.providerId === provider.id);
       
-      // Debug logging
-      console.log('Contract Actions Debug:', {
-        providerId: provider?.id,
-        providerName: provider?.name,
-        assignedTemplate: assignedTemplate?.name,
-        contractFound: !!contract,
-        contractStatus: contract?.status,
-        generatedContractsLength: generatedContracts?.length
-      });
+      // Debug logging - DISABLED to prevent infinite loop
+      // console.log('Contract Actions Debug:', {
+      //   providerId: provider?.id,
+      //   providerName: provider?.name,
+      //   assignedTemplate: assignedTemplate?.name,
+      //   contractFound: !!contract,
+      //   contractStatus: contract?.status,
+      //   generatedContractsLength: generatedContracts?.length
+      // });
       
       // If no template assigned, show "Assign Template"
       if (!assignedTemplate) {
@@ -540,9 +540,13 @@ export const useGeneratorGrid = ({
           {/* Document/Download Icon */}
           <button
             className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer border-0 bg-transparent`}
-            title={isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract from S3"}
-            onClick={(e) => {
+            title={isPartialSuccess ? "Download Contract (S3 storage failed)" : "Download Contract"}
+            onMouseDown={(e) => {
+              console.log('📄 Document icon clicked for:', provider.name);
               e.stopPropagation();
+              e.preventDefault();
+              
+              // Simple call to download contract
               downloadContract(provider, contract.templateId);
             }}
           >
@@ -555,8 +559,12 @@ export const useGeneratorGrid = ({
           <button
             className={`${isPartialSuccess ? 'text-orange-600 hover:bg-orange-50' : 'text-blue-600 hover:bg-blue-50'} p-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors cursor-pointer border-0 bg-transparent`}
             title="Preview Contract"
-            onClick={(e) => {
+            onMouseDown={(e) => {
+              console.log('👁️ Eye icon clicked for:', provider.name);
               e.stopPropagation();
+              e.preventDefault();
+              
+              // Simple call to open preview modal
               handlePreviewGenerate(provider.id);
             }}
           >
@@ -645,12 +653,12 @@ export const useGeneratorGrid = ({
       orderedColumns.push(contractActionsColumn);
     }
     
-    // Debug logging
-    console.log('🔍 Column Debug:', {
-      statusTab,
-      totalColumns: orderedColumns.length,
-      columnNames: orderedColumns.map(col => col.headerName || col.field)
-    });
+    // Debug logging - DISABLED to prevent infinite loop
+    // console.log('🔍 Column Debug:', {
+    //   statusTab,
+    //   totalColumns: orderedColumns.length,
+    //   columnNames: orderedColumns.map(col => col.headerName || col.field)
+    // });
     
     return orderedColumns;
   }, [selectColumn, allColumnDefs, columnOrder, hiddenColumns, leftPinned, rightPinned, generationStatusColumn, contractActionsColumn, statusTab]);

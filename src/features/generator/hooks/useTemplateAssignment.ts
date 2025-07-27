@@ -73,22 +73,22 @@ export const useTemplateAssignment = ({
       t.name.trim() !== ''
     );
     
-    // Debug logging
-    console.log('getAssignedTemplate Debug:', {
-      providerId: provider?.id,
-      providerName: provider?.name,
-      templateAssignmentsCount: Object.keys(templateAssignments).length,
-      selectedTemplateId: selectedTemplate?.id,
-      selectedTemplateName: selectedTemplate?.name,
-      generatedContractsLength: generatedContracts?.length,
-      validTemplatesLength: validTemplates.length
-    });
+    // Debug logging - DISABLED to prevent infinite loop
+    // console.log('getAssignedTemplate Debug:', {
+    //   providerId: provider?.id,
+    //   providerName: provider?.name,
+    //   templateAssignmentsCount: Object.keys(templateAssignments).length,
+    //   selectedTemplateId: selectedTemplate?.id,
+    //   selectedTemplateName: selectedTemplate?.name,
+    //   generatedContractsLength: generatedContracts?.length,
+    //   validTemplatesLength: validTemplates.length
+    // });
     
     // 1. Check for explicit individual assignment first
     if (templateAssignments[provider.id]) {
       const assignedTemplate = validTemplates.find(t => t.id === templateAssignments[provider.id]);
       if (assignedTemplate) {
-        console.log('Found explicit assignment:', assignedTemplate.name);
+        // console.log('Found explicit assignment:', assignedTemplate.name);
         return assignedTemplate;
       }
       return null;
@@ -98,7 +98,7 @@ export const useTemplateAssignment = ({
     if (selectedTemplate && selectedTemplate.id && selectedTemplate.id.trim() !== '') {
       const validSelectedTemplate = validTemplates.find(t => t.id === selectedTemplate.id);
       if (validSelectedTemplate) {
-        console.log('Found global assignment:', validSelectedTemplate.name);
+        // console.log('Found global assignment:', validSelectedTemplate.name);
         return validSelectedTemplate;
       }
     }
@@ -109,14 +109,14 @@ export const useTemplateAssignment = ({
       if (providerContract && providerContract.templateId && providerContract.templateId.trim() !== '') {
         const contractTemplate = validTemplates.find(t => t.id === providerContract.templateId);
         if (contractTemplate) {
-          console.log('Found historical assignment:', contractTemplate.name);
+          // console.log('Found historical assignment:', contractTemplate.name);
           return contractTemplate;
         }
       }
     }
     
     // 4. No assignment found
-    console.log('No template assignment found');
+    // console.log('No template assignment found');
     return null;
   }, [templates, templateAssignments, selectedTemplate, generatedContracts]);
 

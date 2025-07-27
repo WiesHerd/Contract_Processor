@@ -1,0 +1,3 @@
+[33mcf1162f0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mproduction[m[33m, [m[1;31morigin/production[m[33m)[m fix: improve S3 storage with better Amplify Storage fallback and credential handling
+[33ma50ba985[m fix: implement direct S3 access with authenticated user credentials to bypass Amplify Storage issues
+[33mcdf4629c[m fix: force Amplify redeploy with correct bucket configuration to resolve IAM permissions

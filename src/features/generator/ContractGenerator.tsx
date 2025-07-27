@@ -196,12 +196,12 @@ export default function ContractGenerator() {
   const [createViewModalOpen, setCreateViewModalOpen] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   
-  // Debug Redux state
-  console.log('🔍 Redux State Debug:', {
-    generatedContractsCount: generatedContracts.length,
-    generatedContracts: generatedContracts,
-    statusTab
-  });
+  // Debug Redux state - DISABLED to prevent infinite loop
+  // console.log('🔍 Redux State Debug:', {
+  //   generatedContractsCount: generatedContracts.length,
+  //   generatedContracts: generatedContracts,
+  //   statusTab
+  // });
 
   // Create a temporary gridRef that will be updated by useGeneratorGrid
   const tempGridRef = useRef<any>(null);
@@ -1169,16 +1169,16 @@ export default function ContractGenerator() {
       generationStatus = 'Not Generated';
     }
     
-    // Debug logging for newly generated contracts
-    if (latestProcessedContract && (latestProcessedContract.status === 'SUCCESS' || latestProcessedContract.status === 'PARTIAL_SUCCESS')) {
-      console.log('🔍 Provider with contract:', {
-        providerId: provider.id,
-        providerName: provider.name,
-        contractStatus: latestProcessedContract.status,
-        generationStatus: generationStatus,
-        generatedAt: latestProcessedContract.generatedAt
-      });
-    }
+    // Debug logging for newly generated contracts - DISABLED to prevent infinite loop
+    // if (latestProcessedContract && (latestProcessedContract.status === 'SUCCESS' || latestProcessedContract.status === 'PARTIAL_SUCCESS')) {
+    //   console.log('🔍 Provider with contract:', {
+    //     providerId: provider.id,
+    //     providerName: provider.name,
+    //     contractStatus: latestProcessedContract.status,
+    //     generationStatus: generationStatus,
+    //     generatedAt: latestProcessedContract.generatedAt
+    //   });
+    // }
     
     return {
       ...provider,
