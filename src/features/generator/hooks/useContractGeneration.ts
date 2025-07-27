@@ -71,6 +71,16 @@ export const useContractGeneration = ({
         return;
       }
       
+      // DEBUG: Log all contract data to help identify the issue
+      console.log('🔍 DEBUG - Full contract data:', {
+        contract,
+        providerId: provider.id,
+        templateId,
+        status: contract.status,
+        generatedAt: contract.generatedAt,
+        allContracts: generatedContracts
+      });
+      
       // Get the template to get the contract year
       const template = templates.find(t => t.id === templateId);
       const contractYear = template?.contractYear || new Date().getFullYear().toString();
@@ -129,20 +139,30 @@ export const useContractGeneration = ({
           
           let foundPath = null;
           
-          // Use the standardized path (without timestamp) - this matches the actual S3 structure
-          const standardizedPath = `contracts/immutable/${contractId}/${fileName}`;
-          console.log(`🔍 Checking standardized path: ${standardizedPath}`);
+          // DEBUG: Check multiple possible S3 paths
+          const possiblePaths = [
+            `contracts/immutable/${contractId}/${fileName}`,
+            `contracts/${contractId}/${fileName}`,
+            `contracts/immutable/${contractId}/contract.docx`,
+            `contracts/${contractId}/contract.docx`,
+          ];
           
-          try {
-            const fileExists = await checkFileExists(standardizedPath);
-            if (fileExists) {
-              foundPath = standardizedPath;
-              console.log(`✅ Found file with standardized path`);
-            } else {
-              console.log(`❌ File not found at standardized path: ${standardizedPath}`);
+          console.log('🔍 DEBUG - Checking multiple possible S3 paths:', possiblePaths);
+          
+          for (const path of possiblePaths) {
+            try {
+              console.log(`🔍 Checking path: ${path}`);
+              const fileExists = await checkFileExists(path);
+              if (fileExists) {
+                foundPath = path;
+                console.log(`✅ Found file at path: ${path}`);
+                break;
+              } else {
+                console.log(`❌ File not found at path: ${path}`);
+              }
+            } catch (checkError) {
+              console.log(`❌ Error checking path: ${path}`, checkError);
             }
-          } catch (checkError) {
-            console.log(`❌ Error checking standardized path: ${standardizedPath}`, checkError);
           }
           
           if (foundPath) {
