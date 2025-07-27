@@ -91,22 +91,28 @@ export async function listCognitoUsers() {
           
           console.log(`👤 User ${cognitoUser.Username} has groups:`, groups);
           
-          return {
-            Username: cognitoUser.Username,
-            Attributes: cognitoUser.Attributes || [],
-            Enabled: cognitoUser.Enabled,
-            UserStatus: cognitoUser.UserStatus,
-            groups: groups
-          };
+                     return {
+             Username: cognitoUser.Username,
+             Attributes: cognitoUser.Attributes?.map(attr => ({
+               Name: attr.Name,
+               Value: attr.Value
+             })) || [],
+             Enabled: cognitoUser.Enabled,
+             UserStatus: cognitoUser.UserStatus,
+             groups: groups
+           };
         } catch (error) {
           console.warn(`⚠️ Failed to get groups for user ${cognitoUser.Username}:`, error);
-          return {
-            Username: cognitoUser.Username,
-            Attributes: cognitoUser.Attributes || [],
-            Enabled: cognitoUser.Enabled,
-            UserStatus: cognitoUser.UserStatus,
-            groups: []
-          };
+                     return {
+             Username: cognitoUser.Username,
+             Attributes: cognitoUser.Attributes?.map(attr => ({
+               Name: attr.Name,
+               Value: attr.Value
+             })) || [],
+             Enabled: cognitoUser.Enabled,
+             UserStatus: cognitoUser.UserStatus,
+             groups: []
+           };
         }
       })
     );

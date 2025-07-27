@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 interface User {
   Username: string;
-  Attributes: Array<{ Name: string; Value: string }>;
+  Attributes: Array<{ Name: string; Value?: string }>;
   Enabled: boolean;
   UserStatus: string;
   groups?: string[];

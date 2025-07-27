@@ -18,7 +18,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface User {
   Username: string;
-  Attributes: Array<{ Name: string; Value: string }>;
+  Attributes: Array<{ Name: string; Value?: string }>;
   Enabled: boolean;
   UserStatus: string;
   groups?: string[];
