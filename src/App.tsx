@@ -369,4 +369,5 @@ function App() {
 // VITE_AWS_REGION and VITE_S3_BUCKET are set for production
 
 // Export with error boundary wrapper
-export default withErrorBoundary(App); 
+export default withErrorBoundary(App); / /   T e s t   r e d e p l o y   w i t h   S 3   p e r m i s s i o n s   f i x   -   0 7 / 2 7 / 2 0 2 5   0 7 : 5 3 : 2 2  
+ 
