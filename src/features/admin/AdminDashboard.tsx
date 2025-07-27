@@ -7,10 +7,7 @@ import UserManagement from './UserManagement';
 import { listCognitoUsers } from '@/services/cognitoAdminService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-// Use environment-based API URL
-const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://your-api-gateway-url.amazonaws.com/prod' 
-  : 'http://localhost:4000';
+
 
 interface User {
   Username: string;
@@ -32,22 +29,7 @@ const AdminDashboard: React.FC = () => {
       setLoading(true);
       setError(null);
       const usersData = await listCognitoUsers();
-      // Fetch groups for each user from backend
-      const usersWithGroups = await Promise.all(
-        usersData.map(async (user: any) => {
-          try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${user.Username}/groups`);
-            if (response.ok) {
-              const groups = await response.json();
-              return { ...user, groups: groups.groups || [] };
-            }
-          } catch (err) {
-            console.warn(`Failed to fetch groups for user ${user.Username}:`, err);
-          }
-          return { ...user, groups: [] };
-        })
-      );
-      setUsers(usersWithGroups);
+      setUsers(usersData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch users');
     } finally {
