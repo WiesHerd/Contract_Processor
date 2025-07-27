@@ -40,15 +40,37 @@ const getAWSConfig = () => {
 
 const awsConfig = getAWSConfig();
 
-// Initialize S3 client with retry configuration
+// Initialize S3 client with Cognito Identity Pool authentication
 const s3Client = new S3Client({
   region: awsConfig.region,
   credentials: awsConfig.accessKeyId && awsConfig.secretAccessKey ? {
     accessKeyId: awsConfig.accessKeyId,
     secretAccessKey: awsConfig.secretAccessKey,
-  } : undefined, // Let AWS SDK use default credential chain
+  } : undefined, // Will use Cognito Identity Pool in production
   maxAttempts: 3,
 });
+
+// Create authenticated S3 client using Cognito Identity Pool
+const createAuthenticatedS3Client = async () => {
+  try {
+    const cognitoIdentity = await import('@aws-sdk/client-cognito-identity');
+    const { fromCognitoIdentityPool } = await import('@aws-sdk/credential-provider-cognito-identity');
+    
+    const identityClient = new cognitoIdentity.CognitoIdentityClient({ region: awsConfig.region });
+    
+    return new S3Client({
+      region: awsConfig.region,
+      credentials: fromCognitoIdentityPool({
+        client: identityClient,
+        identityPoolId: config.aws_cognito_identity_pool_id,
+      }),
+      maxAttempts: 3,
+    });
+  } catch (error) {
+    console.error('Failed to create authenticated S3 client:', error);
+    return s3Client; // Fallback to default client
+  }
+};
 
 // S3 bucket and path constants
 const BUCKET = awsConfig.bucket;
@@ -140,26 +162,28 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
-    // Always use direct S3 client for the contractengine-storage-wherdzik bucket
-    // Amplify Storage has permission issues with this bucket
+    // Use authenticated S3 client for enterprise-grade access
     try {
-      console.log('🔍 Using direct S3 client for listing files with prefix:', prefix);
+      console.log('🔍 Using authenticated S3 client for listing files with prefix:', prefix);
       if (!BUCKET) {
         throw new Error('S3 bucket not configured');
       }
 
+      // Create authenticated client
+      const authenticatedClient = await createAuthenticatedS3Client();
+      
       const command = new ListObjectsV2Command({
         Bucket: BUCKET,
         Prefix: prefix,
       });
-      const response = await s3Client.send(command);
+      const response = await authenticatedClient.send(command);
       const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
-      console.log('📁 Files found via direct S3 client:', files);
+      console.log('📁 Files found via authenticated S3 client:', files);
       return files;
     } catch (error) {
-      console.error('❌ S3 list error:', error);
+      console.error('❌ Authenticated S3 list error:', error);
       
-      // If direct S3 fails, try Amplify Storage as fallback
+      // Fallback to Amplify Storage if authenticated access fails
       try {
         console.log('🔄 Falling back to Amplify Storage...');
         const { list } = await import('aws-amplify/storage');
