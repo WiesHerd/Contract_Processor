@@ -41,13 +41,9 @@ const getAWSConfig = () => {
 
 const awsConfig = getAWSConfig();
 
-// Initialize S3 client with Cognito Identity Pool authentication
+// Initialize S3 client - will be replaced with authenticated client
 const s3Client = new S3Client({
   region: awsConfig.region,
-  credentials: awsConfig.accessKeyId && awsConfig.secretAccessKey ? {
-    accessKeyId: awsConfig.accessKeyId,
-    secretAccessKey: awsConfig.secretAccessKey,
-  } : undefined, // Will use Cognito Identity Pool in production
   maxAttempts: 3,
 });
 
@@ -86,8 +82,8 @@ const createAuthenticatedS3Client = async () => {
   }
 };
 
-// S3 bucket and path constants
-const BUCKET = awsConfig.bucket;
+// S3 bucket and path constants - Always use custom bucket
+const BUCKET = 'contractengine-storage-wherdzik';
 const PATHS = {
   TEMPLATES: 'templates/',
   CONTRACTS: 'contracts/',
@@ -115,9 +111,31 @@ export async function uploadFile(
 ): Promise<string> {
   return withRetry(async () => {
     try {
-      if (!BUCKET) {
-        throw new Error('S3 bucket not configured');
+      // Get authenticated user credentials
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
       }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      // Create authenticated S3 client
+      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+      const authenticatedS3Client = new S3Client({
+        region: awsConfig.region,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+        maxAttempts: 3,
+      });
       
       const command = new PutObjectCommand({
         Bucket: BUCKET,
@@ -128,7 +146,7 @@ export async function uploadFile(
         ServerSideEncryption: 'AES256',
       });
 
-      await s3Client.send(command);
+      await authenticatedS3Client.send(command);
       return key;
     } catch (error) {
       console.error('S3 upload error:', error);
@@ -176,70 +194,55 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
-    // Try Amplify Storage first (more reliable, handles CORS automatically)
+    // Use direct S3 access to custom bucket only
     try {
-      console.log('🔍 Using Amplify Storage for listing files with prefix:', prefix);
-      const { list } = await import('aws-amplify/storage');
-      const result = await list({ prefix });
+      console.log('🔍 Using direct S3 access for listing files with prefix:', prefix);
       
-      if (result.items && Array.isArray(result.items)) {
-        const files = result.items.map(item => item.key).filter(Boolean);
-        console.log('📁 Files found via Amplify Storage:', files);
-        return files;
-      }
-      return [];
-    } catch (amplifyError) {
-      console.error('❌ Amplify Storage failed:', amplifyError);
+      // Get authenticated user credentials
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
       
-      // Fallback to direct S3 access if Amplify Storage fails
-      try {
-        console.log('🔄 Falling back to direct S3 access...');
-        
-        // Get authenticated user credentials
-        const { getCurrentUser } = await import('aws-amplify/auth');
-        const { fetchAuthSession } = await import('aws-amplify/auth');
-        
-        const user = await getCurrentUser();
-        if (!user) {
-          throw new Error('No authenticated user found');
-        }
-        
-        const session = await fetchAuthSession();
-        if (!session.credentials) {
-          throw new Error('No credentials available in session');
-        }
-        
-        console.log('🔐 Using authenticated user credentials for direct S3 access');
-        
-        // Create S3 client with user credentials
-        const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-        const s3Client = new S3Client({
-          region: awsConfig.region,
-          credentials: {
-            accessKeyId: session.credentials.accessKeyId,
-            secretAccessKey: session.credentials.secretAccessKey,
-            sessionToken: session.credentials.sessionToken,
-          },
-          maxAttempts: 3,
-        });
-        
-        if (!BUCKET) {
-          throw new Error('S3 bucket not configured');
-        }
-        
-        const command = new ListObjectsV2Command({
-          Bucket: BUCKET,
-          Prefix: prefix,
-        });
-        
-        const response = await s3Client.send(command);
-        const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
-        console.log('📁 Files found via direct S3 access fallback:', files);
-        return files;
-      } catch (directError) {
-        console.error('❌ Direct S3 access fallback also failed:', directError);
-        throw new Error(`Failed to list files: ${amplifyError instanceof Error ? amplifyError.message : 'Unknown error'}`);
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
       }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      console.log('🔐 Using authenticated user credentials for direct S3 access');
+      
+      // Create S3 client with user credentials
+      const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+      const s3Client = new S3Client({
+        region: awsConfig.region,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+        maxAttempts: 3,
+      });
+      
+      // Use only the custom bucket
+      const bucketName = 'contractengine-storage-wherdzik';
+      
+      const command = new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: prefix,
+        MaxKeys: 1000
+      });
+      
+      const response = await s3Client.send(command);
+      const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
+      console.log('📁 Files found via direct S3 access:', files);
+      return files;
+      
+    } catch (error) {
+      console.error('❌ Direct S3 access failed:', error);
+      throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 }
