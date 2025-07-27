@@ -137,35 +137,41 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
-    // Force use of direct S3 client for local development to get accurate results
-    // Amplify Storage seems to be returning incorrect results in local environment
-    const forceDirectS3 = import.meta.env.DEV || !isAmplifyEnvironment();
+    // In production, always use Amplify Storage for proper authentication
+    // In development, use direct S3 client for more accurate results
+    const useAmplifyStorage = !import.meta.env.DEV;
     
-    if (!forceDirectS3 && isAmplifyEnvironment()) {
+    if (useAmplifyStorage) {
       try {
+        console.log('🔍 Using Amplify Storage for listing files with prefix:', prefix);
         // Import Amplify Storage dynamically
         const { list } = await import('aws-amplify/storage');
         const result = await list({ prefix });
+        
+        console.log('🔍 Amplify Storage result:', result);
 
         // Try different possible result structures
         if (result.items && Array.isArray(result.items)) {
           const files = result.items.map(item => item.key).filter(Boolean);
+          console.log('📁 Files found via Amplify Storage:', files);
           return files;
         } else if (Array.isArray(result)) {
           const files = result.map(item => item.key).filter(Boolean);
+          console.log('📁 Files found via Amplify Storage (array):', files);
           return files;
         } else {
           console.warn('Unexpected Amplify Storage result structure:', result);
           return [];
         }
       } catch (amplifyError) {
-        console.error('Amplify Storage failed:', amplifyError);
+        console.error('❌ Amplify Storage failed:', amplifyError);
         // Fall back to direct S3 client
       }
     }
 
     // Use direct S3 client (for local development or as fallback)
     try {
+      console.log('🔍 Using direct S3 client for listing files with prefix:', prefix);
       if (!BUCKET) {
         throw new Error('S3 bucket not configured');
       }
@@ -176,9 +182,10 @@ export async function listFiles(prefix: string): Promise<string[]> {
       });
       const response = await s3Client.send(command);
       const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
+      console.log('📁 Files found via direct S3 client:', files);
       return files;
     } catch (error) {
-      console.error('S3 list error:', error);
+      console.error('❌ S3 list error:', error);
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
