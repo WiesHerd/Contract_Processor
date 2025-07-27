@@ -23,13 +23,16 @@ const getAWSConfig = () => {
   const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY;
   
   // Use Amplify S3 bucket if available, otherwise fall back to environment variable
+  // In production, always use the Amplify bucket for proper authentication
   const bucket = import.meta.env.VITE_S3_BUCKET || config.aws_user_files_s3_bucket;
   
   console.log('🔍 S3 Configuration:', {
     region,
     hasAccessKey: !!accessKeyId,
     hasSecretKey: !!secretAccessKey,
-    bucket: bucket || 'NOT_SET'
+    bucket: bucket || 'NOT_SET',
+    amplifyBucket: config.aws_user_files_s3_bucket,
+    isProduction: !import.meta.env.DEV
   });
   
   return { region, accessKeyId, secretAccessKey, bucket };
