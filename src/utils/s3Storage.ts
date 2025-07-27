@@ -155,9 +155,9 @@ export async function listFiles(prefix: string): Promise<string[]> {
       if (isAmplifyEnvironment() && error.message?.includes('Credential is missing')) {
         console.log('🔄 Falling back to Amplify Storage for listing files...');
         try {
-          // Import Amplify Storage dynamically
-          const { Storage } = await import('aws-amplify/storage');
-          const result = await Storage.list(prefix);
+          // Import Amplify Storage dynamically with correct syntax
+          const { uploadData, downloadData, list, remove } = await import('aws-amplify/storage');
+          const result = await list({ prefix });
           return result.results.map(item => item.key).filter(Boolean);
         } catch (amplifyError) {
           console.error('Amplify Storage fallback also failed:', amplifyError);
