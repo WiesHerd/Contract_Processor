@@ -7,6 +7,11 @@ import UserManagement from './UserManagement';
 import { listCognitoUsers } from '@/services/cognitoAdminService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+// Use environment-based API URL
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://your-api-gateway-url.amazonaws.com/prod' 
+  : 'http://localhost:4000';
+
 interface User {
   Username: string;
   Attributes: Array<{ Name: string; Value: string }>;
@@ -31,7 +36,7 @@ const AdminDashboard: React.FC = () => {
       const usersWithGroups = await Promise.all(
         usersData.map(async (user: any) => {
           try {
-            const response = await fetch(`http://localhost:4000/api/users/${user.Username}/groups`);
+            const response = await fetch(`${API_BASE_URL}/api/users/${user.Username}/groups`);
             if (response.ok) {
               const groups = await response.json();
               return { ...user, groups: groups.groups || [] };

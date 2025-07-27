@@ -586,3 +586,34 @@ export const downloadFile = async (key: string): Promise<Blob> => {
     throw new Error('Could not download the template file from S3.');
   }
 }; 
+
+// Debug function to check S3 bucket contents
+export async function debugS3Contents(): Promise<void> {
+  try {
+    console.log('🔍 Debugging S3 bucket contents...');
+    console.log('🔍 S3 Configuration:', {
+      region: awsConfig.region,
+      bucket: BUCKET,
+      hasAccessKey: !!awsConfig.accessKeyId,
+      hasSecretKey: !!awsConfig.secretAccessKey
+    });
+
+    // Check templates path
+    console.log('🔍 Checking templates/ path...');
+    const templateFolders = await listFiles('templates/');
+    console.log('📁 Template folders found:', templateFolders);
+
+    // Check metadata path
+    console.log('🔍 Checking metadata/templates/ path...');
+    const templateKeys = await listFiles('metadata/templates/');
+    console.log('📄 Template metadata files found:', templateKeys);
+
+    // Check if bucket is accessible
+    console.log('🔍 Testing bucket access...');
+    const testResult = await checkS3Health();
+    console.log('✅ S3 Health check result:', testResult);
+
+  } catch (error) {
+    console.error('❌ Error debugging S3 contents:', error);
+  }
+} 

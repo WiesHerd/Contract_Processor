@@ -1,3 +1,4 @@
+// Template loading fix deployment - 2025-07-27T16:02:48.482Z
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch } from '@/store';
@@ -24,6 +25,10 @@ import TemplatePreviewPanel from './components/TemplatePreviewPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { debugS3Contents } from '@/utils/s3Storage';
+
+// FORCE DEPLOYMENT - Template loading fix v1.2
+console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V1.2');
 
 export default function TemplateManager() {
   const dispatch: AppDispatch = useDispatch();
@@ -69,6 +74,10 @@ export default function TemplateManager() {
   };
 
   useEffect(() => {
+    // Debug S3 contents in production
+    if (process.env.NODE_ENV === 'production') {
+      debugS3Contents();
+    }
     dispatch(fetchTemplatesIfNeeded());
   }, [dispatch]);
 

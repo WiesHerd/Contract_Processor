@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Template } from '@/types/template';
 import localforage from 'localforage';
 import { listFiles, getTemplateMetadata, saveTemplateMetadata, deleteTemplate as deleteTemplateFromS3 } from '@/utils/s3Storage';
+import { awsTemplates } from '@/utils/awsServices';
 
 export interface TemplatesState {
   templates: Template[];
@@ -22,8 +23,11 @@ export const hydrateTemplatesFromS3 = createAsyncThunk(
   'templates/hydrateFromS3',
   async (_, { rejectWithValue }) => {
     try {
+      console.log('🔄 Starting template hydration from S3...');
+      
       // First, try to find template folders in the templates/ path
       const templateFolders = await listFiles('templates/');
+      console.log('📁 Template folders found:', templateFolders);
       
       const templates: Template[] = [];
       
@@ -33,48 +37,100 @@ export const hydrateTemplatesFromS3 = createAsyncThunk(
         const templateId = folderKey.replace(/\/$/, '');
         
         if (templateId) {
+          console.log(`🔍 Processing template folder: ${templateId}`);
           // Try to get template metadata from the metadata path
           const template = await getTemplateMetadata(templateId);
           
           if (template && template.id && template.id.trim() !== '' && template.name && template.name.trim() !== '') {
+            console.log(`✅ Found valid template: ${template.name}`);
             templates.push(template);
           } else {
-            console.warn('Skipping invalid template:', template);
+            console.warn('⚠️ Skipping invalid template:', template);
           }
         }
       }
       
       // If no templates found in folders, try the old metadata path as fallback
       if (templates.length === 0) {
+        console.log('🔄 No templates found in folders, trying metadata path...');
         const templateKeys = await listFiles('metadata/templates/');
+        console.log('📄 Template metadata files found:', templateKeys);
         
         for (const key of templateKeys) {
           const templateId = key.split('/').pop()?.replace('.json', '');
           if (templateId) {
+            console.log(`🔍 Processing template metadata: ${templateId}`);
             const template = await getTemplateMetadata(templateId);
             if (template && template.id && template.id.trim() !== '' && template.name && template.name.trim() !== '') {
+              console.log(`✅ Found valid template from metadata: ${template.name}`);
               templates.push(template);
             } else {
-              console.warn('Skipping invalid template:', template);
+              console.warn('⚠️ Skipping invalid template from metadata:', template);
             }
           }
         }
       }
       
+      // If still no templates, try GraphQL database as final fallback
+      if (templates.length === 0) {
+        console.log('🔄 No templates found in S3, trying GraphQL database...');
+        try {
+          const graphqlResult = await awsTemplates.list(1000);
+          if (graphqlResult?.items && graphqlResult.items.length > 0) {
+            console.log(`📊 Found ${graphqlResult.items.length} templates in GraphQL database`);
+            const validTemplates = graphqlResult.items.filter((item): item is NonNullable<typeof item> => 
+              item !== null && 
+              item.id && 
+              item.id.trim() !== '' && 
+              item.name && 
+              item.name.trim() !== ''
+            );
+            // Convert GraphQL Template to local Template format
+            const convertedTemplates: Template[] = validTemplates.map(graphqlTemplate => ({
+              id: graphqlTemplate.id,
+              name: graphqlTemplate.name,
+              description: graphqlTemplate.description || '',
+              version: graphqlTemplate.version || '1.0.0',
+              compensationModel: 'BASE' as const,
+              content: '',
+              metadata: {
+                createdAt: graphqlTemplate.createdAt || new Date().toISOString(),
+                updatedAt: graphqlTemplate.updatedAt || new Date().toISOString(),
+                createdBy: graphqlTemplate.owner || 'system',
+                lastModifiedBy: graphqlTemplate.owner || 'system',
+              },
+              placeholders: [],
+              docxTemplate: graphqlTemplate.s3Key || '',
+              clauseIds: [],
+              tags: [],
+              clauses: [],
+              versionHistory: [],
+            }));
+            templates.push(...convertedTemplates);
+            console.log(`✅ Added ${convertedTemplates.length} valid templates from GraphQL`);
+          }
+        } catch (graphqlError) {
+          console.warn('⚠️ GraphQL fallback failed:', graphqlError);
+        }
+      }
+      
+      console.log(`🎉 Template hydration complete. Found ${templates.length} templates.`);
       return templates;
     } catch (error) {
-      console.warn('S3 storage not available, falling back to local storage:', error);
+      console.error('❌ S3 storage not available, falling back to local storage:', error);
       // Fallback to local storage when S3 is not available
       try {
+        console.log('🔄 Attempting local storage fallback...');
         const localTemplates: Template[] = [];
         await localforage.iterate((value: Template, key) => {
           if (key.startsWith('template_')) {
             localTemplates.push(value);
           }
         });
+        console.log(`📦 Found ${localTemplates.length} templates in local storage.`);
         return localTemplates;
       } catch (localError) {
-        console.error('Both S3 and local storage failed:', localError);
+        console.error('❌ Both S3 and local storage failed:', localError);
         return rejectWithValue('Failed to load templates from any storage');
       }
     }

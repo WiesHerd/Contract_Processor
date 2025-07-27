@@ -1,3 +1,4 @@
+// Template loading fix deployment - 2025-07-27T16:02:48.482Z
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { Provider, useSelector, useDispatch } from 'react-redux';

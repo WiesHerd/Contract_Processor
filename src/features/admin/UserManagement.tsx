@@ -14,6 +14,11 @@ import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
+// Use environment-based API URL
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://your-api-gateway-url.amazonaws.com/prod' 
+  : 'http://localhost:4000';
+
 interface User {
   Username: string;
   Attributes: Array<{ Name: string; Value: string }>;
@@ -116,7 +121,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:4000/api/roles');
+      const response = await fetch(`${API_BASE_URL}/api/roles`);
       if (!response.ok) throw new Error('Failed to fetch roles');
       const data = await response.json();
       setRoles(data);
@@ -146,7 +151,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       // Add new roles
       for (const role of selectedRoles) {
         if (!currentRoles.includes(role)) {
-          const response = await fetch(`http://localhost:4000/api/roles/${role}/add`, {
+          const response = await fetch(`${API_BASE_URL}/api/roles/${role}/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: selectedUser.Username }),
@@ -158,7 +163,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       // Remove roles that are no longer selected
       for (const role of currentRoles) {
         if (!selectedRoles.includes(role)) {
-          const response = await fetch(`http://localhost:4000/api/roles/${role}/remove`, {
+          const response = await fetch(`${API_BASE_URL}/api/roles/${role}/remove`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: selectedUser.Username }),
@@ -182,7 +187,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setLoading(true);
       setError(null);
       
-      const response = await fetch('http://localhost:4000/api/users', {
+      const response = await fetch(`${API_BASE_URL}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser),
@@ -211,7 +216,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`http://localhost:4000/api/users/${username}`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${username}`, {
         method: 'DELETE',
       });
       
@@ -233,7 +238,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`http://localhost:4000/api/users/${encodeURIComponent(username)}/resend-invite`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${encodeURIComponent(username)}/resend-invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });

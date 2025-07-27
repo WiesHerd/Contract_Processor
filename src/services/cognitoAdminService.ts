@@ -24,8 +24,13 @@ const client = new CognitoIdentityProviderClient({
   } : undefined, // Let AWS SDK use default credential chain
 });
 
+// Use environment-based API URL
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://your-api-gateway-url.amazonaws.com/prod' 
+  : 'http://localhost:4000';
+
 export async function listCognitoUsers() {
-  const response = await fetch('http://localhost:4000/api/users');
+  const response = await fetch(`${API_BASE_URL}/api/users`);
   if (!response.ok) throw new Error('Failed to fetch users from backend proxy');
   return await response.json();
 } 
