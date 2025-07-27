@@ -176,26 +176,69 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
-    // Use Amplify Storage for enterprise-grade access (handles CORS properly)
+    // Use direct S3 access with authenticated user credentials
     try {
-      console.log('🔍 Using Amplify Storage for listing files with prefix:', prefix);
-      const { list } = await import('aws-amplify/storage');
-      const result = await list({ prefix });
+      console.log('🔍 Using direct S3 access for listing files with prefix:', prefix);
       
-      if (result.items && Array.isArray(result.items)) {
-        const files = result.items.map(item => item.key).filter(Boolean);
-        console.log('📁 Files found via Amplify Storage:', files);
-        return files;
-      } else if (Array.isArray(result)) {
-        const files = result.map(item => item.key).filter(Boolean);
-        console.log('📁 Files found via Amplify Storage (array):', files);
-        return files;
-      } else {
-        console.warn('Unexpected Amplify Storage result structure:', result);
-        return [];
+      // Get authenticated user credentials
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
       }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      console.log('🔐 Using authenticated user credentials for direct S3 access');
+      
+      // Create S3 client with user credentials
+      const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+      const s3Client = new S3Client({
+        region: awsConfig.region,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+        maxAttempts: 3,
+      });
+      
+      if (!BUCKET) {
+        throw new Error('S3 bucket not configured');
+      }
+      
+      const command = new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefix,
+      });
+      
+      const response = await s3Client.send(command);
+      const files = (response.Contents || []).map(obj => obj.Key!).filter(Boolean);
+      console.log('📁 Files found via direct S3 access:', files);
+      return files;
     } catch (error) {
-      console.error('❌ Amplify Storage list error:', error);
+      console.error('❌ Direct S3 access error:', error);
+      
+      // Fallback to Amplify Storage if direct access fails
+      try {
+        console.log('🔄 Falling back to Amplify Storage...');
+        const { list } = await import('aws-amplify/storage');
+        const result = await list({ prefix });
+        
+        if (result.items && Array.isArray(result.items)) {
+          const files = result.items.map(item => item.key).filter(Boolean);
+          console.log('📁 Files found via Amplify Storage fallback:', files);
+          return files;
+        }
+      } catch (amplifyError) {
+        console.error('❌ Amplify Storage fallback also failed:', amplifyError);
+      }
+      
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });

@@ -28,8 +28,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { debugS3Contents } from '@/utils/s3Storage';
 
-// FORCE DEPLOYMENT - Template loading fix v2.1 - Force Amplify redeploy
-console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V2.1 - FORCE AMPLIFY REDEPLOY');
+// FORCE DEPLOYMENT - Template loading fix v2.2 - Direct S3 with user credentials
+console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V2.2 - DIRECT S3 USER CREDENTIALS');
 
 export default function TemplateManager() {
   const dispatch: AppDispatch = useDispatch();
