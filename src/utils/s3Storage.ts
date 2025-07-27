@@ -140,39 +140,8 @@ export async function deleteFile(key: string): Promise<void> {
 
 export async function listFiles(prefix: string): Promise<string[]> {
   return withRetry(async () => {
-    // In production, always use Amplify Storage for proper authentication
-    // In development, use direct S3 client for more accurate results
-    const useAmplifyStorage = !import.meta.env.DEV;
-    
-    if (useAmplifyStorage) {
-      try {
-        console.log('🔍 Using Amplify Storage for listing files with prefix:', prefix);
-        // Import Amplify Storage dynamically
-        const { list } = await import('aws-amplify/storage');
-        const result = await list({ prefix });
-        
-        console.log('🔍 Amplify Storage result:', result);
-
-        // Try different possible result structures
-        if (result.items && Array.isArray(result.items)) {
-          const files = result.items.map(item => item.key).filter(Boolean);
-          console.log('📁 Files found via Amplify Storage:', files);
-          return files;
-        } else if (Array.isArray(result)) {
-          const files = result.map(item => item.key).filter(Boolean);
-          console.log('📁 Files found via Amplify Storage (array):', files);
-          return files;
-        } else {
-          console.warn('Unexpected Amplify Storage result structure:', result);
-          return [];
-        }
-      } catch (amplifyError) {
-        console.error('❌ Amplify Storage failed:', amplifyError);
-        // Fall back to direct S3 client
-      }
-    }
-
-    // Use direct S3 client (for local development or as fallback)
+    // Always use direct S3 client for the contractengine-storage-wherdzik bucket
+    // Amplify Storage has permission issues with this bucket
     try {
       console.log('🔍 Using direct S3 client for listing files with prefix:', prefix);
       if (!BUCKET) {
@@ -189,6 +158,22 @@ export async function listFiles(prefix: string): Promise<string[]> {
       return files;
     } catch (error) {
       console.error('❌ S3 list error:', error);
+      
+      // If direct S3 fails, try Amplify Storage as fallback
+      try {
+        console.log('🔄 Falling back to Amplify Storage...');
+        const { list } = await import('aws-amplify/storage');
+        const result = await list({ prefix });
+        
+        if (result.items && Array.isArray(result.items)) {
+          const files = result.items.map(item => item.key).filter(Boolean);
+          console.log('📁 Files found via Amplify Storage fallback:', files);
+          return files;
+        }
+      } catch (amplifyError) {
+        console.error('❌ Amplify Storage fallback also failed:', amplifyError);
+      }
+      
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
