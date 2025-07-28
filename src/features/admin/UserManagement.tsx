@@ -13,7 +13,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-
+import { deleteCognitoUser } from '@/services/cognitoAdminService';
 
 
 interface User {
@@ -176,15 +176,16 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   };
 
   const handleDeleteUser = async (username: string) => {
-    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+    if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) return;
     
     try {
       setLoading(true);
       setError(null);
       
-      // TODO: Implement real user deletion when backend is ready
-      // For now, just show success message
-      setSuccess(`User ${username} deleted successfully (mock implementation)`);
+      // Use the real delete function
+      await deleteCognitoUser(username);
+      
+      setSuccess(`User ${username} deleted successfully`);
       onRefresh(); // Refresh user list
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user');

@@ -1,4 +1,4 @@
-import { CognitoIdentityProviderClient, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import config from '../amplifyconfiguration.json';
 
 // Get AWS configuration from Amplify config with fallbacks
@@ -122,5 +122,54 @@ export async function listCognitoUsers() {
   } catch (error) {
     console.error('❌ Error fetching Cognito users:', error);
     throw new Error(`Failed to fetch users: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export async function deleteCognitoUser(username: string) {
+  try {
+    console.log(`🗑️ Deleting user from Cognito: ${username}`);
+    
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, AdminDeleteUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated credentials for Cognito delete operation');
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // Delete the user from Cognito
+    const deleteUserCommand = new AdminDeleteUserCommand({
+      Username: username,
+      UserPoolId: USER_POOL_ID
+    });
+    
+    await client.send(deleteUserCommand);
+    
+    console.log(`✅ Successfully deleted user ${username} from Cognito`);
+    return true;
+    
+  } catch (error) {
+    console.error(`❌ Error deleting Cognito user ${username}:`, error);
+    throw new Error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 } 
