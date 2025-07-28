@@ -24,6 +24,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import AdminDashboard from './features/admin/AdminDashboard';
 import { Toaster, toast } from 'sonner';
+import { ToastProvider } from './components/ui/toast';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { SessionTimeoutModal } from './components/ui/SessionTimeoutModal';
 import {
@@ -363,6 +364,7 @@ function App() {
         </YearProvider>
       </AuthProvider>
       </EnterpriseNotificationProvider>
+      <ToastProvider />
     </Provider>
   );
 }

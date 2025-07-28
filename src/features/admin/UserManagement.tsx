@@ -14,6 +14,7 @@ import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles, resendInvitation } from '@/services/cognitoAdminService';
+import { useToast } from '@/hooks/useToast';
 
 
 interface User {
@@ -62,6 +63,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const { showSuccess, showError, showWarning, showInfo } = useToast();
   
   // Modal states
   const [showRoleModal, setShowRoleModal] = useState(false);
@@ -127,7 +129,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setRoles(cognitoGroups);
     } catch (err) {
       console.error('❌ Error fetching roles:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch roles');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch roles';
+      setError(errorMessage);
+      showError('Failed to Load Roles', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -152,11 +156,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       await updateUserRoles(selectedUser.Username, selectedRoles);
       
       setSuccess(`User roles updated successfully for ${selectedUser.Username}`);
+      showSuccess('Roles Updated', `User roles updated successfully for ${selectedUser.Username}`);
       setShowRoleModal(false);
       onRefresh(); // Refresh user list to get updated roles
     } catch (err) {
       console.error('❌ Error updating user roles:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update user roles');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update user roles';
+      setError(errorMessage);
+      showError('Failed to Update Roles', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -164,7 +171,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
 
   const handleCreateUser = async () => {
     if (!newUser.username || !newUser.email) {
-      setError('Username and email are required');
+      const errorMessage = 'Username and email are required';
+      setError(errorMessage);
+      showError('Validation Error', errorMessage);
       return;
     }
     
@@ -176,11 +185,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       await createCognitoUser(newUser.username, newUser.email, newUser.groups || []);
       
       setSuccess(`User ${newUser.username} created successfully`);
+      showSuccess('User Created', `User ${newUser.username} created successfully`);
       setShowCreateUserModal(false);
       setNewUser({ username: '', email: '', groups: [] }); // Reset form
       onRefresh(); // Refresh user list
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create user');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
+      setError(errorMessage);
+      showError('Failed to Create User', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -197,9 +209,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       await deleteCognitoUser(username);
       
       setSuccess(`User ${username} deleted successfully`);
+      showSuccess('User Deleted', `User ${username} deleted successfully`);
       onRefresh(); // Refresh user list
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete user');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
+      setError(errorMessage);
+      showError('Failed to Delete User', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -221,10 +236,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       console.log(`✅ Invitation resend result:`, result);
       
       setSuccess(result.message);
+      showSuccess('Invitation Sent', result.message);
       setShowInviteSentModal(true);
     } catch (err) {
       console.error('❌ Error resending invitation:', err);
-      setError('Failed to resend invitation: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      const errorMessage = 'Failed to resend invitation: ' + (err instanceof Error ? err.message : 'Unknown error');
+      setError(errorMessage);
+      showError('Failed to Resend Invitation', errorMessage);
     } finally {
       setLoading(false);
     }

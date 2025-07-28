@@ -451,7 +451,7 @@ export async function resendInvitation(username: string) {
     
     if (userStatus === 'CONFIRMED') {
       // If user is already confirmed, we can't resend invitation
-      throw new Error('User is already confirmed and cannot receive a new invitation');
+      throw new Error('This user has already confirmed their account and cannot receive a new invitation. Only unconfirmed users can receive invitation emails.');
     }
     
     // Generate a temporary password that will force the user to change it
