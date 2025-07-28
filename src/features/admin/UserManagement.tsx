@@ -400,7 +400,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
               Create New User
             </DialogTitle>
             <DialogDescription>
-              Create a new user account. The user will receive a verification email and must confirm their account before signing in.
+              Create a new user account. The user will receive a welcome email with temporary login credentials and must change their password on first login.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
@@ -625,7 +625,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
                 </div>
               </div>
               <div className="text-xs text-gray-500">
-                <p>• User will receive a welcome email with login instructions</p>
+                <p>• Welcome email sent automatically to user with login credentials</p>
                 <p>• User must change password on first login</p>
                 <p>• Email verification will be required after first login</p>
               </div>

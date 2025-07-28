@@ -227,7 +227,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
           Value: 'false' // User will verify email after first login
         }
       ],
-      MessageAction: 'SUPPRESS' // We'll handle the welcome email manually
+      MessageAction: 'RESEND' // Send welcome email automatically with temporary password
     });
     
     console.log('📤 Sending AdminCreateUserCommand with data:', {
@@ -240,7 +240,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
         { Name: 'family_name', Value: lastName },
         { Name: 'email_verified', Value: 'false' }
       ],
-      MessageAction: 'SUPPRESS'
+      MessageAction: 'RESEND'
     });
     
     const createResult = await client.send(createUserCommand);
@@ -271,6 +271,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
     // Now send a proper welcome email with login instructions
     console.log(`📧 User ${username} created successfully!`);
     console.log(`📧 Temporary password: ${tempPassword}`);
+    console.log(`📧 Welcome email sent automatically to ${email} with login instructions`);
     console.log(`📧 User should sign in with username: ${username} and temporary password`);
     console.log(`📧 User will be forced to change password on first login`);
     
