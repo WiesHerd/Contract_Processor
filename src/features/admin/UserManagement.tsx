@@ -13,7 +13,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles } from '@/services/cognitoAdminService';
+import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles, resendInvitation } from '@/services/cognitoAdminService';
 
 
 interface User {
@@ -212,12 +212,19 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     try {
       setLoading(true);
       setError(null);
-      // TODO: Implement real invitation resend when backend is ready
-      // For now, just show success message
+      
+      console.log(`📧 Resending invitation to ${username}...`);
+      
+      // Use the real resend invitation function
+      const result = await resendInvitation(username);
+      
+      console.log(`✅ Invitation resend result:`, result);
+      
+      setSuccess(result.message);
       setShowInviteSentModal(true);
-      setSuccess(`Invitation resent to ${username} (mock implementation)`);
     } catch (err) {
-      setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      console.error('❌ Error resending invitation:', err);
+      setError('Failed to resend invitation: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -469,9 +476,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
           <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Invitation Sent</DialogTitle>
+                <DialogTitle>Invitation Sent Successfully</DialogTitle>
               </DialogHeader>
-              <div className="py-4 text-center text-lg">Invitation email was sent successfully.</div>
+              <div className="py-4 text-center">
+                <div className="text-lg mb-2">✅ Invitation email sent!</div>
+                <div className="text-sm text-muted-foreground">
+                  The user will receive an email with a temporary password. They must change their password on first login.
+                </div>
+              </div>
               <DialogFooter>
                 <Button onClick={() => setShowInviteSentModal(false)} autoFocus>OK</Button>
               </DialogFooter>

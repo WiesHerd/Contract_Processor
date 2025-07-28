@@ -1,4 +1,4 @@
-import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand, AdminCreateUserCommand, ListGroupsCommand, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand, AdminCreateUserCommand, ListGroupsCommand, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminSetUserPasswordCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import config from '../amplifyconfiguration.json';
 
 // Get AWS configuration from Amplify config with fallbacks
@@ -404,4 +404,101 @@ export async function updateUserRoles(username: string, newGroups: string[]) {
     console.error(`❌ Error updating roles for user ${username}:`, error);
     throw new Error(`Failed to update user roles: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+export async function resendInvitation(username: string) {
+  try {
+    console.log(`📧 Resending invitation to user: ${username}`);
+    
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, AdminGetUserCommand, AdminSetUserPasswordCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated credentials for Cognito invitation resend');
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // First, get the user's current status
+    const getUserCommand = new AdminGetUserCommand({
+      Username: username,
+      UserPoolId: USER_POOL_ID
+    });
+    
+    const userResult = await client.send(getUserCommand);
+    const userStatus = userResult.UserStatus;
+    
+    console.log(`📝 User ${username} current status:`, userStatus);
+    
+    if (userStatus === 'CONFIRMED') {
+      // If user is already confirmed, we can't resend invitation
+      throw new Error('User is already confirmed and cannot receive a new invitation');
+    }
+    
+    // Generate a temporary password that will force the user to change it
+    const tempPassword = generateTemporaryPassword();
+    
+    // Set the temporary password - this will trigger Cognito to send a welcome email
+    const setPasswordCommand = new AdminSetUserPasswordCommand({
+      Username: username,
+      Password: tempPassword,
+      Permanent: false, // This makes it temporary, forcing password change on first login
+      UserPoolId: USER_POOL_ID
+    });
+    
+    await client.send(setPasswordCommand);
+    
+    console.log(`✅ Successfully resent invitation to ${username}`);
+    console.log(`📧 Cognito will automatically send a welcome email with temporary password`);
+    
+    return {
+      success: true,
+      message: `Invitation resent to ${username}. User will receive an email with temporary password.`,
+      tempPassword: tempPassword // For admin reference only
+    };
+    
+  } catch (error) {
+    console.error(`❌ Error resending invitation to ${username}:`, error);
+    throw new Error(`Failed to resend invitation: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Helper function to generate a secure temporary password
+function generateTemporaryPassword(): string {
+  const length = 12;
+  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+  let password = '';
+  
+  // Ensure at least one of each required character type
+  password += 'A'; // uppercase
+  password += 'a'; // lowercase  
+  password += '1'; // number
+  password += '!'; // special char
+  
+  // Fill the rest randomly
+  for (let i = 4; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  
+  // Shuffle the password
+  return password.split('').sort(() => Math.random() - 0.5).join('');
 } 
