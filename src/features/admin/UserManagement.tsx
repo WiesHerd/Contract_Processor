@@ -13,7 +13,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { deleteCognitoUser } from '@/services/cognitoAdminService';
+import { deleteCognitoUser, createCognitoUser } from '@/services/cognitoAdminService';
 
 
 interface User {
@@ -154,19 +154,21 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   };
 
   const handleCreateUser = async () => {
+    if (!newUser.username || !newUser.email) {
+      setError('Username and email are required');
+      return;
+    }
+    
     try {
       setLoading(true);
       setError(null);
       
-      // TODO: Implement real user creation when backend is ready
-      // For now, just show success message
-      setSuccess('User created successfully (mock implementation)');
-      setShowCreateUserModal(false);
-      onRefresh();
+      // Use the real create function
+      await createCognitoUser(newUser.username, newUser.email, newUser.groups || []);
       
-      setSuccess('User created successfully');
+      setSuccess(`User ${newUser.username} created successfully`);
       setShowCreateUserModal(false);
-      setNewUser({ username: '', email: '', groups: [] }); // Reset groups
+      setNewUser({ username: '', email: '', groups: [] }); // Reset form
       onRefresh(); // Refresh user list
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');

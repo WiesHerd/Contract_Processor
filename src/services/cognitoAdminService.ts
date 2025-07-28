@@ -1,4 +1,4 @@
-import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand, AdminCreateUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import config from '../amplifyconfiguration.json';
 
 // Get AWS configuration from Amplify config with fallbacks
@@ -122,6 +122,87 @@ export async function listCognitoUsers() {
   } catch (error) {
     console.error('❌ Error fetching Cognito users:', error);
     throw new Error(`Failed to fetch users: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export async function createCognitoUser(username: string, email: string, groups: string[] = []) {
+  try {
+    console.log(`👤 Creating new Cognito user: ${username} (${email})`);
+    
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated credentials for Cognito create operation');
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // Create the user in Cognito
+    const createUserCommand = new AdminCreateUserCommand({
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      UserAttributes: [
+        {
+          Name: 'email',
+          Value: email
+        },
+        {
+          Name: 'email_verified',
+          Value: 'true'
+        }
+      ],
+      MessageAction: 'SUPPRESS' // Don't send welcome email automatically
+    });
+    
+    const createResult = await client.send(createUserCommand);
+    
+    console.log(`✅ Successfully created user ${username} in Cognito`);
+    
+    // Add user to groups if specified
+    if (groups.length > 0) {
+      console.log(`👥 Adding user ${username} to groups:`, groups);
+      
+      for (const groupName of groups) {
+        try {
+          const addToGroupCommand = new AdminAddUserToGroupCommand({
+            Username: username,
+            GroupName: groupName,
+            UserPoolId: USER_POOL_ID
+          });
+          
+          await client.send(addToGroupCommand);
+          console.log(`✅ Added user ${username} to group ${groupName}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to add user ${username} to group ${groupName}:`, error);
+        }
+      }
+    }
+    
+    return createResult.User;
+    
+  } catch (error) {
+    console.error(`❌ Error creating Cognito user ${username}:`, error);
+    throw new Error(`Failed to create user: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
