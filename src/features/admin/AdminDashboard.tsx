@@ -2,10 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Users, Activity, UserPlus } from 'lucide-react';
+import { Loader2, Users, Activity, UserPlus, Info } from 'lucide-react';
 import UserManagement from './UserManagement';
 import { listCognitoUsers } from '@/services/cognitoAdminService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
 
 interface User {
   Username: string;
@@ -45,48 +51,66 @@ const AdminDashboard: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-gray-600">Manage users and monitor system activity</p>
-        </div>
-        <Select value={section} onValueChange={val => setSection(val as 'users' | 'activity')}>
-          <SelectTrigger id="section-select" className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="users">User Management</SelectItem>
-            <SelectItem value="activity">Activity Log</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {error && (
-        <Alert className="border-red-200 bg-red-50">
-          <AlertDescription className="text-red-800">{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {section === 'users' && (
-        <UserManagement onRefresh={handleRefresh} />
-      )}
-
-      {section === 'activity' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="w-5 h-5" />
-              Activity Log
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-8 text-gray-500">
-              Activity log functionality coming soon...
+    <div className="min-h-screen bg-gray-50/50">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-gray-800">Admin Dashboard</h1>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-pointer">
+                      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Info" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" align="start">
+                    Manage users, monitor system activity, and control application settings.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="flex items-center gap-2">
+              <Select value={section} onValueChange={val => setSection(val as 'users' | 'activity')}>
+                <SelectTrigger id="section-select" className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="users">User Management</SelectItem>
+                  <SelectItem value="activity">Activity Log</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <hr className="my-3 border-gray-100" />
+        </div>
+
+        {error && (
+          <Alert className="border-red-200 bg-red-50 mt-4">
+            <AlertDescription className="text-red-800">{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {section === 'users' && (
+          <UserManagement onRefresh={handleRefresh} />
+        )}
+
+        {section === 'activity' && (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="w-5 h-5" />
+                Activity Log
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8 text-gray-500">
+                Activity log functionality coming soon...
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 };

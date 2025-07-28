@@ -224,18 +224,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
-          <p className="text-gray-600">Manage user accounts, roles, and permissions</p>
-        </div>
-        <Button onClick={() => setShowCreateUserModal(true)} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
-          <UserPlus className="w-4 h-4 mr-2" />
-          Create User
-        </Button>
-      </div>
-
       {/* Controls */}
       <div className="flex items-center justify-between bg-white p-4 rounded-lg border">
         <div className="flex items-center gap-4">
@@ -370,6 +358,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
             </Card>
           ))
         )}
+      </div>
+
+      {/* Create User Button - Moved to top right of controls */}
+      <div className="flex justify-end">
+        <Button onClick={() => setShowCreateUserModal(true)} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+          <UserPlus className="w-4 h-4 mr-2" />
+          Create User
+        </Button>
       </div>
 
       {/* Create User Modal */}
