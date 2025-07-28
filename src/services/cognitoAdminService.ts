@@ -195,28 +195,6 @@ export async function createCognitoUser(username: string, email: string, firstNa
       },
     });
 
-    // Check if user already exists
-    try {
-      const getUserCommand = new AdminGetUserCommand({
-        Username: username,
-        UserPoolId: USER_POOL_ID
-      });
-      await client.send(getUserCommand);
-      throw new Error(`User '${username}' already exists. Please choose a different username.`);
-    } catch (error: any) {
-      if (error.name === 'UserNotFoundException') {
-        // User doesn't exist, we can proceed with creation
-        console.log(`✅ Username '${username}' is available`);
-      } else if (error.message?.includes('already exists')) {
-        // Our custom error for existing user
-        throw error;
-      } else {
-        // Some other error occurred during the check
-        console.warn(`⚠️ Error checking if user exists:`, error);
-        // Continue with creation anyway
-      }
-    }
-    
     // Create the user in Cognito with email verification (like frontend signup)
     const createUserCommand = new AdminCreateUserCommand({
       UserPoolId: USER_POOL_ID,
@@ -276,16 +254,16 @@ export async function createCognitoUser(username: string, email: string, firstNa
     
     // Provide more specific error messages
     if (error instanceof Error) {
-      if (error.message.includes('already exists')) {
-        throw error; // Re-throw our custom error
-      } else if (error.message.includes('UserNotFoundException')) {
-        throw new Error(`Failed to create user: User '${username}' does not exist. This error should not occur during user creation.`);
+      if (error.message.includes('UsernameExistsException')) {
+        throw new Error(`Failed to create user: Username '${username}' already exists. Please choose a different username.`);
       } else if (error.message.includes('InvalidParameterException')) {
         throw new Error(`Failed to create user: Invalid parameters. Please check username format and email address.`);
-      } else if (error.message.includes('UsernameExistsException')) {
-        throw new Error(`Failed to create user: Username '${username}' already exists. Please choose a different username.`);
       } else if (error.message.includes('InvalidPasswordException')) {
         throw new Error(`Failed to create user: Password does not meet requirements.`);
+      } else if (error.message.includes('LimitExceededException')) {
+        throw new Error(`Failed to create user: User pool limit exceeded. Please contact administrator.`);
+      } else if (error.message.includes('NotAuthorizedException')) {
+        throw new Error(`Failed to create user: Not authorized to perform this action.`);
       } else {
         throw new Error(`Failed to create user: ${error.message}`);
       }
