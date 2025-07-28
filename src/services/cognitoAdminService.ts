@@ -125,7 +125,7 @@ export async function listCognitoUsers() {
   }
 }
 
-export async function createCognitoUser(username: string, email: string, groups: string[] = []) {
+export async function createCognitoUser(username: string, email: string, firstName: string, lastName: string, groups: string[] = []) {
   try {
     console.log(`👤 Creating new Cognito user: ${username} (${email})`);
     
@@ -165,6 +165,14 @@ export async function createCognitoUser(username: string, email: string, groups:
         {
           Name: 'email',
           Value: email
+        },
+        {
+          Name: 'given_name',
+          Value: firstName
+        },
+        {
+          Name: 'family_name',
+          Value: lastName
         },
         {
           Name: 'email_verified',

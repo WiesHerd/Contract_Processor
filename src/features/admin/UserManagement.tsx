@@ -74,6 +74,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const [newUser, setNewUser] = useState({
     username: '',
     email: '',
+    firstName: '',
+    lastName: '',
     groups: [] as string[],
   });
 
@@ -176,12 +178,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setLoading(true);
       
       // Use the real create function
-      await createCognitoUser(newUser.username, newUser.email, newUser.groups || []);
+      await createCognitoUser(newUser.username, newUser.email, newUser.firstName, newUser.lastName, newUser.groups || []);
       
       setSuccess(`User ${newUser.username} created successfully`);
       showSuccess('User Created', `User ${newUser.username} created successfully`);
       setShowCreateUserModal(false);
-      setNewUser({ username: '', email: '', groups: [] }); // Reset form
+      setNewUser({ username: '', email: '', firstName: '', lastName: '', groups: [] }); // Reset form
       onRefresh(); // Refresh user list
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
@@ -449,7 +451,33 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-6">
-                <div className="space-y-4">
+                                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="firstName" className="text-sm font-medium">
+                        First Name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="firstName"
+                        value={newUser.firstName}
+                        onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                        placeholder="Enter first name"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="lastName" className="text-sm font-medium">
+                        Last Name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="lastName"
+                        value={newUser.lastName}
+                        onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                        placeholder="Enter last name"
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
                   <div>
                     <Label htmlFor="username" className="text-sm font-medium">
                       Username <span className="text-red-500">*</span>
@@ -477,9 +505,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                       placeholder="Enter email address"
                       className="mt-1"
                     />
-                                         <p className="text-xs text-gray-500 mt-1">
-                       User will receive verification email at this address
-                     </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      User will receive verification email at this address
+                    </p>
                   </div>
                 </div>
                 
@@ -522,7 +550,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                     variant="outline" 
                     onClick={() => {
                       setShowCreateUserModal(false);
-                      setNewUser({ username: '', email: '', groups: [] });
+                      setNewUser({ username: '', email: '', firstName: '', lastName: '', groups: [] });
                     }}
                     disabled={loading}
                   >
@@ -530,7 +558,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                   </Button>
                   <Button 
                     onClick={handleCreateUser} 
-                    disabled={loading || !newUser.username || !newUser.email}
+                    disabled={loading || !newUser.username || !newUser.email || !newUser.firstName || !newUser.lastName}
                     className="bg-blue-600 hover:bg-blue-700 min-w-[120px]"
                   >
                     {loading ? (
