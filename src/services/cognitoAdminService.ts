@@ -167,7 +167,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
     console.log('🔐 Using authenticated credentials for Cognito create operation');
     
     // Use AWS SDK directly for admin user creation (better control)
-    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminGetUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
     const { fetchAuthSession } = await import('aws-amplify/auth');
     
@@ -198,15 +198,52 @@ export async function createCognitoUser(username: string, email: string, firstNa
       },
     });
 
+    // Check if user already exists
+    let userExists = false;
+    let existingUserStatus = null;
+    
+    try {
+      const getUserCommand = new AdminGetUserCommand({
+        Username: username,
+        UserPoolId: USER_POOL_ID
+      });
+      
+      const existingUser = await client.send(getUserCommand);
+      userExists = true;
+      existingUserStatus = existingUser.UserStatus;
+      console.log(`⚠️ User ${username} already exists with status: ${existingUserStatus}`);
+      
+      // If user exists and is confirmed, we can't create them again
+      if (existingUserStatus === 'CONFIRMED') {
+        throw new Error(`User '${username}' already exists and is confirmed. Please choose a different username or use the existing user.`);
+      }
+      
+    } catch (error: any) {
+      if (error.name === 'UserNotFoundException') {
+        console.log(`✅ Username '${username}' is available`);
+        userExists = false;
+      } else if (error.message.includes('already exists and is confirmed')) {
+        throw error; // Re-throw our custom error
+      } else {
+        console.warn(`⚠️ Error checking if user exists:`, error);
+        // Continue with creation attempt
+        userExists = false;
+      }
+    }
+
     // Generate a secure temporary password
     const tempPassword = generateTemporaryPassword();
     
-    // Create the user in Cognito with FORCE_CHANGE_PASSWORD status
-    // This will send a welcome email with temporary password
+    // Determine the correct MessageAction based on user existence
+    const messageAction = userExists ? 'SUPPRESS' : 'RESEND';
+    
+    console.log(`📤 Creating user with MessageAction: ${messageAction} (userExists: ${userExists})`);
+    
+    // Create the user in Cognito
     const createUserCommand = new AdminCreateUserCommand({
       UserPoolId: USER_POOL_ID,
       Username: username,
-      TemporaryPassword: tempPassword, // This will be sent in welcome email
+      TemporaryPassword: tempPassword,
       UserAttributes: [
         {
           Name: 'email',
@@ -222,10 +259,10 @@ export async function createCognitoUser(username: string, email: string, firstNa
         },
         {
           Name: 'email_verified',
-          Value: 'false' // User will verify email after first login
+          Value: 'false'
         }
       ],
-      MessageAction: 'RESEND' // Send welcome email automatically with temporary password
+      MessageAction: messageAction
     });
     
     console.log('📤 Sending AdminCreateUserCommand with data:', {
@@ -238,7 +275,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
         { Name: 'family_name', Value: lastName },
         { Name: 'email_verified', Value: 'false' }
       ],
-      MessageAction: 'RESEND'
+      MessageAction: messageAction
     });
     
     const createResult = await client.send(createUserCommand);
@@ -269,17 +306,24 @@ export async function createCognitoUser(username: string, email: string, firstNa
     // Now send a proper welcome email with login instructions
     console.log(`📧 User ${username} created successfully!`);
     console.log(`📧 Temporary password: ${tempPassword}`);
-    console.log(`📧 Welcome email sent automatically to ${email} with login instructions`);
+    
+    if (messageAction === 'RESEND') {
+      console.log(`📧 Welcome email sent automatically to ${email} with login instructions`);
+    } else {
+      console.log(`📧 Email suppressed (user already existed). Admin should manually send credentials.`);
+    }
+    
     console.log(`📧 User should sign in with username: ${username} and temporary password`);
     console.log(`📧 User will be forced to change password on first login`);
     
     return {
       ...createResult.User,
-      tempPassword: tempPassword, // Include for admin reference
-      loginInstructions: `User can sign in with username: ${username} and temporary password: ${tempPassword}`
+      tempPassword: tempPassword,
+      loginInstructions: `User can sign in with username: ${username} and temporary password: ${tempPassword}`,
+      emailSent: messageAction === 'RESEND'
     };
     
-  } catch (error) {
+  } catch (error: any) {
     console.error(`❌ Error creating Cognito user ${username}:`, error);
     console.error('📋 Full error details:', {
       name: error.name,
@@ -290,7 +334,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
       $metadata: error.$metadata
     });
     
-    // Check if this is a 400 error (which is causing the UserNotFoundException)
+    // Check if this is a 400 error
     if (error.$metadata?.httpStatusCode === 400) {
       console.error('🚨 Detected 400 Bad Request error. This suggests:');
       console.error('   - Invalid User Pool ID');
@@ -298,9 +342,11 @@ export async function createCognitoUser(username: string, email: string, firstNa
       console.error('   - Missing required attributes');
       console.error('   - Authentication issues');
       
-      // Try to provide more specific guidance
+      // Provide more specific guidance based on error message
       if (error.message.includes('User does not exist')) {
         throw new Error(`Failed to create user: Configuration issue detected. The User Pool ID or region may be incorrect. Please check AWS Amplify configuration. Error: ${error.message}`);
+      } else if (error.message.includes('Resend not possible')) {
+        throw new Error(`Failed to create user: User '${username}' already exists but is not in the correct state for email resend. Please choose a different username. Error: ${error.message}`);
       } else {
         throw new Error(`Failed to create user: Bad request (400). Please check User Pool configuration and permissions. Error: ${error.message}`);
       }
@@ -320,6 +366,8 @@ export async function createCognitoUser(username: string, email: string, firstNa
         throw new Error(`Failed to create user: Not authorized to perform this action.`);
       } else if (error.message.includes('UserNotFoundException')) {
         throw new Error(`Failed to create user: Configuration issue detected. Please check AWS Amplify setup.`);
+      } else if (error.message.includes('UnsupportedUserStateException')) {
+        throw new Error(`Failed to create user: User '${username}' exists but is in an unsupported state. Please choose a different username.`);
       } else {
         throw new Error(`Failed to create user: ${error.message}`);
       }
