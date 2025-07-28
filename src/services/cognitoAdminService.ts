@@ -171,7 +171,7 @@ export async function createCognitoUser(username: string, email: string, groups:
           Value: 'true'
         }
       ],
-      MessageAction: 'SUPPRESS' // Don't send welcome email automatically
+      MessageAction: 'RESEND' // Send welcome email automatically
     });
     
     const createResult = await client.send(createUserCommand);
