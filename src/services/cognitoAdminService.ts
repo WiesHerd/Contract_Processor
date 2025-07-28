@@ -1,4 +1,4 @@
-import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand, AdminCreateUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand, AdminCreateUserCommand, ListGroupsCommand, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import config from '../amplifyconfiguration.json';
 
 // Get AWS configuration from Amplify config with fallbacks
@@ -252,5 +252,156 @@ export async function deleteCognitoUser(username: string) {
   } catch (error) {
     console.error(`❌ Error deleting Cognito user ${username}:`, error);
     throw new Error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export async function listCognitoGroups() {
+  try {
+    console.log('🔍 Fetching Cognito groups from User Pool:', USER_POOL_ID);
+    
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, ListGroupsCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated credentials for Cognito groups access');
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // List all groups from the User Pool
+    const listGroupsCommand = new ListGroupsCommand({
+      UserPoolId: USER_POOL_ID,
+      Limit: 60
+    });
+    
+    const result = await client.send(listGroupsCommand);
+    
+    if (!result.Groups) {
+      console.log('📝 No groups found in Cognito User Pool');
+      return [];
+    }
+    
+    console.log(`📝 Found ${result.Groups.length} groups in Cognito User Pool:`, result.Groups.map(g => g.GroupName));
+    
+    // Transform the groups to match our interface
+    const groups = result.Groups.map(group => ({
+      GroupName: group.GroupName || '',
+      Description: group.Description || '',
+      Precedence: group.Precedence || 0
+    }));
+    
+    return groups;
+    
+  } catch (error) {
+    console.error(`❌ Error fetching Cognito groups:`, error);
+    throw new Error(`Failed to fetch groups: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export async function updateUserRoles(username: string, newGroups: string[]) {
+  try {
+    console.log(`👥 Updating roles for user ${username}:`, newGroups);
+    
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated credentials for Cognito role management');
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // Get current user groups
+    const currentGroupsCommand = new AdminListGroupsForUserCommand({
+      Username: username,
+      UserPoolId: USER_POOL_ID
+    });
+    
+    const currentGroupsResult = await client.send(currentGroupsCommand);
+    const currentGroups = currentGroupsResult.Groups?.map(group => group.GroupName) || [];
+    
+    console.log(`📝 Current groups for ${username}:`, currentGroups);
+    console.log(`📝 New groups for ${username}:`, newGroups);
+    
+    // Remove user from groups that are no longer selected
+    for (const groupName of currentGroups) {
+      if (!newGroups.includes(groupName)) {
+        try {
+          const removeCommand = new AdminRemoveUserFromGroupCommand({
+            Username: username,
+            GroupName: groupName,
+            UserPoolId: USER_POOL_ID
+          });
+          
+          await client.send(removeCommand);
+          console.log(`✅ Removed user ${username} from group ${groupName}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to remove user ${username} from group ${groupName}:`, error);
+        }
+      }
+    }
+    
+    // Add user to new groups
+    for (const groupName of newGroups) {
+      if (!currentGroups.includes(groupName)) {
+        try {
+          const addCommand = new AdminAddUserToGroupCommand({
+            Username: username,
+            GroupName: groupName,
+            UserPoolId: USER_POOL_ID
+          });
+          
+          await client.send(addCommand);
+          console.log(`✅ Added user ${username} to group ${groupName}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to add user ${username} to group ${groupName}:`, error);
+        }
+      }
+    }
+    
+    console.log(`✅ Successfully updated roles for user ${username}`);
+    return true;
+    
+  } catch (error) {
+    console.error(`❌ Error updating roles for user ${username}:`, error);
+    throw new Error(`Failed to update user roles: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 } 

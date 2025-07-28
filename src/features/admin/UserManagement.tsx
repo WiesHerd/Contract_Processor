@@ -13,7 +13,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { deleteCognitoUser, createCognitoUser } from '@/services/cognitoAdminService';
+import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles } from '@/services/cognitoAdminService';
 
 
 interface User {
@@ -118,10 +118,15 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      // TODO: Implement real role fetching from Cognito when needed
-      // For now, we'll get roles dynamically from user data
-      setRoles([]);
+      console.log('🔍 Fetching Cognito groups for role assignment...');
+      
+      // Use the real Cognito groups function
+      const cognitoGroups = await listCognitoGroups();
+      
+      console.log('📝 Cognito groups fetched:', cognitoGroups);
+      setRoles(cognitoGroups);
     } catch (err) {
+      console.error('❌ Error fetching roles:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch roles');
     } finally {
       setLoading(false);
@@ -141,12 +146,16 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setLoading(true);
       setError(null);
       
-      // TODO: Implement real role management when backend is ready
-      // For now, just show success message
-      setSuccess('User roles updated successfully (mock implementation)');
+      console.log(`👥 Updating roles for user ${selectedUser.Username}:`, selectedRoles);
+      
+      // Use the real role management function
+      await updateUserRoles(selectedUser.Username, selectedRoles);
+      
+      setSuccess(`User roles updated successfully for ${selectedUser.Username}`);
       setShowRoleModal(false);
       onRefresh(); // Refresh user list to get updated roles
     } catch (err) {
+      console.error('❌ Error updating user roles:', err);
       setError(err instanceof Error ? err.message : 'Failed to update user roles');
     } finally {
       setLoading(false);
