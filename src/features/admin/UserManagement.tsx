@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Trash2, UserPlus, Mail, Shield, Users, Clock, CheckCircle, AlertCircle, Filter, Search, Loader2, Key, Settings } from 'lucide-react';
-import { deleteCognitoUser, createCognitoUser, listCognitoUsers, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword, testCognitoPermissions } from '@/services/cognitoAdminService';
+import { deleteCognitoUser, createCognitoUser, listCognitoUsers, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword, testCognitoPermissions, testUserPoolIds } from '@/services/cognitoAdminService';
 import { useToast } from '@/hooks/useToast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -40,6 +40,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
   const [showInviteSentModal, setShowInviteSentModal] = useState(false);
   const [userCreationResult, setUserCreationResult] = useState<any>(null);
   const [isTestingPermissions, setIsTestingPermissions] = useState(false);
+  const [isTestingUserPoolIds, setIsTestingUserPoolIds] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [success, setSuccess] = useState<string | null>(null);
@@ -256,6 +257,25 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
     }
   };
 
+  const handleTestUserPoolIds = async () => {
+    setIsTestingUserPoolIds(true);
+    try {
+      console.log('🧪 Testing User Pool IDs...');
+      const result = await testUserPoolIds();
+      
+      if (result.success) {
+        showSuccess('User Pool ID Test', `✅ Found correct User Pool ID!\n\nCorrect ID: ${result.correctUserPoolId}\nUsers found: ${result.userCount}`);
+      } else {
+        showError('User Pool ID Test Failed', `❌ ${result.error}\n\nBoth User Pool IDs failed. Check AWS configuration.`);
+      }
+    } catch (error) {
+      console.error('❌ Error testing User Pool IDs:', error);
+      showError('User Pool ID Test Error', `Failed to test User Pool IDs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsTestingUserPoolIds(false);
+    }
+  };
+
   const getUserEmail = (user: User) => {
     return user.Attributes.find(attr => attr.Name === 'email')?.Value || 'No email';
   };
@@ -405,11 +425,59 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
       </div>
 
       {/* Create User Button - Moved to top right of controls */}
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
         <Button onClick={() => setShowCreateUserModal(true)} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
           <UserPlus className="w-4 h-4 mr-2" />
           Create User
         </Button>
+        
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleTestPermissions}
+                disabled={isTestingPermissions}
+                className="flex items-center gap-2"
+              >
+                {isTestingPermissions ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Settings className="h-4 w-4" />
+                )}
+                Test Permissions
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Test Cognito permissions and configuration</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleTestUserPoolIds}
+                disabled={isTestingUserPoolIds}
+                className="flex items-center gap-2"
+              >
+                {isTestingUserPoolIds ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Key className="h-4 w-4" />
+                )}
+                Test User Pool ID
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Test which User Pool ID is correct</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Create User Modal */}

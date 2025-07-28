@@ -940,3 +940,72 @@ export async function testCognitoPermissions() {
     };
   }
 }
+
+// Test function to determine the correct User Pool ID
+export async function testUserPoolIds() {
+  const userPoolIds = [
+    'us-east-2_ldPO5ZKCR', // lowercase "l"
+    'us-east-2_IdPO5ZKCR'  // uppercase "I"
+  ];
+  
+  console.log('🧪 Testing User Pool IDs...');
+  
+  for (const userPoolId of userPoolIds) {
+    try {
+      console.log(`\n🔍 Testing User Pool ID: ${userPoolId}`);
+      
+      const { CognitoIdentityProviderClient, ListUsersCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      // Get authenticated user credentials
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+      
+      const session = await fetchAuthSession();
+      if (!session.credentials) {
+        throw new Error('No credentials available in session');
+      }
+      
+      // Create authenticated Cognito client
+      const client = new CognitoIdentityProviderClient({
+        region: 'us-east-2',
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+      });
+      
+      // Test ListUsers with this User Pool ID
+      const listUsersCommand = new ListUsersCommand({
+        UserPoolId: userPoolId,
+        Limit: 1
+      });
+      
+      const result = await client.send(listUsersCommand);
+      console.log(`✅ SUCCESS: User Pool ID ${userPoolId} is valid!`);
+      console.log(`📝 Found ${result.Users?.length || 0} users`);
+      
+      return {
+        success: true,
+        correctUserPoolId: userPoolId,
+        userCount: result.Users?.length || 0
+      };
+      
+    } catch (error: any) {
+      console.log(`❌ FAILED: User Pool ID ${userPoolId} is invalid`);
+      console.log(`   Error: ${error.message}`);
+      console.log(`   Error Code: ${error.name}`);
+      console.log(`   HTTP Status: ${error.$metadata?.httpStatusCode}`);
+    }
+  }
+  
+  console.log('\n❌ No valid User Pool ID found!');
+  return {
+    success: false,
+    error: 'No valid User Pool ID found'
+  };
+}
