@@ -16,14 +16,6 @@ const awsConfig = getAWSConfig();
 const REGION = awsConfig.region;
 const USER_POOL_ID = 'us-east-2_ldPO5ZKCR';
 
-const client = new CognitoIdentityProviderClient({
-  region: REGION,
-  credentials: awsConfig.accessKeyId && awsConfig.secretAccessKey ? {
-    accessKeyId: awsConfig.accessKeyId,
-    secretAccessKey: awsConfig.secretAccessKey,
-  } : undefined, // Let AWS SDK use default credential chain
-});
-
 // Use environment-based API URL
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
   ? 'https://your-api-gateway-url.amazonaws.com/prod' 
@@ -168,7 +160,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
     }
     
     // Use AWS SDK directly with authenticated user credentials
-    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminGetUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
     const { fetchAuthSession } = await import('aws-amplify/auth');
     
@@ -184,6 +176,8 @@ export async function createCognitoUser(username: string, email: string, firstNa
     }
     
     console.log('🔐 Using authenticated credentials for Cognito create operation');
+    console.log('📋 User Pool ID:', USER_POOL_ID);
+    console.log('📋 Region:', REGION);
     
     // Create authenticated Cognito client
     const client = new CognitoIdentityProviderClient({
@@ -220,9 +214,22 @@ export async function createCognitoUser(username: string, email: string, firstNa
       MessageAction: 'RESEND' // Send verification email automatically
     });
     
+    console.log('📤 Sending AdminCreateUserCommand with data:', {
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      UserAttributes: [
+        { Name: 'email', Value: email },
+        { Name: 'given_name', Value: firstName },
+        { Name: 'family_name', Value: lastName },
+        { Name: 'email_verified', Value: 'false' }
+      ],
+      MessageAction: 'RESEND'
+    });
+    
     const createResult = await client.send(createUserCommand);
     
     console.log(`✅ Successfully created user ${username} in Cognito`);
+    console.log('📋 Create result:', createResult);
     
     // Add user to groups if specified
     if (groups.length > 0) {
@@ -251,6 +258,13 @@ export async function createCognitoUser(username: string, email: string, firstNa
     
   } catch (error) {
     console.error(`❌ Error creating Cognito user ${username}:`, error);
+    console.error('📋 Full error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      statusCode: error.statusCode,
+      requestId: error.requestId
+    });
     
     // Provide more specific error messages
     if (error instanceof Error) {
@@ -264,6 +278,8 @@ export async function createCognitoUser(username: string, email: string, firstNa
         throw new Error(`Failed to create user: User pool limit exceeded. Please contact administrator.`);
       } else if (error.message.includes('NotAuthorizedException')) {
         throw new Error(`Failed to create user: Not authorized to perform this action.`);
+      } else if (error.message.includes('UserNotFoundException')) {
+        throw new Error(`Failed to create user: Unexpected error during user creation. Please try again or contact support.`);
       } else {
         throw new Error(`Failed to create user: ${error.message}`);
       }
