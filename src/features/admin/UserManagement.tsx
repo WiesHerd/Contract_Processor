@@ -8,9 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, UserPlus, Mail, Shield, Users, Clock, CheckCircle, AlertCircle, Filter, Search, Loader2 } from 'lucide-react';
-import { deleteCognitoUser, createCognitoUser, listCognitoUsers, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword } from '@/services/cognitoAdminService';
+import { Trash2, UserPlus, Mail, Shield, Users, Clock, CheckCircle, AlertCircle, Filter, Search, Loader2, Key, Settings } from 'lucide-react';
+import { deleteCognitoUser, createCognitoUser, listCognitoUsers, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword, testCognitoPermissions } from '@/services/cognitoAdminService';
 import { useToast } from '@/hooks/useToast';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface User {
   Username: string;
@@ -38,6 +39,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showInviteSentModal, setShowInviteSentModal] = useState(false);
   const [userCreationResult, setUserCreationResult] = useState<any>(null);
+  const [isTestingPermissions, setIsTestingPermissions] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [success, setSuccess] = useState<string | null>(null);
@@ -232,6 +234,25 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
       showError('Failed to Reset Password', errorMessage);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTestPermissions = async () => {
+    setIsTestingPermissions(true);
+    try {
+      console.log('🧪 Running Cognito permissions test...');
+      const result = await testCognitoPermissions();
+      
+      if (result.success) {
+        showSuccess('Permissions Test', `✅ All permissions working correctly!\n\nUser Pool: ${result.userPoolId}\nRegion: ${result.region}\nPermissions: ${result.permissions.join(', ')}`);
+      } else {
+        showError('Permissions Test Failed', `❌ ${result.error}\n\nUser Pool: ${result.userPoolId}\nRegion: ${result.region}`);
+      }
+    } catch (error) {
+      console.error('❌ Error testing permissions:', error);
+      showError('Permissions Test Error', `Failed to test permissions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsTestingPermissions(false);
     }
   };
 

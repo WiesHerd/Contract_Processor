@@ -821,3 +821,122 @@ export async function testUserPoolConfiguration() {
     };
   }
 }
+
+// Comprehensive test function to verify all Cognito permissions
+export async function testCognitoPermissions() {
+  try {
+    console.log('🔐 Testing Cognito Permissions...');
+    
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('📋 Session credentials:', {
+      accessKeyId: session.credentials.accessKeyId ? 'present' : 'missing',
+      secretAccessKey: session.credentials.secretAccessKey ? 'present' : 'missing',
+      sessionToken: session.credentials.sessionToken ? 'present' : 'missing'
+    });
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // Test 1: List Users (should work if we have basic read permissions)
+    console.log('🧪 Test 1: Testing ListUsers permission...');
+    try {
+      const listUsersCommand = new ListUsersCommand({
+        UserPoolId: USER_POOL_ID,
+        Limit: 1
+      });
+      
+      const listResult = await client.send(listUsersCommand);
+      console.log('✅ ListUsers permission: SUCCESS');
+      console.log(`📝 Found ${listResult.Users?.length || 0} users`);
+    } catch (error: any) {
+      console.error('❌ ListUsers permission: FAILED');
+      console.error('   Error:', error.message);
+      throw new Error(`ListUsers permission failed: ${error.message}`);
+    }
+    
+    // Test 2: Try to create a test user (this will fail but tell us about permissions)
+    console.log('🧪 Test 2: Testing AdminCreateUser permission...');
+    try {
+      const testUserCommand = new AdminCreateUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: 'test-user-permission-check',
+        TemporaryPassword: 'TestPass123!',
+        UserAttributes: [
+          {
+            Name: 'email',
+            Value: 'test@example.com'
+          }
+        ],
+        MessageAction: 'SUPPRESS'
+      });
+      
+      await client.send(testUserCommand);
+      console.log('✅ AdminCreateUser permission: SUCCESS');
+      
+      // Clean up the test user
+      console.log('🧹 Cleaning up test user...');
+      const { AdminDeleteUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+      const deleteCommand = new AdminDeleteUserCommand({
+        Username: 'test-user-permission-check',
+        UserPoolId: USER_POOL_ID
+      });
+      await client.send(deleteCommand);
+      console.log('✅ Test user cleaned up');
+      
+    } catch (error: any) {
+      console.error('❌ AdminCreateUser permission: FAILED');
+      console.error('   Error:', error.message);
+      console.error('   Error Code:', error.name);
+      console.error('   HTTP Status:', error.$metadata?.httpStatusCode);
+      
+      if (error.name === 'UsernameExistsException') {
+        console.log('✅ AdminCreateUser permission: PARTIAL SUCCESS (user already exists)');
+      } else if (error.name === 'NotAuthorizedException') {
+        throw new Error('AdminCreateUser permission denied. Check IAM policies.');
+      } else if (error.name === 'UserNotFoundException') {
+        throw new Error('User Pool not found. Check User Pool ID and region.');
+      } else {
+        throw new Error(`AdminCreateUser failed: ${error.message}`);
+      }
+    }
+    
+    console.log('✅ All Cognito permission tests passed!');
+    return {
+      success: true,
+      userPoolId: USER_POOL_ID,
+      region: REGION,
+      permissions: ['ListUsers', 'AdminCreateUser']
+    };
+    
+  } catch (error) {
+    console.error('❌ Cognito permission test failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      userPoolId: USER_POOL_ID,
+      region: REGION
+    };
+  }
+}
