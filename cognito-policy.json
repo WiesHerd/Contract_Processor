@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Statement1",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:ListUsers",
+        "cognito-idp:AdminListGroupsForUser",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminSetUserPassword",
+        "cognito-idp:AdminAddUserToGroup",
+        "cognito-idp:AdminRemoveUserFromGroup",
+        "cognito-idp:ListGroups",
+        "cognito-idp:CreateGroup",
+        "cognito-idp:DeleteGroup"
+      ],
+      "Resource": [
+        "arn:aws:cognito-idp:us-east-2:430118851518:userpool/us-east-2_IdPO5ZKCR"
+      ]
+    }
+  ]
+} 

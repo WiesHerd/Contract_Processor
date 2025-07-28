@@ -72,13 +72,21 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-color: #f8fafc;
   }
 }
 
 html {
   scrollbar-gutter: stable;
-  background-color: #f8fafc;
+}
+
+/* Ensure dark mode covers entire viewport */
+.dark {
+  background-color: hsl(var(--background));
+}
+
+/* Ensure light mode covers entire viewport */
+html:not(.dark) {
+  background-color: hsl(var(--background));
 }
 
 /* Custom light scrollbar for modal and form scroll areas */

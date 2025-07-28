@@ -63,7 +63,10 @@ const utilityFeatures = [
 export const WelcomeScreen = () => {
   const navigate = useNavigate();
   const { signOut, isAuthenticated } = useAuth();
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    // Check if dark mode is already applied
+    return document.documentElement.classList.contains('dark');
+  });
 
   const handleSignOut = async () => {
     await signOut();
@@ -72,29 +75,35 @@ export const WelcomeScreen = () => {
     window.location.href = '/signin';
   };
 
-  const themeClasses = isDark 
-    ? 'bg-black text-white' 
-    : 'bg-white text-gray-900';
+  const toggleDarkMode = () => {
+    const newDarkMode = !isDark;
+    setIsDark(newDarkMode);
+    if (newDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
+    <div className="min-h-screen bg-background transition-colors duration-300">
       {/* Header */}
-      <div className={`border-b transition-colors duration-300 ${isDark ? 'bg-black border-gray-800' : 'bg-white border-gray-200'}`}>
+      <div className="border-b border-border bg-background transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg blur opacity-20"></div>
-                  <div className={`relative p-3 rounded-lg ${isDark ? 'bg-gray-900' : 'bg-white'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+                  <div className="relative p-3 rounded-lg bg-card border border-border">
                     <Logo size={32} />
                   </div>
                 </div>
                 <div>
-                  <h1 className={`text-2xl font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  <h1 className="text-2xl font-semibold text-foreground">
                     ContractEngine
                   </h1>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <p className="text-sm text-muted-foreground">
                     Physician Contract Automation
                   </p>
                 </div>
@@ -105,15 +114,15 @@ export const WelcomeScreen = () => {
             
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsDark(!isDark)}
-                className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+                onClick={toggleDarkMode}
+                className="p-2 rounded-lg transition-colors hover:bg-accent text-muted-foreground"
               >
                 {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
               
               <button
                 onClick={() => navigate('/instructions')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-accent text-muted-foreground"
               >
                 <Command className="w-4 h-4" />
                 <span className="hidden sm:inline">Instructions</span>
@@ -122,7 +131,7 @@ export const WelcomeScreen = () => {
               {isAuthenticated && (
                 <button
                   onClick={handleSignOut}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-accent text-muted-foreground"
                 >
                   <LogOut className="w-4 h-4" />
                   <span className="hidden sm:inline">Sign Out</span>
@@ -142,11 +151,7 @@ export const WelcomeScreen = () => {
             <button
               key={feature.path}
               onClick={() => navigate(feature.path)}
-              className={`group relative p-8 rounded-2xl border transition-all duration-300 text-left overflow-hidden ${
-                isDark 
-                  ? 'bg-gray-900 border-gray-800 hover:border-gray-700 hover:bg-gray-800' 
-                  : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-lg'
-              }`}
+              className="group relative p-8 rounded-2xl border border-border bg-card hover:border-border/50 hover:bg-accent transition-all duration-300 text-left overflow-hidden"
             >
               {/* Gradient Background */}
               <div className={`absolute inset-0 bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
@@ -160,10 +165,10 @@ export const WelcomeScreen = () => {
               
               {/* Content */}
               <div className="relative">
-                <h3 className={`text-2xl font-bold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                <h3 className="text-2xl font-bold mb-3 text-foreground">
                   {feature.title}
                 </h3>
-                <p className={`text-base ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                <p className="text-base text-muted-foreground">
                   {feature.description}
                 </p>
               </div>
@@ -172,37 +177,33 @@ export const WelcomeScreen = () => {
         </div>
 
         {/* Utility Features */}
-        <div className={`rounded-2xl border p-8 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+        <div className="rounded-2xl border border-border bg-card p-8">
           <div className="flex items-center gap-3 mb-6">
-            <Grid3X3 className={`w-5 h-5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`} />
-            <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            <Grid3X3 className="w-5 h-5 text-muted-foreground" />
+            <h3 className="text-xl font-semibold text-foreground">
               Utility Tools
             </h3>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {utilityFeatures.map((feature) => (
-              <button
-                key={feature.path}
-                onClick={() => navigate(feature.path)}
-                className={`group p-6 rounded-xl border transition-all duration-200 text-left ${
-                  isDark 
-                    ? 'border-gray-800 hover:border-gray-700 hover:bg-gray-800' 
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${isDark ? 'bg-gray-800 text-gray-400 group-hover:bg-gray-700 group-hover:text-blue-400' : 'bg-gray-100 text-gray-600 group-hover:bg-blue-100 group-hover:text-blue-600'} transition-colors`}>
-                    {feature.icon}
-                  </div>
-                  <h4 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {feature.title}
-                  </h4>
+                          <button
+              key={feature.path}
+              onClick={() => navigate(feature.path)}
+              className="group p-6 rounded-xl border border-border hover:border-border/50 hover:bg-accent transition-all duration-200 text-left"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 rounded-lg bg-muted text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                  {feature.icon}
                 </div>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {feature.description}
-                </p>
-              </button>
+                <h4 className="font-semibold text-foreground">
+                  {feature.title}
+                </h4>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {feature.description}
+              </p>
+            </button>
             ))}
           </div>
         </div>

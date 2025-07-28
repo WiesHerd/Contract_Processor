@@ -107,7 +107,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, isWarningModalOpen]);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col">
       {showNav && <TopNav onSignOut={handleSignOut} />}
       {/* Enterprise-grade: Session timeout banner auto-dismisses and only shows once per session */}
       {isAuthenticated && showSessionBanner && (
@@ -121,8 +121,8 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${showNav ? 'pt-28' : ''}`}>
         {children}
       </main>
-      <footer className="w-full py-4 px-6 border-t border-gray-200 bg-white">
-        <div className="container mx-auto text-center text-sm text-gray-500">
+      <footer className="w-full py-4 px-6 border-t border-border bg-background">
+        <div className="container mx-auto text-center text-sm text-muted-foreground">
           © {new Date().getFullYear()} ContractEngine. All rights reserved.
         </div>
       </footer>
