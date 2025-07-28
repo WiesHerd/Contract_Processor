@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Plus, Trash2, UserPlus, Shield, Users, Activity, Info } from 'lucide-react';
+import { Loader2, Plus, Trash2, UserPlus, Shield, Users, Activity, Info, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
@@ -15,6 +15,7 @@ import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword } from '@/services/cognitoAdminService';
 import { useToast } from '@/hooks/useToast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 
 interface User {
@@ -291,6 +292,72 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [resourceModalOpen, setResourceModalOpen] = useState(false);
   const [resourceModalData, setResourceModalData] = useState<any>(null);
+
+  const confirmedUsers = users.filter(user => user.UserStatus === 'CONFIRMED');
+  const pendingUsers = users.filter(user => user.UserStatus === 'CONFIRMED' && (!user.groups || user.groups.length === 0));
+
+  const renderUserTable = (userList: User[], title: string, emptyMessage: string) => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">{title}</h3>
+        <div className="text-sm text-gray-500">
+          {userList.length} user{userList.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+      
+      {userList.length === 0 ? (
+        <Card>
+          <CardContent className="flex items-center justify-center py-8">
+            <div className="text-center">
+              <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500">{emptyMessage}</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {userList.map((user) => (
+            <Card key={user.Username} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <h4 className="font-medium text-gray-900">{getUserEmail(user)}</h4>
+                        <p className="text-sm text-gray-500">{user.Username}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant={user.Enabled ? "default" : "secondary"}>
+                            {user.Enabled ? 'Active' : 'Disabled'}
+                          </Badge>
+                          <Badge variant={user.UserStatus === 'CONFIRMED' ? "default" : "outline"}>
+                            {user.UserStatus}
+                          </Badge>
+                          {user.groups && user.groups.length > 0 && (
+                            <Badge variant="outline" className="text-xs">
+                              {user.groups.length} role{user.groups.length !== 1 ? 's' : ''}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleManageRoles(user)} disabled={loading}>
+                      Manage Roles
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>Resend Invite</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleResetPassword(user.Username)} disabled={loading}>Reset Password</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.Username)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="w-full">
@@ -729,6 +796,50 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Tabs defaultValue="all-users" className="w-full mt-6">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="all-users" className="flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            All Users
+            <Badge variant="secondary" className="ml-1">{confirmedUsers.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="pending-users" className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            Pending Users
+            <Badge variant="destructive" className="ml-1">{pendingUsers.length}</Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="all-users" className="space-y-4">
+          {renderUserTable(
+            confirmedUsers, 
+            "All Users", 
+            "No users found. Create your first user to get started."
+          )}
+        </TabsContent>
+
+        <TabsContent value="pending-users" className="space-y-4">
+          <Card className="border-orange-200 bg-orange-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-orange-800">
+                <AlertCircle className="w-5 h-5" />
+                Pending User Approvals
+              </CardTitle>
+              <CardDescription className="text-orange-700">
+                These users have confirmed their accounts but haven't been assigned roles yet. 
+                Assign appropriate roles to grant them access to the system.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          
+          {renderUserTable(
+            pendingUsers, 
+            "Users Awaiting Role Assignment", 
+            "No pending users found. All users have been assigned appropriate roles."
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
