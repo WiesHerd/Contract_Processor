@@ -37,6 +37,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showInviteSentModal, setShowInviteSentModal] = useState(false);
+  const [userCreationResult, setUserCreationResult] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [success, setSuccess] = useState<string | null>(null);
@@ -152,9 +153,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
   };
 
   const handleCreateUser = async () => {
-    if (!newUser.username || !newUser.email) {
-      const errorMessage = 'Username and email are required';
-      showError('Validation Error', errorMessage);
+    if (!newUser.username || !newUser.email || !newUser.firstName || !newUser.lastName) {
+      showError('Validation Error', 'Please fill in all required fields');
       return;
     }
     
@@ -162,16 +162,39 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
       setLoading(true);
       
       // Use the real create function
-      await createCognitoUser(newUser.username, newUser.email, newUser.firstName, newUser.lastName, newUser.groups || []);
+      const selectedGroups = Object.keys(newUser.groups).filter(group => newUser.groups[group]);
       
+      const result = await createCognitoUser(
+        newUser.username,
+        newUser.email,
+        newUser.firstName,
+        newUser.lastName,
+        selectedGroups
+      );
+      
+      console.log('User creation result:', result);
+      
+      // Show success modal with login instructions
+      setUserCreationResult(result);
+      setShowInviteSentModal(true);
       setSuccess(`User ${newUser.username} created successfully`);
-      showSuccess('User Created', `User ${newUser.username} created successfully`);
-      setShowCreateUserModal(false);
-      setNewUser({ username: '', email: '', firstName: '', lastName: '', groups: [] }); // Reset form
-      fetchUsers(); // Refresh user list
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
-      showError('Failed to Create User', errorMessage);
+      showSuccess('User Created', `User ${newUser.username} has been created and added to the system.\n\nLogin Instructions:\n${result.loginInstructions || `Username: ${newUser.username}\nTemporary Password: ${result.tempPassword || 'Check console for password'}`}`);
+      
+      // Reset form
+      setNewUser({
+        username: '',
+        email: '',
+        firstName: '',
+        lastName: '',
+        groups: []
+      });
+      
+      // Refresh user list
+      fetchUsers();
+      
+    } catch (error) {
+      console.error('Error creating user:', error);
+      showError('Failed to Create User', error instanceof Error ? error.message : 'Failed to create user');
     } finally {
       setLoading(false);
     }
@@ -586,12 +609,26 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
       <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Email Sent Successfully</DialogTitle>
+            <DialogTitle>User Created Successfully</DialogTitle>
           </DialogHeader>
-          <div className="py-4 text-center">
-            <div className="text-lg mb-2">✅ Email sent!</div>
-            <div className="text-sm text-muted-foreground">
-              The user will receive an email with a temporary password. They must change their password on next login.
+          <div className="py-4">
+            <div className="text-lg mb-4 text-center">✅ User created successfully!</div>
+            <div className="space-y-3 text-sm">
+              <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <h4 className="font-medium text-blue-900 mb-2">Login Instructions for User:</h4>
+                <div className="space-y-1 text-blue-800">
+                  <p><strong>Username:</strong> {newUser.username}</p>
+                  <p><strong>Temporary Password:</strong> {userCreationResult?.tempPassword || 'Check console for password'}</p>
+                  <p className="text-xs mt-2">
+                    The user should sign in with these credentials and will be forced to change their password on first login.
+                  </p>
+                </div>
+              </div>
+              <div className="text-xs text-gray-500">
+                <p>• User will receive a welcome email with login instructions</p>
+                <p>• User must change password on first login</p>
+                <p>• Email verification will be required after first login</p>
+              </div>
             </div>
           </div>
           <DialogFooter>

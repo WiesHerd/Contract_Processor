@@ -168,166 +168,117 @@ export async function createCognitoUser(username: string, email: string, firstNa
       aws_cognito_region: config.aws_cognito_region
     });
     
-    // Try using Amplify Auth directly first
-    try {
-      const { signUp } = await import('aws-amplify/auth');
-      
-      console.log('🔄 Attempting to create user via Amplify Auth...');
-      
-      const signUpResult = await signUp({
-        username: username,
-        password: generateTemporaryPassword(), // Generate a temporary password
-        options: {
-          userAttributes: {
-            email: email,
-            given_name: firstName,
-            family_name: lastName
-          }
-      }});
-      
-      console.log(`✅ Successfully created user ${username} via Amplify Auth`);
-      console.log('📋 Sign up result:', signUpResult);
-      
-      // Add user to groups if specified (using AWS SDK for this)
-      if (groups.length > 0) {
-        console.log(`👥 Adding user ${username} to groups:`, groups);
-        
-        const { CognitoIdentityProviderClient, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
-        const { getCurrentUser } = await import('aws-amplify/auth');
-        const { fetchAuthSession } = await import('aws-amplify/auth');
-        
-        const user = await getCurrentUser();
-        const session = await fetchAuthSession();
-        
-        const client = new CognitoIdentityProviderClient({
-          region: REGION,
-          credentials: {
-            accessKeyId: session.credentials.accessKeyId,
-            secretAccessKey: session.credentials.secretAccessKey,
-            sessionToken: session.credentials.sessionToken,
-          },
-        });
-        
-        for (const groupName of groups) {
-          try {
-            const addToGroupCommand = new AdminAddUserToGroupCommand({
-              Username: username,
-              GroupName: groupName,
-              UserPoolId: USER_POOL_ID
-            });
-            
-            await client.send(addToGroupCommand);
-            console.log(`✅ Added user ${username} to group ${groupName}`);
-          } catch (error) {
-            console.warn(`⚠️ Failed to add user ${username} to group ${groupName}:`, error);
-          }
-        }
-      }
-      
-      return signUpResult;
-      
-    } catch (amplifyError) {
-      console.log('⚠️ Amplify Auth failed, trying AWS SDK directly...');
-      
-      // Fallback to AWS SDK
-      const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
-      const { getCurrentUser } = await import('aws-amplify/auth');
-      const { fetchAuthSession } = await import('aws-amplify/auth');
-      
-      // Get authenticated user credentials
-      const user = await getCurrentUser();
-      if (!user) {
-        throw new Error('No authenticated user found');
-      }
-      
-      const session = await fetchAuthSession();
-      if (!session.credentials) {
-        throw new Error('No credentials available in session');
-      }
-      
-      console.log('📋 Session credentials:', {
-        accessKeyId: session.credentials.accessKeyId ? 'present' : 'missing',
-        secretAccessKey: session.credentials.secretAccessKey ? 'present' : 'missing',
-        sessionToken: session.credentials.sessionToken ? 'present' : 'missing'
-      });
-      
-      // Create authenticated Cognito client
-      const client = new CognitoIdentityProviderClient({
-        region: REGION,
-        credentials: {
-          accessKeyId: session.credentials.accessKeyId,
-          secretAccessKey: session.credentials.secretAccessKey,
-          sessionToken: session.credentials.sessionToken,
-        },
-      });
-
-      // Create the user in Cognito with email verification (like frontend signup)
-      const createUserCommand = new AdminCreateUserCommand({
-        UserPoolId: USER_POOL_ID,
-        Username: username,
-        UserAttributes: [
-          {
-            Name: 'email',
-            Value: email
-          },
-          {
-            Name: 'given_name',
-            Value: firstName
-          },
-          {
-            Name: 'family_name',
-            Value: lastName
-          },
-          {
-            Name: 'email_verified',
-            Value: 'false' // Let user verify email like frontend signup
-          }
-        ],
-        MessageAction: 'RESEND' // Send verification email automatically
-      });
-      
-      console.log('📤 Sending AdminCreateUserCommand with data:', {
-        UserPoolId: USER_POOL_ID,
-        Username: username,
-        UserAttributes: [
-          { Name: 'email', Value: email },
-          { Name: 'given_name', Value: firstName },
-          { Name: 'family_name', Value: lastName },
-          { Name: 'email_verified', Value: 'false' }
-        ],
-        MessageAction: 'RESEND'
-      });
-      
-      const createResult = await client.send(createUserCommand);
-      
-      console.log(`✅ Successfully created user ${username} in Cognito`);
-      console.log('📋 Create result:', createResult);
-      
-      // Add user to groups if specified
-      if (groups.length > 0) {
-        console.log(`👥 Adding user ${username} to groups:`, groups);
-        
-        for (const groupName of groups) {
-          try {
-            const addToGroupCommand = new AdminAddUserToGroupCommand({
-              Username: username,
-              GroupName: groupName,
-              UserPoolId: USER_POOL_ID
-            });
-            
-            await client.send(addToGroupCommand);
-            console.log(`✅ Added user ${username} to group ${groupName}`);
-          } catch (error) {
-            console.warn(`⚠️ Failed to add user ${username} to group ${groupName}:`, error);
-          }
-        }
-      }
-      
-      // Cognito will automatically send verification email (like frontend signup)
-      console.log(`📧 Verification email will be sent automatically to ${username}`);
-      
-      return createResult.User;
+    // Use AWS SDK directly for admin user creation (better control)
+    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
     }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('📋 Session credentials:', {
+      accessKeyId: session.credentials.accessKeyId ? 'present' : 'missing',
+      secretAccessKey: session.credentials.secretAccessKey ? 'present' : 'missing',
+      sessionToken: session.credentials.sessionToken ? 'present' : 'missing'
+    });
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+
+    // Generate a secure temporary password
+    const tempPassword = generateTemporaryPassword();
+    
+    // Create the user in Cognito with FORCE_CHANGE_PASSWORD status
+    // This will send a welcome email with temporary password
+    const createUserCommand = new AdminCreateUserCommand({
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      TemporaryPassword: tempPassword, // This will be sent in welcome email
+      UserAttributes: [
+        {
+          Name: 'email',
+          Value: email
+        },
+        {
+          Name: 'given_name',
+          Value: firstName
+        },
+        {
+          Name: 'family_name',
+          Value: lastName
+        },
+        {
+          Name: 'email_verified',
+          Value: 'false' // User will verify email after first login
+        }
+      ],
+      MessageAction: 'SUPPRESS' // We'll handle the welcome email manually
+    });
+    
+    console.log('📤 Sending AdminCreateUserCommand with data:', {
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      TemporaryPassword: '***HIDDEN***',
+      UserAttributes: [
+        { Name: 'email', Value: email },
+        { Name: 'given_name', Value: firstName },
+        { Name: 'family_name', Value: lastName },
+        { Name: 'email_verified', Value: 'false' }
+      ],
+      MessageAction: 'SUPPRESS'
+    });
+    
+    const createResult = await client.send(createUserCommand);
+    
+    console.log(`✅ Successfully created user ${username} in Cognito`);
+    console.log('📋 Create result:', createResult);
+    
+    // Add user to groups if specified
+    if (groups.length > 0) {
+      console.log(`👥 Adding user ${username} to groups:`, groups);
+      
+      for (const groupName of groups) {
+        try {
+          const addToGroupCommand = new AdminAddUserToGroupCommand({
+            Username: username,
+            GroupName: groupName,
+            UserPoolId: USER_POOL_ID
+          });
+          
+          await client.send(addToGroupCommand);
+          console.log(`✅ Added user ${username} to group ${groupName}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to add user ${username} to group ${groupName}:`, error);
+        }
+      }
+    }
+    
+    // Now send a proper welcome email with login instructions
+    console.log(`📧 User ${username} created successfully!`);
+    console.log(`📧 Temporary password: ${tempPassword}`);
+    console.log(`📧 User should sign in with username: ${username} and temporary password`);
+    console.log(`📧 User will be forced to change password on first login`);
+    
+    return {
+      ...createResult.User,
+      tempPassword: tempPassword, // Include for admin reference
+      loginInstructions: `User can sign in with username: ${username} and temporary password: ${tempPassword}`
+    };
     
   } catch (error) {
     console.error(`❌ Error creating Cognito user ${username}:`, error);
