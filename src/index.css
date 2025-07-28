@@ -79,14 +79,9 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* Ensure dark mode covers entire viewport */
-.dark {
-  background-color: hsl(var(--background));
-}
-
 /* Ensure light mode covers entire viewport */
-html:not(.dark) {
-  background-color: hsl(var(--background));
+html {
+  background-color: #f8fafc;
 }
 
 /* Custom light scrollbar for modal and form scroll areas */

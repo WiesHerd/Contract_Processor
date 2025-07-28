@@ -5,9 +5,9 @@ import config from './amplifyconfiguration.json'
 import { Buffer } from 'buffer'
 import { initializeMonitoring } from './utils/monitoring'
 
-// Apply dark mode by default
+// Apply light mode by default
 if (typeof document !== 'undefined') {
-  document.documentElement.classList.add('dark');
+  document.documentElement.classList.remove('dark');
 }
 
 // Override AppSync endpoint with .env if present

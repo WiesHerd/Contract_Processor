@@ -63,10 +63,6 @@ const utilityFeatures = [
 export const WelcomeScreen = () => {
   const navigate = useNavigate();
   const { signOut, isAuthenticated } = useAuth();
-  const [isDark, setIsDark] = useState(() => {
-    // Check if dark mode is already applied
-    return document.documentElement.classList.contains('dark');
-  });
 
   const handleSignOut = async () => {
     await signOut();
@@ -75,35 +71,25 @@ export const WelcomeScreen = () => {
     window.location.href = '/signin';
   };
 
-  const toggleDarkMode = () => {
-    const newDarkMode = !isDark;
-    setIsDark(newDarkMode);
-    if (newDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-background transition-colors duration-300">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="border-b border-border bg-background transition-colors duration-300">
+      <div className="border-b border-gray-200 bg-white">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg blur opacity-20"></div>
-                  <div className="relative p-3 rounded-lg bg-card border border-border">
+                  <div className="relative p-3 rounded-lg bg-white border border-gray-200">
                     <Logo size={32} />
                   </div>
                 </div>
                 <div>
-                  <h1 className="text-2xl font-semibold text-foreground">
+                  <h1 className="text-2xl font-semibold text-gray-900">
                     ContractEngine
                   </h1>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-gray-500">
                     Physician Contract Automation
                   </p>
                 </div>
@@ -114,15 +100,8 @@ export const WelcomeScreen = () => {
             
             <div className="flex items-center gap-2">
               <button
-                onClick={toggleDarkMode}
-                className="p-2 rounded-lg transition-colors hover:bg-accent text-muted-foreground"
-              >
-                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-              
-              <button
                 onClick={() => navigate('/instructions')}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-accent text-muted-foreground"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-600"
               >
                 <Command className="w-4 h-4" />
                 <span className="hidden sm:inline">Instructions</span>
@@ -131,7 +110,7 @@ export const WelcomeScreen = () => {
               {isAuthenticated && (
                 <button
                   onClick={handleSignOut}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-accent text-muted-foreground"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-600"
                 >
                   <LogOut className="w-4 h-4" />
                   <span className="hidden sm:inline">Sign Out</span>
@@ -151,7 +130,7 @@ export const WelcomeScreen = () => {
             <button
               key={feature.path}
               onClick={() => navigate(feature.path)}
-              className="group relative p-8 rounded-2xl border border-border bg-card hover:border-border/50 hover:bg-accent transition-all duration-300 text-left overflow-hidden"
+              className="group relative p-8 rounded-2xl border border-gray-200 bg-white hover:border-gray-300 hover:shadow-lg transition-all duration-300 text-left overflow-hidden"
             >
               {/* Gradient Background */}
               <div className={`absolute inset-0 bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
@@ -165,10 +144,10 @@ export const WelcomeScreen = () => {
               
               {/* Content */}
               <div className="relative">
-                <h3 className="text-2xl font-bold mb-3 text-foreground">
+                <h3 className="text-2xl font-bold mb-3 text-gray-900">
                   {feature.title}
                 </h3>
-                <p className="text-base text-muted-foreground">
+                <p className="text-base text-gray-600">
                   {feature.description}
                 </p>
               </div>
@@ -177,10 +156,10 @@ export const WelcomeScreen = () => {
         </div>
 
         {/* Utility Features */}
-        <div className="rounded-2xl border border-border bg-card p-8">
+        <div className="rounded-2xl border border-gray-200 bg-white p-8">
           <div className="flex items-center gap-3 mb-6">
-            <Grid3X3 className="w-5 h-5 text-muted-foreground" />
-            <h3 className="text-xl font-semibold text-foreground">
+            <Grid3X3 className="w-5 h-5 text-gray-600" />
+            <h3 className="text-xl font-semibold text-gray-900">
               Utility Tools
             </h3>
           </div>
@@ -190,17 +169,17 @@ export const WelcomeScreen = () => {
                           <button
               key={feature.path}
               onClick={() => navigate(feature.path)}
-              className="group p-6 rounded-xl border border-border hover:border-border/50 hover:bg-accent transition-all duration-200 text-left"
+              className="group p-6 rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 text-left"
             >
               <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-lg bg-muted text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                <div className="p-2 rounded-lg bg-gray-100 text-gray-600 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
                   {feature.icon}
                 </div>
-                <h4 className="font-semibold text-foreground">
+                <h4 className="font-semibold text-gray-900">
                   {feature.title}
                 </h4>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-gray-600">
                 {feature.description}
               </p>
             </button>

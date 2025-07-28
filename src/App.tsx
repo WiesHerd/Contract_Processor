@@ -121,8 +121,8 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${showNav ? 'pt-28' : ''}`}>
         {children}
       </main>
-      <footer className="w-full py-4 px-6 border-t border-border bg-background">
-        <div className="container mx-auto text-center text-sm text-muted-foreground">
+      <footer className="w-full py-4 px-6 border-t border-gray-200 bg-white">
+        <div className="container mx-auto text-center text-sm text-gray-500">
           © {new Date().getFullYear()} ContractEngine. All rights reserved.
         </div>
       </footer>
