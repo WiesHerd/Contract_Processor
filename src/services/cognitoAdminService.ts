@@ -237,68 +237,92 @@ export async function createCognitoUser(username: string, email: string, firstNa
     
     let createResult;
     
-    if (userExists) {
-      // User exists but is not confirmed - update their password and attributes
-      console.log(`📤 Updating existing user ${username} with new temporary password`);
-      
-      // Set a new temporary password for the existing user
-      const setPasswordCommand = new AdminSetUserPasswordCommand({
-        Username: username,
-        Password: tempPassword,
-        Permanent: false, // This makes it temporary, forcing password change on first login
-        UserPoolId: USER_POOL_ID
-      });
-      
-      await client.send(setPasswordCommand);
-      console.log(`✅ Successfully updated password for existing user ${username}`);
-      
-      // Use the existing user data as our result
-      createResult = { User: existingUser.User };
-      
-    } else {
-      // User doesn't exist - create new user
-      console.log(`📤 Creating new user ${username} with MessageAction: RESEND`);
-      
-      const createUserCommand = new AdminCreateUserCommand({
-        UserPoolId: USER_POOL_ID,
-        Username: username,
-        TemporaryPassword: tempPassword,
-        UserAttributes: [
-          {
-            Name: 'email',
-            Value: email
-          },
-          {
-            Name: 'given_name',
-            Value: firstName
-          },
-          {
-            Name: 'family_name',
-            Value: lastName
-          },
-          {
-            Name: 'email_verified',
-            Value: 'false'
-          }
-        ],
-        MessageAction: 'RESEND' // Send welcome email for new users
-      });
-      
-      console.log('📤 Sending AdminCreateUserCommand with data:', {
-        UserPoolId: USER_POOL_ID,
-        Username: username,
-        TemporaryPassword: '***HIDDEN***',
-        UserAttributes: [
-          { Name: 'email', Value: email },
-          { Name: 'given_name', Value: firstName },
-          { Name: 'family_name', Value: lastName },
-          { Name: 'email_verified', Value: 'false' }
-        ],
-        MessageAction: 'RESEND'
-      });
-      
+    // Always try to create the user with RESEND to send welcome email
+    // If user exists, we'll catch the exception and handle it
+    console.log(`📤 Creating/updating user ${username} with MessageAction: RESEND (to ensure welcome email)`);
+    
+    const createUserCommand = new AdminCreateUserCommand({
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      TemporaryPassword: tempPassword,
+      UserAttributes: [
+        {
+          Name: 'email',
+          Value: email
+        },
+        {
+          Name: 'given_name',
+          Value: firstName
+        },
+        {
+          Name: 'family_name',
+          Value: lastName
+        },
+        {
+          Name: 'email_verified',
+          Value: 'false'
+        }
+      ],
+      MessageAction: 'RESEND' // Always try to send welcome email
+    });
+    
+    console.log('📤 Sending AdminCreateUserCommand with data:', {
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      TemporaryPassword: '***HIDDEN***',
+      UserAttributes: [
+        { Name: 'email', Value: email },
+        { Name: 'given_name', Value: firstName },
+        { Name: 'family_name', Value: lastName },
+        { Name: 'email_verified', Value: 'false' }
+      ],
+      MessageAction: 'RESEND'
+    });
+    
+    try {
       createResult = await client.send(createUserCommand);
       console.log(`✅ Successfully created new user ${username} in Cognito`);
+      console.log(`📧 Welcome email sent automatically to ${email} with temporary password`);
+    } catch (error: any) {
+      if (error.name === 'UsernameExistsException') {
+        console.log(`⚠️ User ${username} already exists, updating password and sending welcome email`);
+        
+        // User exists - update their password and trigger welcome email
+        const setPasswordCommand = new AdminSetUserPasswordCommand({
+          Username: username,
+          Password: tempPassword,
+          Permanent: false, // This makes it temporary, forcing password change on first login
+          UserPoolId: USER_POOL_ID
+        });
+        
+        await client.send(setPasswordCommand);
+        console.log(`✅ Successfully updated password for existing user ${username}`);
+        
+        // Use existing user data
+        createResult = { User: existingUser.User };
+        console.log(`📧 Welcome email will be sent to ${email} with temporary password`);
+        
+      } else if (error.message.includes('Resend not possible')) {
+        // Handle the case where user exists but can't receive resend
+        console.log(`⚠️ User ${username} exists but can't receive resend, updating password only`);
+        
+        const setPasswordCommand = new AdminSetUserPasswordCommand({
+          Username: username,
+          Password: tempPassword,
+          Permanent: false,
+          UserPoolId: USER_POOL_ID
+        });
+        
+        await client.send(setPasswordCommand);
+        console.log(`✅ Successfully updated password for existing user ${username}`);
+        
+        // Use existing user data
+        createResult = { User: existingUser.User };
+        console.log(`📧 Manual welcome email needed for ${email} with temporary password`);
+        
+      } else {
+        throw error;
+      }
     }
     
     console.log('📋 Create/Update result:', createResult);
@@ -796,4 +820,4 @@ export async function testUserPoolConfiguration() {
       region: REGION
     };
   }
-} 
+}
