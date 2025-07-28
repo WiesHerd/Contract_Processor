@@ -13,7 +13,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import { fetchAuditLogs } from '@/store/slices/auditSlice';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles, resendInvitation } from '@/services/cognitoAdminService';
+import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword } from '@/services/cognitoAdminService';
 import { useToast } from '@/hooks/useToast';
 
 
@@ -61,7 +61,6 @@ const getUserRoles = (user: User) => {
 const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, section, setSection }) => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const { showSuccess, showError, showWarning, showInfo } = useToast();
   
@@ -130,7 +129,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     } catch (err) {
       console.error('❌ Error fetching roles:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch roles';
-      setError(errorMessage);
       showError('Failed to Load Roles', errorMessage);
     } finally {
       setLoading(false);
@@ -148,7 +146,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     
     try {
       setLoading(true);
-      setError(null);
       
       console.log(`👥 Updating roles for user ${selectedUser.Username}:`, selectedRoles);
       
@@ -162,7 +159,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     } catch (err) {
       console.error('❌ Error updating user roles:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to update user roles';
-      setError(errorMessage);
       showError('Failed to Update Roles', errorMessage);
     } finally {
       setLoading(false);
@@ -172,14 +168,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
   const handleCreateUser = async () => {
     if (!newUser.username || !newUser.email) {
       const errorMessage = 'Username and email are required';
-      setError(errorMessage);
       showError('Validation Error', errorMessage);
       return;
     }
     
     try {
       setLoading(true);
-      setError(null);
       
       // Use the real create function
       await createCognitoUser(newUser.username, newUser.email, newUser.groups || []);
@@ -191,7 +185,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       onRefresh(); // Refresh user list
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
-      setError(errorMessage);
       showError('Failed to Create User', errorMessage);
     } finally {
       setLoading(false);
@@ -203,7 +196,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     
     try {
       setLoading(true);
-      setError(null);
       
       // Use the real delete function
       await deleteCognitoUser(username);
@@ -213,7 +205,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       onRefresh(); // Refresh user list
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
-      setError(errorMessage);
       showError('Failed to Delete User', errorMessage);
     } finally {
       setLoading(false);
@@ -226,7 +217,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     if (!window.confirm(`Resend invitation email to ${username}?`)) return;
     try {
       setLoading(true);
-      setError(null);
       
       console.log(`📧 Resending invitation to ${username}...`);
       
@@ -241,8 +231,31 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     } catch (err) {
       console.error('❌ Error resending invitation:', err);
       const errorMessage = 'Failed to resend invitation: ' + (err instanceof Error ? err.message : 'Unknown error');
-      setError(errorMessage);
       showError('Failed to Resend Invitation', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (username: string) => {
+    if (!window.confirm(`Reset password for ${username}? This will send them a temporary password.`)) return;
+    try {
+      setLoading(true);
+      
+      console.log(`🔐 Resetting password for ${username}...`);
+      
+      // Use the real password reset function
+      const result = await resetUserPassword(username);
+      
+      console.log(`✅ Password reset result:`, result);
+      
+      setSuccess(result.message);
+      showSuccess('Password Reset', result.message);
+      setShowInviteSentModal(true);
+    } catch (err) {
+      console.error('❌ Error resetting password:', err);
+      const errorMessage = 'Failed to reset password: ' + (err instanceof Error ? err.message : 'Unknown error');
+      showError('Failed to Reset Password', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -314,11 +327,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
               Create User
             </Button>
           </div>
-          {error && (
-            <Alert className="border-red-200 bg-red-50 mb-4">
-              <AlertDescription className="text-red-800">{error}</AlertDescription>
-            </Alert>
-          )}
+
           {success && (
             <Alert className="border-green-200 bg-green-50 mb-4">
               <AlertDescription className="text-green-800">{success}</AlertDescription>
@@ -350,6 +359,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                         <div className="flex gap-2">
                           <Button variant="outline" size="sm" onClick={() => handleManageRoles(user)} disabled={loading}>Manage Roles</Button>
                           <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>Resend Invite</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleResetPassword(user.Username)} disabled={loading}>Reset Password</Button>
                           <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.Username)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </TableCell>
@@ -492,20 +502,20 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
 
           {/* Invitation Sent Modal */}
           <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Invitation Sent Successfully</DialogTitle>
-              </DialogHeader>
-              <div className="py-4 text-center">
-                <div className="text-lg mb-2">✅ Invitation email sent!</div>
-                <div className="text-sm text-muted-foreground">
-                  The user will receive an email with a temporary password. They must change their password on first login.
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={() => setShowInviteSentModal(false)} autoFocus>OK</Button>
-              </DialogFooter>
-            </DialogContent>
+                    <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Email Sent Successfully</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-center">
+            <div className="text-lg mb-2">✅ Email sent!</div>
+            <div className="text-sm text-muted-foreground">
+              The user will receive an email with a temporary password. They must change their password on next login.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowInviteSentModal(false)} autoFocus>OK</Button>
+          </DialogFooter>
+        </DialogContent>
           </Dialog>
         </div>
       )}

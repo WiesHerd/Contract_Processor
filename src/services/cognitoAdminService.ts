@@ -482,6 +482,77 @@ export async function resendInvitation(username: string) {
   }
 }
 
+export async function resetUserPassword(username: string) {
+  try {
+    console.log(`🔐 Resetting password for user: ${username}`);
+    
+    // Use AWS SDK directly with authenticated user credentials
+    const { CognitoIdentityProviderClient, AdminGetUserCommand, AdminSetUserPasswordCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { getCurrentUser } = await import('aws-amplify/auth');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
+    
+    // Get authenticated user credentials
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+    
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    console.log('🔐 Using authenticated credentials for Cognito password reset');
+    
+    // Create authenticated Cognito client
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+    });
+    
+    // First, get the user's current status
+    const getUserCommand = new AdminGetUserCommand({
+      Username: username,
+      UserPoolId: USER_POOL_ID
+    });
+    
+    const userResult = await client.send(getUserCommand);
+    const userStatus = userResult.UserStatus;
+    
+    console.log(`📝 User ${username} current status:`, userStatus);
+    
+    // Generate a temporary password that will force the user to change it
+    const tempPassword = generateTemporaryPassword();
+    
+    // Set the temporary password - this works for both confirmed and unconfirmed users
+    const setPasswordCommand = new AdminSetUserPasswordCommand({
+      Username: username,
+      Password: tempPassword,
+      Permanent: false, // This makes it temporary, forcing password change on next login
+      UserPoolId: USER_POOL_ID
+    });
+    
+    await client.send(setPasswordCommand);
+    
+    console.log(`✅ Successfully reset password for ${username}`);
+    console.log(`📧 Cognito will automatically send a password reset email`);
+    
+    return {
+      success: true,
+      message: `Password reset for ${username}. User will receive an email with temporary password and must change it on next login.`,
+      tempPassword: tempPassword // For admin reference only
+    };
+    
+  } catch (error) {
+    console.error(`❌ Error resetting password for ${username}:`, error);
+    throw new Error(`Failed to reset password: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 // Helper function to generate a secure temporary password
 function generateTemporaryPassword(): string {
   const length = 12;
