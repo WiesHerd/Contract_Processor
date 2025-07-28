@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -438,35 +438,56 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
 
           {/* Create User Modal */}
           <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Create New User</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <UserPlus className="w-5 h-5" />
+                  Create New User
+                </DialogTitle>
+                <DialogDescription>
+                  Create a new user account. The user will receive an invitation email with temporary credentials.
+                </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="username">Username</Label>
-                  <Input
-                    id="username"
-                    value={newUser.username}
-                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                    placeholder="Enter username"
-                  />
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="username" className="text-sm font-medium">
+                      Username <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="username"
+                      value={newUser.username}
+                      onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                      placeholder="Enter username (e.g., john.doe)"
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Username must be unique and will be used for login
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="email" className="text-sm font-medium">
+                      Email Address <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={newUser.email}
+                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                      placeholder="Enter email address"
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      User will receive invitation email at this address
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={newUser.email}
-                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                    placeholder="Enter email"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm font-medium">Assign Roles</Label>
-                  <div className="flex flex-wrap gap-4 mt-2">
+                
+                <div className="border-t pt-4">
+                  <Label className="text-sm font-medium mb-3 block">Assign Roles</Label>
+                  <div className="space-y-3">
                     {roles.map((role) => (
-                      <div key={role.GroupName} className="flex items-center space-x-2">
+                      <div key={role.GroupName} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
                         <input
                           type="checkbox"
                           id={`create-role-${role.GroupName}`}
@@ -478,22 +499,51 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                               setNewUser({ ...newUser, groups: (newUser.groups || []).filter((g) => g !== role.GroupName) });
                             }
                           }}
-                          className="rounded border-gray-300"
+                          className="rounded border-gray-300 h-4 w-4"
                         />
-                        <Label htmlFor={`create-role-${role.GroupName}`} className="text-sm">
-                          {role.GroupName}
-                        </Label>
+                        <div className="flex-1">
+                          <Label htmlFor={`create-role-${role.GroupName}`} className="text-sm font-medium cursor-pointer">
+                            {role.GroupName}
+                          </Label>
+                          {role.Description && (
+                            <p className="text-xs text-gray-500 mt-1">{role.Description}</p>
+                          )}
+                        </div>
                       </div>
                     ))}
+                    {roles.length === 0 && (
+                      <p className="text-sm text-gray-500 italic">No roles available</p>
+                    )}
                   </div>
                 </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowCreateUserModal(false)}>
+                
+                <div className="flex justify-end gap-3 pt-4 border-t">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setShowCreateUserModal(false);
+                      setNewUser({ username: '', email: '', groups: [] });
+                    }}
+                    disabled={loading}
+                  >
                     Cancel
                   </Button>
-                  <Button onClick={handleCreateUser} disabled={loading} className="bg-blue-600 hover:bg-blue-700 w-full">
-                    {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Create User
+                  <Button 
+                    onClick={handleCreateUser} 
+                    disabled={loading || !newUser.username || !newUser.email}
+                    className="bg-blue-600 hover:bg-blue-700 min-w-[120px]"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        Create User
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>

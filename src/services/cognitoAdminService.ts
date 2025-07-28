@@ -171,7 +171,7 @@ export async function createCognitoUser(username: string, email: string, groups:
           Value: 'true'
         }
       ],
-      MessageAction: 'RESEND' // Send welcome email automatically
+      MessageAction: 'SUPPRESS' // Don't send email automatically, we'll send it manually
     });
     
     const createResult = await client.send(createUserCommand);
@@ -196,6 +196,16 @@ export async function createCognitoUser(username: string, email: string, groups:
           console.warn(`⚠️ Failed to add user ${username} to group ${groupName}:`, error);
         }
       }
+    }
+    
+    // Automatically send invitation email after creating user
+    try {
+      console.log(`📧 Sending invitation email to ${username}...`);
+      const invitationResult = await resendInvitation(username);
+      console.log(`✅ Invitation sent successfully:`, invitationResult.message);
+    } catch (invitationError) {
+      console.warn(`⚠️ Failed to send invitation email to ${username}:`, invitationError);
+      // Don't fail the entire creation if invitation fails
     }
     
     return createResult.User;
