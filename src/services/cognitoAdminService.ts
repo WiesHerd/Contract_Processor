@@ -157,7 +157,7 @@ export async function createCognitoUser(username: string, email: string, groups:
       },
     });
     
-    // Create the user in Cognito
+    // Create the user in Cognito with email verification (like frontend signup)
     const createUserCommand = new AdminCreateUserCommand({
       UserPoolId: USER_POOL_ID,
       Username: username,
@@ -168,10 +168,10 @@ export async function createCognitoUser(username: string, email: string, groups:
         },
         {
           Name: 'email_verified',
-          Value: 'true'
+          Value: 'false' // Let user verify email like frontend signup
         }
       ],
-      MessageAction: 'SUPPRESS' // Don't send email automatically, we'll send it manually
+      MessageAction: 'RESEND' // Send verification email automatically
     });
     
     const createResult = await client.send(createUserCommand);
@@ -198,15 +198,8 @@ export async function createCognitoUser(username: string, email: string, groups:
       }
     }
     
-    // Automatically send invitation email after creating user
-    try {
-      console.log(`📧 Sending invitation email to ${username}...`);
-      const invitationResult = await resendInvitation(username);
-      console.log(`✅ Invitation sent successfully:`, invitationResult.message);
-    } catch (invitationError) {
-      console.warn(`⚠️ Failed to send invitation email to ${username}:`, invitationError);
-      // Don't fail the entire creation if invitation fails
-    }
+    // Cognito will automatically send verification email (like frontend signup)
+    console.log(`📧 Verification email will be sent automatically to ${username}`);
     
     return createResult.User;
     

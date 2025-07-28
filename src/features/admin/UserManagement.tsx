@@ -445,7 +445,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                   Create New User
                 </DialogTitle>
                 <DialogDescription>
-                  Create a new user account. The user will receive an invitation email with temporary credentials.
+                  Create a new user account. The user will receive a verification email and must confirm their account before signing in.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-6">
@@ -477,9 +477,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                       placeholder="Enter email address"
                       className="mt-1"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      User will receive invitation email at this address
-                    </p>
+                                         <p className="text-xs text-gray-500 mt-1">
+                       User will receive verification email at this address
+                     </p>
                   </div>
                 </div>
                 

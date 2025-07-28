@@ -1,194 +1,101 @@
-# Cognito Welcome Email Setup Guide
+# Cognito Email Setup Guide
 
-## 🎯 Overview
-This guide will help you customize the welcome emails sent to new users in your ContractEngine application.
+## 🎯 Why the Email Might Not Be Received
 
-## 📋 Prerequisites
-- AWS Console access
-- Admin permissions for Cognito User Pool
-- Email address for testing
+### **1. SES Sandbox Mode**
+- New AWS accounts are in "sandbox" mode
+- Can only send to verified email addresses
+- Daily limit: 200 emails
+- Need to request production access
 
-## 🚀 Step-by-Step Implementation
+### **2. Email Template Configuration**
+- Default Cognito templates are generic
+- May not look like a proper welcome email
+- Subject line might be confusing
 
-### Step 1: Access AWS Cognito Console
+### **3. Domain Restrictions**
+- Some email providers block AWS emails
+- AT&T, Yahoo, etc. may have restrictions
+- Try with Gmail for testing
 
-1. **Open AWS Console**
-   - Go to: https://console.aws.amazon.com/
-   - Sign in with your AWS account
+## 🔧 How to Fix Email Issues
 
-2. **Navigate to Cognito**
-   - In the search bar, type "Cognito"
-   - Click on "Amazon Cognito"
+### **Step 1: Check SES Status**
 
-3. **Find Your User Pool**
-   - Click "User pools" in the left sidebar
-   - Look for: `contractgenerator7e5dfb2d_userpool_7e5dfb2d`
-   - Click on it
+1. **Go to SES Console:** https://console.aws.amazon.com/ses/
+2. **Check Account Status:**
+   - If "Sandbox mode" → Request production access
+   - If "Production access" → You're good
 
-### Step 2: Customize Welcome Email
+### **Step 2: Configure Email Templates**
 
-1. **Navigate to Message Customizations**
-   - In the left sidebar, scroll down
-   - Click **"Message customizations"**
+1. **Go to Cognito Console:** https://console.aws.amazon.com/cognito/v2/home?region=us-east-2
+2. **Select your User Pool:** `us-east-2_ldPO5ZKCR`
+3. **Go to:** "Signing experience" → "App integration"
+4. **Scroll to:** "Message templates"
+5. **Configure:**
+   - **Welcome message** - Customize the invitation email
+   - **Subject line** - Make it clear and professional
+   - **Message content** - Include your app name and instructions
 
-2. **Edit Account Creation Email**
-   - Click on **"Account creation"**
-   - This controls the welcome email sent to new users
+### **Step 3: Test with Different Email**
 
-3. **Update Subject Line**
-   ```
-   Change from: "Your temporary password"
-   Change to: "Welcome to ContractEngine - Your Account is Ready"
-   ```
+Try creating a user with:
+- **Gmail address** (more reliable)
+- **Outlook address** (better delivery)
+- **Your own email** (for testing)
 
-4. **Replace Message Body with Professional Template**
+### **Step 4: Verify Email Address**
 
+If in sandbox mode:
+1. **Go to SES Console**
+2. **Click "Verified identities"**
+3. **Add your email address**
+4. **Check email and click verification link**
+
+## 📧 Sample Email Template
+
+**Subject:** Welcome to ContractEngine - Your Account is Ready
+
+**Message:**
 ```
-Dear {username},
+Hello,
 
-Welcome to ContractEngine! Your account has been successfully created and you can now access our contract generation platform.
+Your account has been created in ContractEngine.
 
-**Your Login Details:**
-Username: {username}
-Temporary Password: {####}
+Username: {{username}}
+Temporary Password: {{####}}
 
-**Next Steps:**
-1. Sign in at: [Your App URL]
-2. Change your temporary password on first login
-3. Complete your profile setup
-4. Start creating contracts!
+Please sign in at: [your-app-url]
+You will be prompted to create a new password on first login.
 
-**Security Note:** For your security, please change your password immediately after your first sign-in.
-
-**Need Help?**
-- Contact your administrator for technical support
-- Review our user guide for getting started
-- Check our FAQ section
-
-Thank you for choosing ContractEngine!
+If you have any questions, please contact support.
 
 Best regards,
 The ContractEngine Team
 ```
 
-### Step 3: Set Up Custom Sender (Optional but Recommended)
+## 🚀 Quick Fixes
 
-1. **In Message Customizations**
-   - Look for **"From" address**
-   - Click "Verify a new email address"
-   - Enter: `noreply@yourcompany.com` (or your preferred email)
-   - Check your email for verification link
-   - Click the verification link
-   - Return to Cognito and select your verified email
+### **Immediate Actions:**
+1. **Check spam folder** for `herdzik@att.net`
+2. **Try creating user with Gmail** (test@gmail.com)
+3. **Check SES console** for delivery status
+4. **Request SES production access** if needed
 
-### Step 4: Save Changes
+### **Long-term Solutions:**
+1. **Configure custom email templates**
+2. **Set up SES production access**
+3. **Use verified domain for sending**
+4. **Monitor email delivery metrics**
 
-1. **Click "Save changes"** at the bottom of the page
-2. **Wait for confirmation** that changes have been applied
+## 📞 Next Steps
 
-## 🧪 Testing Your Setup
-
-### Option 1: Use the Test Script
-
-1. **Edit the test script**
-   - Open `test-welcome-email.js`
-   - Replace `'your-email@yourcompany.com'` with your actual email
-   - Save the file
-
-2. **Run the test**
-   ```bash
-   node test-welcome-email.js
-   ```
-
-3. **Check your email**
-   - Look in your inbox for the welcome email
-   - Also check spam/junk folder
-   - Verify the email contains your custom template
-
-### Option 2: Use Your Admin Dashboard
-
-1. **Open your application**
-   - Go to your admin dashboard
-   - Navigate to User Management
-
-2. **Create a test user**
-   - Click "Add User"
-   - Use your email address
-   - Fill in required fields
-   - Click "Create User"
-
-3. **Check for the email**
-   - Look in your inbox
-   - Verify the custom template is working
-
-## ✅ Verification Checklist
-
-- [ ] Subject line is customized
-- [ ] Message body contains your custom template
-- [ ] Email includes username and temporary password
-- [ ] Custom sender address is set (if configured)
-- [ ] Email is received in inbox (not spam)
-- [ ] Template variables are properly replaced
-
-## 🔧 Troubleshooting
-
-### Email Not Received
-- Check spam/junk folder
-- Verify email address is correct
-- Check AWS SES sending limits
-- Review CloudWatch logs
-
-### Template Variables Not Working
-- Ensure correct variable names: `{username}`, `{####}`
-- Test with simple message first
-- Check for typos in template
-
-### Custom Sender Issues
-- Verify email domain in SES
-- Check SES sending limits
-- Ensure sender address is approved
-
-## 📧 Available Template Variables
-
-- `{username}` - The user's username
-- `{####}` - Temporary password
-- `{##Verify Email##}` - Email verification link
-- `{##Forgot Password##}` - Password reset link
-
-## 🎨 Advanced Customization (Optional)
-
-For more advanced customization, you can use Lambda Triggers:
-
-1. **In Cognito Console**
-   - Go to "User pool properties"
-   - Scroll to "Lambda triggers"
-   - Find "Custom message" trigger
-
-2. **Benefits of Lambda Triggers**
-   - Send HTML emails with branding
-   - Add dynamic content
-   - Include company logos
-   - Add custom links and styling
-
-## 📞 Support
-
-If you encounter issues:
-1. Check AWS Cognito documentation
-2. Review CloudWatch logs
-3. Verify IAM permissions
-4. Contact AWS support if needed
-
-## 🗑️ Cleanup
-
-After testing, you can delete test users:
-1. Go to AWS Cognito Console
-2. Navigate to "Users and groups"
-3. Find test users and delete them
-4. Or use your admin dashboard to remove them
+1. **Check SES Console** for account status
+2. **Try Gmail test** to verify delivery
+3. **Configure email templates** for better UX
+4. **Request production access** if in sandbox
 
 ---
 
-**Your User Pool Details:**
-- **User Pool ID:** `us-east-2_ldPO5ZKCR`
-- **User Pool Name:** `contractgenerator7e5dfb2d_userpool_7e5dfb2d`
-- **Region:** `us-east-2` 
+**Note:** The user creation worked perfectly! The issue is likely email delivery, not user creation. 
