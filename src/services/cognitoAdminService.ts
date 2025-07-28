@@ -14,7 +14,7 @@ const getAWSConfig = () => {
 const awsConfig = getAWSConfig();
 
 const REGION = awsConfig.region;
-const USER_POOL_ID = 'us-east-2_ldPO5ZKCR';
+const USER_POOL_ID = config.aws_user_pools_id; // Use the config value directly
 
 // Use environment-based API URL
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
@@ -178,6 +178,11 @@ export async function createCognitoUser(username: string, email: string, firstNa
     console.log('🔐 Using authenticated credentials for Cognito create operation');
     console.log('📋 User Pool ID:', USER_POOL_ID);
     console.log('📋 Region:', REGION);
+    console.log('📋 Session credentials:', {
+      accessKeyId: session.credentials.accessKeyId ? 'present' : 'missing',
+      secretAccessKey: session.credentials.secretAccessKey ? 'present' : 'missing',
+      sessionToken: session.credentials.sessionToken ? 'present' : 'missing'
+    });
     
     // Create authenticated Cognito client
     const client = new CognitoIdentityProviderClient({
@@ -263,8 +268,20 @@ export async function createCognitoUser(username: string, email: string, firstNa
       message: error.message,
       code: error.code,
       statusCode: error.statusCode,
-      requestId: error.requestId
+      requestId: error.requestId,
+      $metadata: error.$metadata
     });
+    
+    // Check if this is a 400 error (which is causing the UserNotFoundException)
+    if (error.$metadata?.httpStatusCode === 400) {
+      console.error('🚨 Detected 400 Bad Request error. This suggests:');
+      console.error('   - Invalid User Pool ID');
+      console.error('   - Invalid region');
+      console.error('   - Missing required attributes');
+      console.error('   - Authentication issues');
+      
+      throw new Error(`Failed to create user: Bad request (400). Please check User Pool configuration and permissions. Error: ${error.message}`);
+    }
     
     // Provide more specific error messages
     if (error instanceof Error) {
