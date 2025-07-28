@@ -79,6 +79,21 @@ export async function listCognitoUsers() {
     // Get groups for each user
     const usersWithGroups = await Promise.all(
       result.Users.map(async (cognitoUser) => {
+        // Skip users with empty or null usernames to prevent InvalidParameterException
+        if (!cognitoUser.Username || cognitoUser.Username.trim() === '') {
+          console.warn(`⚠️ Skipping user with empty username:`, cognitoUser);
+          return {
+            Username: cognitoUser.Username || 'unknown',
+            Attributes: cognitoUser.Attributes?.map(attr => ({
+              Name: attr.Name,
+              Value: attr.Value
+            })) || [],
+            Enabled: cognitoUser.Enabled,
+            UserStatus: cognitoUser.UserStatus,
+            groups: []
+          };
+        }
+
         try {
           const groupsCommand = new AdminListGroupsForUserCommand({
             Username: cognitoUser.Username,
@@ -90,28 +105,28 @@ export async function listCognitoUsers() {
           
           console.log(`👤 User ${cognitoUser.Username} has groups:`, groups);
           
-                     return {
-             Username: cognitoUser.Username,
-             Attributes: cognitoUser.Attributes?.map(attr => ({
-               Name: attr.Name,
-               Value: attr.Value
-             })) || [],
-             Enabled: cognitoUser.Enabled,
-             UserStatus: cognitoUser.UserStatus,
-             groups: groups
-           };
+          return {
+            Username: cognitoUser.Username,
+            Attributes: cognitoUser.Attributes?.map(attr => ({
+              Name: attr.Name,
+              Value: attr.Value
+            })) || [],
+            Enabled: cognitoUser.Enabled,
+            UserStatus: cognitoUser.UserStatus,
+            groups: groups
+          };
         } catch (error) {
           console.warn(`⚠️ Failed to get groups for user ${cognitoUser.Username}:`, error);
-                     return {
-             Username: cognitoUser.Username,
-             Attributes: cognitoUser.Attributes?.map(attr => ({
-               Name: attr.Name,
-               Value: attr.Value
-             })) || [],
-             Enabled: cognitoUser.Enabled,
-             UserStatus: cognitoUser.UserStatus,
-             groups: []
-           };
+          return {
+            Username: cognitoUser.Username,
+            Attributes: cognitoUser.Attributes?.map(attr => ({
+              Name: attr.Name,
+              Value: attr.Value
+            })) || [],
+            Enabled: cognitoUser.Enabled,
+            UserStatus: cognitoUser.UserStatus,
+            groups: []
+          };
         }
       })
     );
@@ -128,6 +143,29 @@ export async function listCognitoUsers() {
 export async function createCognitoUser(username: string, email: string, firstName: string, lastName: string, groups: string[] = []) {
   try {
     console.log(`👤 Creating new Cognito user: ${username} (${email})`);
+    
+    // Validate input parameters
+    if (!username || username.trim() === '') {
+      throw new Error('Username cannot be empty');
+    }
+    
+    if (!email || email.trim() === '') {
+      throw new Error('Email cannot be empty');
+    }
+    
+    if (!firstName || firstName.trim() === '') {
+      throw new Error('First name cannot be empty');
+    }
+    
+    if (!lastName || lastName.trim() === '') {
+      throw new Error('Last name cannot be empty');
+    }
+    
+    // Validate username format (Cognito requirements)
+    const usernameRegex = /^[\p{L}\p{M}\p{S}\p{N}\p{P}]+$/u;
+    if (!usernameRegex.test(username)) {
+      throw new Error('Username contains invalid characters. Only letters, numbers, and common punctuation are allowed.');
+    }
     
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminGetUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
