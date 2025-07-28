@@ -7,8 +7,6 @@ import UserManagement from './UserManagement';
 import { listCognitoUsers } from '@/services/cognitoAdminService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-
-
 interface User {
   Username: string;
   Attributes: Array<{ Name: string; Value?: string }>;
@@ -18,48 +16,41 @@ interface User {
 }
 
 const AdminDashboard: React.FC = () => {
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [section, setSection] = useState<'users' | 'activity'>('users');
-  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const usersData = await listCognitoUsers();
-      setUsers(usersData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch users');
-    } finally {
-      setLoading(false);
-    }
+  const handleRefresh = () => {
+    // UserManagement now handles its own data fetching
+    console.log('Refresh requested');
   };
 
   useEffect(() => {
-    fetchUsers();
+    // Simulate loading for the dashboard
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
-
-  const handleRefresh = () => {
-    fetchUsers();
-  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
         <div className="flex items-center gap-2">
           <Loader2 className="w-6 h-6 animate-spin" />
-          <span className="text-gray-600">Loading user management...</span>
+          <span className="text-gray-600">Loading admin dashboard...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-2xl font-bold text-gray-900">{section === 'users' ? 'User Management' : 'Activity Log'}</CardTitle>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+          <p className="text-gray-600">Manage users and monitor system activity</p>
+        </div>
         <Select value={section} onValueChange={val => setSection(val as 'users' | 'activity')}>
           <SelectTrigger id="section-select" className="w-44">
             <SelectValue />
@@ -69,17 +60,34 @@ const AdminDashboard: React.FC = () => {
             <SelectItem value="activity">Activity Log</SelectItem>
           </SelectContent>
         </Select>
-      </CardHeader>
-      <div className="border-b" />
-      <CardContent className="pt-6">
-        {error && (
-          <Alert className="border-red-200 bg-red-50 mb-4">
-            <AlertDescription className="text-red-800">{error}</AlertDescription>
-          </Alert>
-        )}
-        <UserManagement users={users} onRefresh={handleRefresh} section={section} setSection={setSection} />
-      </CardContent>
-    </Card>
+      </div>
+
+      {error && (
+        <Alert className="border-red-200 bg-red-50">
+          <AlertDescription className="text-red-800">{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {section === 'users' && (
+        <UserManagement onRefresh={handleRefresh} />
+      )}
+
+      {section === 'activity' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Activity Log
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-8 text-gray-500">
+              Activity log functionality coming soon...
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 };
 

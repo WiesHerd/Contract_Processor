@@ -1,29 +1,23 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Plus, Trash2, UserPlus, Shield, Users, Activity, Info, Clock, CheckCircle, AlertCircle } from 'lucide-react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useSelector, useDispatch } from 'react-redux';
-import { RootState, AppDispatch } from '@/store';
-import { fetchAuditLogs } from '@/store/slices/auditSlice';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { deleteCognitoUser, createCognitoUser, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword } from '@/services/cognitoAdminService';
+import { Trash2, UserPlus, Mail, Shield, Users, Clock, CheckCircle, AlertCircle, Filter, Search, Loader2 } from 'lucide-react';
+import { deleteCognitoUser, createCognitoUser, listCognitoUsers, listCognitoGroups, updateUserRoles, resendInvitation, resetUserPassword } from '@/services/cognitoAdminService';
 import { useToast } from '@/hooks/useToast';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
 
 interface User {
   Username: string;
-  Attributes: Array<{ Name: string; Value?: string }>;
+  Attributes: Array<{ Name: string; Value: string }>;
   Enabled: boolean;
   UserStatus: string;
-  groups?: string[];
+  groups: string[];
 }
 
 interface Role {
@@ -33,44 +27,23 @@ interface Role {
 }
 
 interface UserManagementProps {
-  users: User[];
   onRefresh: () => void;
-  section: 'users' | 'activity';
-  setSection: React.Dispatch<React.SetStateAction<'users' | 'activity'>>;
 }
 
-const ACTIVITY_COLUMNS = [
-  { key: 'timestamp', label: 'Timestamp' },
-  { key: 'user', label: 'User' },
-  { key: 'action', label: 'Action' },
-  { key: 'severity', label: 'Severity' },
-  { key: 'category', label: 'Category' },
-  { key: 'details', label: 'Details' },
-  { key: 'resource', label: 'Resource' },
-];
-
-const getUserEmail = (user: User) => {
-  return user.Attributes.find(attr => attr.Name === 'email')?.Value || 'No email';
-};
-const getUserStatus = (user: User) => {
-  return user.Enabled ? 'Active' : 'Disabled';
-};
-const getUserRoles = (user: User) => {
-  return user.groups || [];
-};
-
-const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, section, setSection }) => {
+const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
+  const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
-  const { showSuccess, showError, showWarning, showInfo } = useToast();
-  
-  // Modal states
-  const [showRoleModal, setShowRoleModal] = useState(false);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showInviteSentModal, setShowInviteSentModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-  
+  const [success, setSuccess] = useState<string | null>(null);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const { showSuccess, showError, showWarning, showInfo } = useToast();
+
   // Form states
   const [newUser, setNewUser] = useState({
     username: '',
@@ -80,59 +53,69 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     groups: [] as string[],
   });
 
-  // Pagination state
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
-  const [userSearch, setUserSearch] = useState('');
-  const [userStatusFilter, setUserStatusFilter] = useState('');
-  const [userRoleFilter, setUserRoleFilter] = useState('');
-  const filteredUsers = useMemo(() => {
-    return users.filter(user => {
-      const username = user.Username.toLowerCase();
-      const email = getUserEmail(user).toLowerCase();
-      const status = getUserStatus(user).toLowerCase();
-      const roles = (user.groups || []).map(r => r.toLowerCase()).join(',');
-      return (
-        (!userSearch || username.includes(userSearch.toLowerCase()) || email.includes(userSearch.toLowerCase())) &&
-        (!userStatusFilter || status === userStatusFilter.toLowerCase()) &&
-        (!userRoleFilter || roles.includes(userRoleFilter.toLowerCase()))
-      );
-    });
-  }, [users, userSearch, userStatusFilter, userRoleFilter]);
-  const pagedUsers = useMemo(() => filteredUsers.slice((page - 1) * pageSize, page * pageSize), [filteredUsers, page]);
-
-  // Redux for audit logs
-  const dispatch = useDispatch<AppDispatch>();
-  const { logs: auditLogs, isLoading: logsLoading, error: logsError } = useSelector((state: RootState) => state.audit);
-
-  // Fetch roles on component mount
-  useEffect(() => {
-    fetchRoles();
-  }, []);
-
-  // Fetch audit logs when switching to activity section
-  useEffect(() => {
-    if (section === 'activity' && auditLogs.length === 0 && !logsLoading) {
-      // TODO: Fix audit logs fetching
-      // dispatch(fetchAuditLogs({}));
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const fetchedUsers = await listCognitoUsers();
+      setUsers(fetchedUsers);
+    } catch (err) {
+      console.error('❌ Error fetching users:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch users';
+      showError('Failed to Load Users', errorMessage);
+    } finally {
+      setLoading(false);
     }
-  }, [section, dispatch, auditLogs.length, logsLoading]);
+  };
 
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      console.log('🔍 Fetching Cognito groups for role assignment...');
-      
-      // Use the real Cognito groups function
-      const cognitoGroups = await listCognitoGroups();
-      
-      console.log('📝 Cognito groups fetched:', cognitoGroups);
-      setRoles(cognitoGroups);
+      const fetchedRoles = await listCognitoGroups();
+      setRoles(fetchedRoles);
     } catch (err) {
       console.error('❌ Error fetching roles:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch roles';
       showError('Failed to Load Roles', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+    fetchRoles();
+  }, []);
+
+  // Filter users based on current view and search
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = searchTerm === '' || 
+      user.Username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getUserEmail(user).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getUserName(user).toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (showPendingOnly) {
+      return matchesSearch && user.UserStatus === 'CONFIRMED' && (!user.groups || user.groups.length === 0);
+    }
+    
+    return matchesSearch && user.UserStatus === 'CONFIRMED';
+  });
+
+  const pendingUsersCount = users.filter(user => 
+    user.UserStatus === 'CONFIRMED' && (!user.groups || user.groups.length === 0)
+  ).length;
+
+  const handleDeleteUser = async (username: string) => {
+    if (!window.confirm(`Are you sure you want to delete user ${username}?`)) return;
+    
+    try {
+      setLoading(true);
+      await deleteCognitoUser(username);
+      showSuccess('User Deleted', `User ${username} deleted successfully`);
+      fetchUsers(); // Refresh the list
+    } catch (err) {
+      console.error('❌ Error deleting user:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
+      showError('Failed to Delete User', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -158,7 +141,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       setSuccess(`User roles updated successfully for ${selectedUser.Username}`);
       showSuccess('Roles Updated', `User roles updated successfully for ${selectedUser.Username}`);
       setShowRoleModal(false);
-      onRefresh(); // Refresh user list to get updated roles
+      fetchUsers(); // Refresh user list to get updated roles
     } catch (err) {
       console.error('❌ Error updating user roles:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to update user roles';
@@ -185,7 +168,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
       showSuccess('User Created', `User ${newUser.username} created successfully`);
       setShowCreateUserModal(false);
       setNewUser({ username: '', email: '', firstName: '', lastName: '', groups: [] }); // Reset form
-      onRefresh(); // Refresh user list
+      fetchUsers(); // Refresh user list
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
       showError('Failed to Create User', errorMessage);
@@ -194,46 +177,17 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     }
   };
 
-  const handleDeleteUser = async (username: string) => {
-    if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) return;
+  const handleResendInvite = async (username: string) => {
+    if (!window.confirm(`Resend invitation to ${username}?`)) return;
     
     try {
       setLoading(true);
-      
-      // Use the real delete function
-      await deleteCognitoUser(username);
-      
-      setSuccess(`User ${username} deleted successfully`);
-      showSuccess('User Deleted', `User ${username} deleted successfully`);
-      onRefresh(); // Refresh user list
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
-      showError('Failed to Delete User', errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const [showInviteSentModal, setShowInviteSentModal] = useState(false);
-
-  const handleResendInvite = async (username: string) => {
-    if (!window.confirm(`Resend invitation email to ${username}?`)) return;
-    try {
-      setLoading(true);
-      
-      console.log(`📧 Resending invitation to ${username}...`);
-      
-      // Use the real resend invitation function
       const result = await resendInvitation(username);
-      
-      console.log(`✅ Invitation resend result:`, result);
-      
-      setSuccess(result.message);
       showSuccess('Invitation Sent', result.message);
       setShowInviteSentModal(true);
     } catch (err) {
       console.error('❌ Error resending invitation:', err);
-      const errorMessage = 'Failed to resend invitation: ' + (err instanceof Error ? err.message : 'Unknown error');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to resend invitation';
       showError('Failed to Resend Invitation', errorMessage);
     } finally {
       setLoading(false);
@@ -244,15 +198,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     if (!window.confirm(`Reset password for ${username}? This will send them a temporary password.`)) return;
     try {
       setLoading(true);
-      
       console.log(`🔐 Resetting password for ${username}...`);
-      
-      // Use the real password reset function
       const result = await resetUserPassword(username);
-      
       console.log(`✅ Password reset result:`, result);
-      
-      setSuccess(result.message);
       showSuccess('Password Reset', result.message);
       setShowInviteSentModal(true);
     } catch (err) {
@@ -264,77 +212,129 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
     }
   };
 
-  const USER_COLUMNS = [
-    { key: 'Username', label: 'Username' },
-    { key: 'Email', label: 'Email' },
-    { key: 'Status', label: 'Status' },
-    { key: 'Roles', label: 'Roles' },
-  ];
+  const getUserEmail = (user: User) => {
+    return user.Attributes.find(attr => attr.Name === 'email')?.Value || 'No email';
+  };
 
-  const [logSearch, setLogSearch] = useState('');
-  const [logSeverityFilter, setLogSeverityFilter] = useState('');
-  const [logCategoryFilter, setLogCategoryFilter] = useState('');
-  const filteredLogs = useMemo(() => {
-    return auditLogs.filter(log => {
-      const user = (log.user || '').toLowerCase();
-      const action = (log.action || '').toLowerCase();
-      const severity = (log.severity || '').toLowerCase();
-      const category = (log.category || '').toLowerCase();
-      const details = (log.details || '').toLowerCase();
-      return (
-        (!logSearch || user.includes(logSearch.toLowerCase()) || action.includes(logSearch.toLowerCase()) || details.includes(logSearch.toLowerCase())) &&
-        (!logSeverityFilter || severity === logSeverityFilter.toLowerCase()) &&
-        (!logCategoryFilter || category === logCategoryFilter.toLowerCase())
-      );
-    });
-  }, [auditLogs, logSearch, logSeverityFilter, logCategoryFilter]);
+  const getUserName = (user: User) => {
+    const firstName = user.Attributes.find(attr => attr.Name === 'given_name')?.Value || '';
+    const lastName = user.Attributes.find(attr => attr.Name === 'family_name')?.Value || '';
+    return firstName && lastName ? `${firstName} ${lastName}` : user.Username;
+  };
 
-  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
-  const [resourceModalOpen, setResourceModalOpen] = useState(false);
-  const [resourceModalData, setResourceModalData] = useState<any>(null);
-
-  const confirmedUsers = users.filter(user => user.UserStatus === 'CONFIRMED');
-  const pendingUsers = users.filter(user => user.UserStatus === 'CONFIRMED' && (!user.groups || user.groups.length === 0));
-
-  const renderUserTable = (userList: User[], title: string, emptyMessage: string) => (
-    <div className="space-y-4">
+  return (
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">{title}</h3>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
+          <p className="text-gray-600">Manage user accounts, roles, and permissions</p>
+        </div>
+        <Button onClick={() => setShowCreateUserModal(true)} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+          <UserPlus className="w-4 h-4 mr-2" />
+          Create User
+        </Button>
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center justify-between bg-white p-4 rounded-lg border">
+        <div className="flex items-center gap-4">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search users..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 w-64"
+            />
+          </div>
+          
+          {/* Pending Users Toggle */}
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={showPendingOnly}
+              onCheckedChange={setShowPendingOnly}
+              id="pending-toggle"
+            />
+            <Label htmlFor="pending-toggle" className="text-sm font-medium">
+              Show Pending Users Only
+            </Label>
+            {pendingUsersCount > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {pendingUsersCount} pending
+              </Badge>
+            )}
+          </div>
+        </div>
+
         <div className="text-sm text-gray-500">
-          {userList.length} user{userList.length !== 1 ? 's' : ''}
+          {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''} found
         </div>
       </div>
-      
-      {userList.length === 0 ? (
-        <Card>
-          <CardContent className="flex items-center justify-center py-8">
-            <div className="text-center">
-              <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">{emptyMessage}</p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {userList.map((user) => (
+
+      {/* Pending Users Alert */}
+      {showPendingOnly && pendingUsersCount > 0 && (
+        <Alert className="border-orange-200 bg-orange-50">
+          <AlertCircle className="h-4 w-4 text-orange-600" />
+          <AlertDescription className="text-orange-800">
+            These users have confirmed their accounts but haven't been assigned roles yet. 
+            Assign appropriate roles to grant them access to the system.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Users List */}
+      <div className="space-y-3">
+        {filteredUsers.length === 0 ? (
+          <Card>
+            <CardContent className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {showPendingOnly ? 'No Pending Users' : 'No Users Found'}
+                </h3>
+                <p className="text-gray-500">
+                  {showPendingOnly 
+                    ? 'All users have been assigned appropriate roles.'
+                    : searchTerm 
+                      ? 'Try adjusting your search terms.'
+                      : 'Create your first user to get started.'
+                  }
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          filteredUsers.map((user) => (
             <Card key={user.Username} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
+              <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <h4 className="font-medium text-gray-900">{getUserEmail(user)}</h4>
-                        <p className="text-sm text-gray-500">{user.Username}</p>
-                        <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <Users className="w-5 h-5 text-blue-600" />
+                        </div>
+                      </div>
+                      
+                      <div className="flex-1">
+                        <h4 className="font-medium text-gray-900">{getUserName(user)}</h4>
+                        <p className="text-sm text-gray-500">{getUserEmail(user)}</p>
+                        <div className="flex items-center gap-2 mt-2">
                           <Badge variant={user.Enabled ? "default" : "secondary"}>
                             {user.Enabled ? 'Active' : 'Disabled'}
                           </Badge>
                           <Badge variant={user.UserStatus === 'CONFIRMED' ? "default" : "outline"}>
                             {user.UserStatus}
                           </Badge>
-                          {user.groups && user.groups.length > 0 && (
+                          {user.groups && user.groups.length > 0 ? (
                             <Badge variant="outline" className="text-xs">
                               {user.groups.length} role{user.groups.length !== 1 ? 's' : ''}
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-xs">
+                              No roles assigned
                             </Badge>
                           )}
                         </div>
@@ -344,310 +344,251 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
                   
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => handleManageRoles(user)} disabled={loading}>
+                      <Shield className="w-4 h-4 mr-1" />
                       Manage Roles
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>Resend Invite</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleResetPassword(user.Username)} disabled={loading}>Reset Password</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.Username)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
+                    <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>
+                      <Mail className="w-4 h-4 mr-1" />
+                      Resend Invite
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleResetPassword(user.Username)} disabled={loading}>
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      Reset Password
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleDeleteUser(user.Username)} 
+                      disabled={loading} 
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+          ))
+        )}
+      </div>
 
-  return (
-    <div className="w-full">
-      {section === 'users' && (
-        <div className="bg-white rounded-lg shadow p-6 w-full">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-            <div className="flex gap-2 items-center">
-              <Input
-                placeholder="Search username or email..."
-                value={userSearch}
-                onChange={e => { setUserSearch(e.target.value); setPage(1); }}
-                className="w-56"
-              />
-              <select
-                value={userStatusFilter}
-                onChange={e => { setUserStatusFilter(e.target.value); setPage(1); }}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="">All Statuses</option>
-                <option value="Active">Active</option>
-                <option value="Disabled">Disabled</option>
-              </select>
-              <select
-                value={userRoleFilter}
-                onChange={e => { setUserRoleFilter(e.target.value); setPage(1); }}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="">All Roles</option>
-                {roles.map(role => (
-                  <option key={role.GroupName} value={role.GroupName}>{role.GroupName}</option>
-                ))}
-              </select>
+      {/* Create User Modal */}
+      <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5" />
+              Create New User
+            </DialogTitle>
+            <DialogDescription>
+              Create a new user account. The user will receive a verification email and must confirm their account before signing in.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="firstName" className="text-sm font-medium">
+                    First Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="firstName"
+                    value={newUser.firstName}
+                    onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                    placeholder="Enter first name"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lastName" className="text-sm font-medium">
+                    Last Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="lastName"
+                    value={newUser.lastName}
+                    onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                    placeholder="Enter last name"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="username" className="text-sm font-medium">
+                  Username <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="username"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  placeholder="Enter username (e.g., john.doe)"
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Username must be unique and will be used for login
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="email" className="text-sm font-medium">
+                  Email Address <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  placeholder="Enter email address"
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  User will receive verification email at this address
+                </p>
+              </div>
             </div>
-            <Button onClick={() => setShowCreateUserModal(true)} className="bg-blue-600 hover:bg-blue-700">
-              <UserPlus className="w-4 h-4 mr-2" />
-              Create User
+            
+            <div className="border-t pt-4">
+              <Label className="text-sm font-medium mb-3 block">Assign Roles</Label>
+              <div className="space-y-3">
+                {roles.map((role) => (
+                  <div key={role.GroupName} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      id={`create-role-${role.GroupName}`}
+                      checked={newUser.groups.includes(role.GroupName)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUser({
+                            ...newUser,
+                            groups: [...newUser.groups, role.GroupName]
+                          });
+                        } else {
+                          setNewUser({
+                            ...newUser,
+                            groups: newUser.groups.filter(g => g !== role.GroupName)
+                          });
+                        }
+                      }}
+                      className="rounded border-gray-300 h-4 w-4"
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor={`create-role-${role.GroupName}`} className="text-sm font-medium cursor-pointer">
+                        {role.GroupName}
+                      </Label>
+                      {role.Description && (
+                        <p className="text-xs text-gray-500 mt-1">{role.Description}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {roles.length === 0 && (
+                  <p className="text-sm text-gray-500 italic">No roles available</p>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowCreateUserModal(false);
+                setNewUser({ username: '', email: '', firstName: '', lastName: '', groups: [] });
+              }}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateUser} 
+              disabled={loading || !newUser.username || !newUser.email || !newUser.firstName || !newUser.lastName}
+              className="bg-blue-600 hover:bg-blue-700 min-w-[120px]"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Create User
+                </>
+              )}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
 
-          {success && (
-            <Alert className="border-green-200 bg-green-50 mb-4">
-              <AlertDescription className="text-green-800">{success}</AlertDescription>
-            </Alert>
-          )}
-          <div className="overflow-x-auto border rounded-lg">
-            <Table className="min-w-full">
-              <TableHeader>
-                <TableRow>
-                  {USER_COLUMNS.map(col => (
-                    <TableHead key={col.key} className="font-semibold text-sm text-gray-900 bg-gray-50">{col.label}</TableHead>
-                  ))}
-                  <TableHead className="font-semibold text-sm text-gray-900 bg-gray-50">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pagedUsers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={USER_COLUMNS.length + 1} className="text-center text-gray-400 py-8">No users found. Please add a user to get started.</TableCell>
-                  </TableRow>
-                ) : (
-                  pagedUsers.map((user, idx) => (
-                    <TableRow key={user.Username} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <TableCell>{user.Username}</TableCell>
-                      <TableCell>{user.Attributes.find((a: any) => a.Name === 'email')?.Value || ''}</TableCell>
-                      <TableCell>{user.Enabled ? 'Active' : 'Disabled'}</TableCell>
-                      <TableCell>{(user.groups && user.groups.length > 0) ? user.groups.join(', ') : <span className="text-gray-400">No roles</span>}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handleManageRoles(user)} disabled={loading}>Manage Roles</Button>
-                          <Button variant="outline" size="sm" onClick={() => handleResendInvite(user.Username)} disabled={loading}>Resend Invite</Button>
-                          <Button variant="outline" size="sm" onClick={() => handleResetPassword(user.Username)} disabled={loading}>Reset Password</Button>
-                          <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.Username)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+      {/* Role Management Modal */}
+      <Dialog open={showRoleModal} onOpenChange={setShowRoleModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Manage User Roles
+            </DialogTitle>
+            <DialogDescription>
+              Assign roles to {selectedUser?.Username}. Roles determine user permissions and access levels.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium mb-3 block">Select Roles</Label>
+              <div className="space-y-3">
+                {roles.map((role) => (
+                  <div key={role.GroupName} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      id={`role-${role.GroupName}`}
+                      checked={selectedRoles.includes(role.GroupName)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedRoles([...selectedRoles, role.GroupName]);
+                        } else {
+                          setSelectedRoles(selectedRoles.filter(r => r !== role.GroupName));
+                        }
+                      }}
+                      className="rounded border-gray-300 h-4 w-4"
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor={`role-${role.GroupName}`} className="text-sm font-medium cursor-pointer">
+                        {role.GroupName}
+                      </Label>
+                      {role.Description && (
+                        <p className="text-xs text-gray-500 mt-1">{role.Description}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {roles.length === 0 && (
+                  <p className="text-sm text-gray-500 italic">No roles available</p>
                 )}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex gap-2 items-center mt-2">
-            <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1}>{'«'}</Button>
-            <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page === 1}>{'‹'}</Button>
-            <span className="text-sm">Page {page} of {totalPages}</span>
-            <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page === totalPages}>{'›'}</Button>
-            <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>{'»'}</Button>
-            <select
-              className="ml-2 border rounded px-2 py-1 text-sm focus:outline-none"
-              value={pageSize}
-              onChange={e => {
-                setPage(1);
-                // If you want to make page size dynamic, update pageSize state here
-              }}
-              style={{ minWidth: 80 }}
-              disabled
-            >
-              <option value={10}>10 / page</option>
-            </select>
-          </div>
-          {/* Manage Roles Modal */}
-          <Dialog open={showRoleModal} onOpenChange={setShowRoleModal}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Manage User Roles</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-sm font-medium">User: {selectedUser?.Username}</Label>
-                </div>
-                <div className="mt-4">
-                  <Label className="text-sm font-medium">Assign Roles</Label>
-                  <div className="flex flex-wrap gap-4 mt-2">
-                    {roles.map((role) => (
-                      <div key={role.GroupName} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id={`manage-role-${role.GroupName}`}
-                          checked={selectedRoles.includes(role.GroupName)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedRoles([...selectedRoles, role.GroupName]);
-                            } else {
-                              setSelectedRoles(selectedRoles.filter((g) => g !== role.GroupName));
-                            }
-                          }}
-                          className="rounded border-gray-300"
-                        />
-                        <Label htmlFor={`manage-role-${role.GroupName}`} className="text-sm">
-                          {role.GroupName}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowRoleModal(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSaveRoles} disabled={loading}>
-                    {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Save Changes
-                  </Button>
-                </div>
               </div>
-            </DialogContent>
-          </Dialog>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRoleModal(false)} disabled={loading}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveRoles} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Shield className="w-4 h-4 mr-2" />
+                  Save Roles
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {/* Create User Modal */}
-          <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <UserPlus className="w-5 h-5" />
-                  Create New User
-                </DialogTitle>
-                <DialogDescription>
-                  Create a new user account. The user will receive a verification email and must confirm their account before signing in.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6">
-                                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="firstName" className="text-sm font-medium">
-                        First Name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="firstName"
-                        value={newUser.firstName}
-                        onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
-                        placeholder="Enter first name"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="lastName" className="text-sm font-medium">
-                        Last Name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="lastName"
-                        value={newUser.lastName}
-                        onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
-                        placeholder="Enter last name"
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="username" className="text-sm font-medium">
-                      Username <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="username"
-                      value={newUser.username}
-                      onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                      placeholder="Enter username (e.g., john.doe)"
-                      className="mt-1"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Username must be unique and will be used for login
-                    </p>
-                  </div>
-                  <div>
-                    <Label htmlFor="email" className="text-sm font-medium">
-                      Email Address <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={newUser.email}
-                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                      placeholder="Enter email address"
-                      className="mt-1"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      User will receive verification email at this address
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="border-t pt-4">
-                  <Label className="text-sm font-medium mb-3 block">Assign Roles</Label>
-                  <div className="space-y-3">
-                    {roles.map((role) => (
-                      <div key={role.GroupName} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
-                        <input
-                          type="checkbox"
-                          id={`create-role-${role.GroupName}`}
-                          checked={newUser.groups?.includes(role.GroupName)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setNewUser({ ...newUser, groups: [...(newUser.groups || []), role.GroupName] });
-                            } else {
-                              setNewUser({ ...newUser, groups: (newUser.groups || []).filter((g) => g !== role.GroupName) });
-                            }
-                          }}
-                          className="rounded border-gray-300 h-4 w-4"
-                        />
-                        <div className="flex-1">
-                          <Label htmlFor={`create-role-${role.GroupName}`} className="text-sm font-medium cursor-pointer">
-                            {role.GroupName}
-                          </Label>
-                          {role.Description && (
-                            <p className="text-xs text-gray-500 mt-1">{role.Description}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {roles.length === 0 && (
-                      <p className="text-sm text-gray-500 italic">No roles available</p>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="flex justify-end gap-3 pt-4 border-t">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setShowCreateUserModal(false);
-                      setNewUser({ username: '', email: '', firstName: '', lastName: '', groups: [] });
-                    }}
-                    disabled={loading}
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={handleCreateUser} 
-                    disabled={loading || !newUser.username || !newUser.email || !newUser.firstName || !newUser.lastName}
-                    className="bg-blue-600 hover:bg-blue-700 min-w-[120px]"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="w-4 h-4 mr-2" />
-                        Create User
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {/* Invitation Sent Modal */}
-          <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
-                    <DialogContent className="sm:max-w-md">
+      {/* Email Sent Successfully Modal */}
+      <Dialog open={showInviteSentModal} onOpenChange={setShowInviteSentModal}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Email Sent Successfully</DialogTitle>
           </DialogHeader>
@@ -661,185 +602,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, secti
             <Button onClick={() => setShowInviteSentModal(false)} autoFocus>OK</Button>
           </DialogFooter>
         </DialogContent>
-          </Dialog>
-        </div>
-      )}
-      {section === 'activity' && (
-        <div className="overflow-x-auto border rounded-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 p-2">
-            <div className="flex gap-2 items-center">
-              <Input
-                placeholder="Search user, action, or details..."
-                value={logSearch}
-                onChange={e => setLogSearch(e.target.value)}
-                className="w-56"
-              />
-              <select
-                value={logSeverityFilter}
-                onChange={e => setLogSeverityFilter(e.target.value)}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="">All Severities</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="error">Error</option>
-                <option value="critical">Critical</option>
-              </select>
-              <select
-                value={logCategoryFilter}
-                onChange={e => setLogCategoryFilter(e.target.value)}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="">All Categories</option>
-                <option value="auth">Auth</option>
-                <option value="user_management">User Management</option>
-                <option value="system">System</option>
-              </select>
-            </div>
-          </div>
-          {logsLoading ? (
-            <div className="flex justify-center items-center py-12">
-              <LoadingSpinner size="md" message="Loading activity logs..." color="primary" />
-            </div>
-          ) : filteredLogs.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">No activity logs found.</div>
-          ) : (
-            <Table className="min-w-full">
-              <TableHeader>
-                <TableRow>
-                  {ACTIVITY_COLUMNS.map(col => (
-                    <TableHead key={col.key} className="font-semibold text-sm text-gray-900 bg-gray-50">{col.label}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredLogs.map((log, idx) => {
-                  let parsedDetails: any = {};
-                  try {
-                    parsedDetails = log.details ? JSON.parse(log.details) : {};
-                  } catch {}
-                  // Subtle color for severity
-                  let severityClass = '';
-                  if (["error", "critical"].includes((log.severity || '').toLowerCase())) severityClass = 'text-red-600 font-semibold';
-                  else if (["high", "warning"].includes((log.severity || '').toLowerCase())) severityClass = 'text-yellow-700 font-semibold';
-                  else severityClass = 'text-gray-700';
-                  // Expandable details for error/critical
-                  const isExpandable = ["error", "critical"].includes((log.severity || '').toLowerCase());
-                  const isExpanded = expandedLogId === log.id;
-                  return (
-                    <>
-                      <TableRow key={log.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <TableCell>{log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}</TableCell>
-                        <TableCell>{log.user || ''}</TableCell>
-                        <TableCell>{log.action || ''}</TableCell>
-                        <TableCell className={severityClass}>{log.severity || ''}</TableCell>
-                        <TableCell>{log.category || ''}</TableCell>
-                        <TableCell>
-                          {isExpandable ? (
-                            <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExpandedLogId(isExpanded ? null : log.id)}>
-                              {isExpanded ? (parsedDetails.originalDetails || log.details || '') : 'Show details'}
-                            </span>
-                          ) : (
-                            parsedDetails.originalDetails || log.details || ''
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span>{log.resourceId || ''}</span>
-                          {(log.resourceType || log.metadata) && (
-                            <button
-                              type="button"
-                              className="ml-1 text-blue-600 hover:text-blue-800 focus:outline-none"
-                              title="Show resource details"
-                              onClick={() => { setResourceModalData(log); setResourceModalOpen(true); }}
-                            >
-                              <Info className="inline w-4 h-4 align-middle" />
-                            </button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                      {/* Optionally, add a second row for expanded error details if you want more space */}
-                    </>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-      )}
-      {/* Resource Details Modal */}
-      <Dialog open={resourceModalOpen} onOpenChange={setResourceModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Resource Details</DialogTitle>
-          </DialogHeader>
-          {resourceModalData && (
-            <div className="space-y-2">
-              {resourceModalData.resourceType && (
-                <div><strong>Resource Type:</strong> {resourceModalData.resourceType}</div>
-              )}
-              {resourceModalData.resourceId && (
-                <div><strong>Resource ID:</strong> {resourceModalData.resourceId}</div>
-              )}
-              {resourceModalData.metadata && (
-                <div>
-                  <strong>Metadata:</strong>
-                  <pre className="bg-gray-100 rounded p-2 text-xs overflow-x-auto mt-1">
-                    {JSON.stringify(resourceModalData.metadata, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button onClick={() => setResourceModalOpen(false)} autoFocus>Close</Button>
-          </DialogFooter>
-        </DialogContent>
       </Dialog>
-
-      <Tabs defaultValue="all-users" className="w-full mt-6">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="all-users" className="flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            All Users
-            <Badge variant="secondary" className="ml-1">{confirmedUsers.length}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="pending-users" className="flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            Pending Users
-            <Badge variant="destructive" className="ml-1">{pendingUsers.length}</Badge>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="all-users" className="space-y-4">
-          {renderUserTable(
-            confirmedUsers, 
-            "All Users", 
-            "No users found. Create your first user to get started."
-          )}
-        </TabsContent>
-
-        <TabsContent value="pending-users" className="space-y-4">
-          <Card className="border-orange-200 bg-orange-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-orange-800">
-                <AlertCircle className="w-5 h-5" />
-                Pending User Approvals
-              </CardTitle>
-              <CardDescription className="text-orange-700">
-                These users have confirmed their accounts but haven't been assigned roles yet. 
-                Assign appropriate roles to grant them access to the system.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          
-          {renderUserTable(
-            pendingUsers, 
-            "Users Awaiting Role Assignment", 
-            "No pending users found. All users have been assigned appropriate roles."
-          )}
-        </TabsContent>
-      </Tabs>
     </div>
   );
 };
