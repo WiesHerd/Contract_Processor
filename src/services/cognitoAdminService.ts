@@ -130,7 +130,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
     console.log(`👤 Creating new Cognito user: ${username} (${email})`);
     
     // Use AWS SDK directly with authenticated user credentials
-    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminGetUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
     const { fetchAuthSession } = await import('aws-amplify/auth');
     
@@ -156,6 +156,28 @@ export async function createCognitoUser(username: string, email: string, firstNa
         sessionToken: session.credentials.sessionToken,
       },
     });
+
+    // Check if user already exists
+    try {
+      const getUserCommand = new AdminGetUserCommand({
+        Username: username,
+        UserPoolId: USER_POOL_ID
+      });
+      await client.send(getUserCommand);
+      throw new Error(`User '${username}' already exists. Please choose a different username.`);
+    } catch (error: any) {
+      if (error.name === 'UserNotFoundException') {
+        // User doesn't exist, we can proceed with creation
+        console.log(`✅ Username '${username}' is available`);
+      } else if (error.message?.includes('already exists')) {
+        // Our custom error for existing user
+        throw error;
+      } else {
+        // Some other error occurred during the check
+        console.warn(`⚠️ Error checking if user exists:`, error);
+        // Continue with creation anyway
+      }
+    }
     
     // Create the user in Cognito with email verification (like frontend signup)
     const createUserCommand = new AdminCreateUserCommand({
@@ -213,7 +235,25 @@ export async function createCognitoUser(username: string, email: string, firstNa
     
   } catch (error) {
     console.error(`❌ Error creating Cognito user ${username}:`, error);
-    throw new Error(`Failed to create user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('already exists')) {
+        throw error; // Re-throw our custom error
+      } else if (error.message.includes('UserNotFoundException')) {
+        throw new Error(`Failed to create user: User '${username}' does not exist. This error should not occur during user creation.`);
+      } else if (error.message.includes('InvalidParameterException')) {
+        throw new Error(`Failed to create user: Invalid parameters. Please check username format and email address.`);
+      } else if (error.message.includes('UsernameExistsException')) {
+        throw new Error(`Failed to create user: Username '${username}' already exists. Please choose a different username.`);
+      } else if (error.message.includes('InvalidPasswordException')) {
+        throw new Error(`Failed to create user: Password does not meet requirements.`);
+      } else {
+        throw new Error(`Failed to create user: ${error.message}`);
+      }
+    } else {
+      throw new Error(`Failed to create user: ${String(error)}`);
+    }
   }
 }
 
