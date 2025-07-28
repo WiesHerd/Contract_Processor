@@ -135,6 +135,11 @@ export async function listCognitoUsers() {
 export async function createCognitoUser(username: string, email: string, firstName: string, lastName: string, groups: string[] = []) {
   try {
     console.log(`👤 Creating new Cognito user: ${username} (${email})`);
+    console.log('🔍 Debug Info:');
+    console.log('  - USER_POOL_ID:', USER_POOL_ID);
+    console.log('  - REGION:', REGION);
+    console.log('  - Config aws_user_pools_id:', config.aws_user_pools_id);
+    console.log('  - Config aws_project_region:', config.aws_project_region);
     
     // Validate input parameters
     if (!username || username.trim() === '') {
@@ -160,13 +165,6 @@ export async function createCognitoUser(username: string, email: string, firstNa
     }
     
     console.log('🔐 Using authenticated credentials for Cognito create operation');
-    console.log('📋 User Pool ID:', USER_POOL_ID);
-    console.log('📋 Region:', REGION);
-    console.log('📋 Config values:', {
-      aws_user_pools_id: config.aws_user_pools_id,
-      aws_project_region: config.aws_project_region,
-      aws_cognito_region: config.aws_cognito_region
-    });
     
     // Use AWS SDK directly for admin user creation (better control)
     const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
@@ -697,4 +695,36 @@ function generateTemporaryPassword(): string {
   
   // Shuffle the password
   return password.split('').sort(() => Math.random() - 0.5).join('');
+}
+
+// Test function to verify User Pool configuration
+export async function testUserPoolConfiguration() {
+  try {
+    console.log('🧪 Testing User Pool Configuration...');
+    console.log('📋 Configuration:');
+    console.log('  - USER_POOL_ID:', USER_POOL_ID);
+    console.log('  - REGION:', REGION);
+    console.log('  - Config aws_user_pools_id:', config.aws_user_pools_id);
+    console.log('  - Config aws_project_region:', config.aws_project_region);
+    
+    // Test if we can list users (this will verify permissions)
+    const users = await listCognitoUsers();
+    console.log('✅ User Pool configuration is working!');
+    console.log(`📝 Found ${users.length} users in the pool`);
+    
+    return {
+      success: true,
+      userPoolId: USER_POOL_ID,
+      region: REGION,
+      userCount: users.length
+    };
+  } catch (error) {
+    console.error('❌ User Pool configuration test failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      userPoolId: USER_POOL_ID,
+      region: REGION
+    };
+  }
 } 
