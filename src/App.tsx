@@ -1,4 +1,4 @@
-// AMPLIFY REDEPLOY TRIGGER: 2025-07-27T17:25:00.218Z
+// AMPLIFY REDEPLOY TRIGGER: 2025-07-27T18:30:00.000Z
 // Template loading fix deployment - 2025-07-27T16:02:48.482Z
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
