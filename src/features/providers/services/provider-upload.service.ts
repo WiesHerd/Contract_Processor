@@ -241,10 +241,10 @@ export class ProviderUploadService {
         signingBonus: provider.signingBonus,
         educationBonus: provider.educationBonus,
         qualityBonus: provider.qualityBonus,
-        compensationType: provider.compensationModel, // Map compensationModel to compensationType
-        conversionFactor: provider.conversionFactor,
-        wRVUTarget: provider.wRVUTarget,
-        compensationYear: provider.compensationYear,
+        compensationType: provider.compensationModel || null, // Handle empty compensation type
+        conversionFactor: provider.conversionFactor || null, // Handle empty conversion factor
+        wRVUTarget: provider.wRVUTarget || null, // Handle empty wRVU Target values
+        compensationYear: provider.compensationYear || null, // Handle empty compensation year
         credentials: provider.credentials,
         // Only include dynamicFields if it exists and has content
         dynamicFields: typeof provider.dynamicFields === 'string' ? provider.dynamicFields : null,
@@ -255,6 +255,9 @@ export class ProviderUploadService {
       console.log('Provider name:', provider.name, 'Type:', typeof provider.name);
       console.log('Organization name:', provider.organizationName, 'Type:', typeof provider.organizationName);
       console.log('Organization ID:', provider.organizationId, 'Type:', typeof provider.organizationId);
+      console.log('wRVU Target:', provider.wRVUTarget, 'Type:', typeof provider.wRVUTarget);
+      console.log('Compensation Type:', provider.compensationModel, 'Type:', typeof provider.compensationModel);
+      console.log('Conversion Factor:', provider.conversionFactor, 'Type:', typeof provider.conversionFactor);
 
       // Ensure all required fields are present and not null
       const sanitizedInput: CreateProviderInput = {
