@@ -1,17 +1,3 @@
-[1mdiff --git a/src/App.tsx b/src/App.tsx[m
-[1mindex 9c824c2f..496c0f3f 100644[m
-[1m--- a/src/App.tsx[m
-[1m+++ b/src/App.tsx[m
-[36m@@ -1,4 +1,4 @@[m
-[31m-// AMPLIFY REDEPLOY TRIGGER: 2025-07-27T17:25:00.218Z[m
-[32m+[m[32m// AMPLIFY REDEPLOY TRIGGER: 2025-07-27T18:30:00.000Z[m
- // Template loading fix deployment - 2025-07-27T16:02:48.482Z[m
- import React, { useEffect, useState } from 'react';[m
- import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';[m
-[36m@@ -374,4 +374,4 @@[m [mfunction App() {[m
- // Triggering redeploy for S3 permissions fix[m
- [m
- // Export with error boundary wrapper[m
-[31m-export default withErrorBoundary(App);[m
-\ No newline at end of file[m
-[32m+[m[32mexport default withErrorBoundary(App);[m
+  backup-auth-working[m
+  main[m
+* [32mproduction[m

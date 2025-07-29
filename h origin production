@@ -1,0 +1,3 @@
+[33m94170ce0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mproduction[m[33m, [m[1;31morigin/production[m[33m)[m fix: force redeployment with User Pool ID fix - updated App.tsx deployment trigger and cognitoAdminService
+[33me879834e[m Add User Pool ID testing tool to debug configuration issues
+[33me1b980a9[m fix: correct User Pool ID typo in amplifyconfiguration.json - change from us-east-2_ldPO5ZKCR to us-east-2_IdPO5ZKCR
