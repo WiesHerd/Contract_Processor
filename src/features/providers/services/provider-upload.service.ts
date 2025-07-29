@@ -218,7 +218,7 @@ export class ProviderUploadService {
       // Transform the provider data to match the DynamoDB schema
       const input: CreateProviderInput = {
         id: provider.id,
-        name: provider.name,
+        name: provider.name || 'Unknown Provider', // Ensure name is never null/undefined
         employeeId: provider.employeeId,
         providerType: provider.providerType,
         specialty: provider.specialty,
@@ -250,11 +250,30 @@ export class ProviderUploadService {
         dynamicFields: typeof provider.dynamicFields === 'string' ? provider.dynamicFields : null,
       };
 
-      console.log('Uploading provider to DynamoDB:', JSON.stringify(input, null, 2));
+      console.log('Original provider data:', JSON.stringify(provider, null, 2));
+      console.log('Transformed input data:', JSON.stringify(input, null, 2));
+      console.log('Provider name:', provider.name, 'Type:', typeof provider.name);
+      console.log('Organization name:', provider.organizationName, 'Type:', typeof provider.organizationName);
+      console.log('Organization ID:', provider.organizationId, 'Type:', typeof provider.organizationId);
 
+      // Ensure all required fields are present and not null
+      const sanitizedInput: CreateProviderInput = {
+        ...input,
+        name: input.name || 'Unknown Provider',
+        organizationName: input.organizationName || 'Default Organization',
+        organizationId: input.organizationId || 'default-org-id',
+      };
+      
+      // Remove null/undefined values
+      const finalInput = Object.fromEntries(
+        Object.entries(sanitizedInput).filter(([key, value]) => value !== null && value !== undefined)
+      ) as CreateProviderInput;
+      
+      console.log('Final input:', JSON.stringify(finalInput, null, 2));
+      
       await this.client.graphql({
         query: createProvider,
-        variables: { input },
+        variables: { input: finalInput },
         authMode: 'apiKey'
       });
 
