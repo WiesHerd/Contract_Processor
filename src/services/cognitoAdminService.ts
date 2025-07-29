@@ -805,13 +805,7 @@ export const getUserDetails = async (username: string): Promise<any> => {
     
     const response = await client.send(command);
     
-    // Get user groups
-    const groups = await getUserGroups(username);
-    
-    return {
-      ...response,
-      Groups: groups
-    };
+    return response;
   } catch (error) {
     console.error(`❌ Error fetching user details:`, error);
     throw new Error(`Failed to fetch user details: ${error}`);
