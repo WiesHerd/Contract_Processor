@@ -1,4 +1,10 @@
-type Template @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+# Enterprise-grade multi-organization schema with group-based authorization
+
+type Template @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   name: String!
   description: String
@@ -6,12 +12,18 @@ type Template @model @auth(rules: [{ allow: owner, ownerField: "owner", operatio
   s3Key: String!
   type: String
   contractYear: String
+  organizationId: String! @index(name: "byOrganization", queryField: "templatesByOrganization")
+  organizationGroups: [String] # Cognito groups that can access this template
   createdAt: AWSDateTime
   updatedAt: AWSDateTime
   owner: String
 }
 
-type Provider @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type Provider @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read, update] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   employeeId: String
   name: String!
@@ -25,7 +37,9 @@ type Provider @model @auth(rules: [{ allow: owner, ownerField: "owner", operatio
   hourlyWage: Float
   baseSalary: Float
   originalAgreementDate: AWSDate
-  organizationName: String
+  organizationName: String!
+  organizationId: String! @index(name: "byOrganization", queryField: "providersByOrganization")
+  organizationGroups: [String] # Cognito groups that can access this provider
   startDate: AWSDate
   contractTerm: String
   ptoDays: Int
@@ -54,10 +68,31 @@ type FTEBreakdownComponent {
   percentage: Float!
 }
 
+# Organization management for multi-tenant architecture
+type Organization @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "memberGroups", operations: [read] }
+]) {
+  id: ID!
+  name: String!
+  description: String
+  memberGroups: [String]! # Cognito groups that are members of this organization
+  adminGroups: [String]! # Cognito groups that are admins of this organization
+  settings: AWSJSON # Organization-specific settings
+  createdAt: AWSDateTime
+  updatedAt: AWSDateTime
+}
+
 # Template-level field mappings (independent of providers)
-type TemplateMapping @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type TemplateMapping @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   templateID: ID! @index(name: "byTemplate", queryField: "templateMappingsByTemplateID")
+  organizationId: String! @index(name: "byOrganization", queryField: "templateMappingsByOrganization")
+  organizationGroups: [String]
   field: String!
   value: String
   notes: String
@@ -67,9 +102,13 @@ type TemplateMapping @model @auth(rules: [{ allow: owner, ownerField: "owner", o
 }
 
 # User preferences for enterprise-grade personalization
-type UserPreferences @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type UserPreferences @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   userId: String! @index(name: "byUser", queryField: "userPreferencesByUserId")
+  organizationId: String! @index(name: "byOrganization", queryField: "userPreferencesByOrganization")
   screen: String! # 'providers', 'templates', 'generator', etc.
   preferences: AWSJSON! # JSON object containing all preferences
   createdAt: AWSDateTime
@@ -78,9 +117,13 @@ type UserPreferences @model @auth(rules: [{ allow: owner, ownerField: "owner", o
 }
 
 # Generator-specific preferences for column management and views
-type GeneratorPreferences @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type GeneratorPreferences @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   userId: String! @index(name: "byGeneratorUser", queryField: "generatorPreferencesByUserId")
+  organizationId: String! @index(name: "byOrganization", queryField: "generatorPreferencesByOrganization")
   columnPreferences: AWSJSON! # JSON object containing column visibility, order, pinning, saved views
   createdAt: AWSDateTime
   updatedAt: AWSDateTime
@@ -88,25 +131,41 @@ type GeneratorPreferences @model @auth(rules: [{ allow: owner, ownerField: "owne
 }
 
 # Provider-specific field mappings (for custom overrides)
-type Mapping @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type Mapping @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   templateID: ID! @index(name: "byTemplate", queryField: "mappingsByTemplateID") @index(name: "byTemplateAndProvider", queryField: "mappingsByTemplateAndProvider", sortKeyFields: ["providerID"])
   providerID: ID! @index(name: "byProvider", queryField: "mappingsByProviderID")
+  organizationId: String! @index(name: "byOrganization", queryField: "mappingsByOrganization")
+  organizationGroups: [String]
   field: String!
   value: String
   owner: String
 }
 
-type Clause @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type Clause @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   title: String
   text: String!
   tags: [String]
   condition: String
+  organizationId: String! @index(name: "byOrganization", queryField: "clausesByOrganization")
+  organizationGroups: [String]
   owner: String
 }
 
-type DynamicBlock @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type DynamicBlock @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   name: String!
   description: String
@@ -115,25 +174,39 @@ type DynamicBlock @model @auth(rules: [{ allow: owner, ownerField: "owner", oper
   format: String!
   conditions: AWSJSON
   alwaysInclude: AWSJSON
+  organizationId: String! @index(name: "byOrganization", queryField: "dynamicBlocksByOrganization")
+  organizationGroups: [String]
   createdAt: AWSDateTime
   updatedAt: AWSDateTime
   owner: String
 }
 
-type AuditLog @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type AuditLog @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   action: String!
   user: String
+  organizationId: String! @index(name: "byOrganization", queryField: "auditLogsByOrganization")
+  organizationGroups: [String]
   timestamp: AWSDateTime!
   details: String
   owner: String
 }
 
-type ContractGenerationLog @model @auth(rules: [{ allow: owner, ownerField: "owner", operations: [create, update, delete, read] }]) {
+type ContractGenerationLog @model @auth(rules: [
+  { allow: groups, groups: ["Admin"], operations: [create, update, delete, read] },
+  { allow: groups, groupsField: "organizationGroups", operations: [read] },
+  { allow: owner, ownerField: "owner", operations: [create, update, delete, read] }
+]) {
   id: ID!
   providerId: ID! @index(name: "byProvider", queryField: "generationLogsByProvider")
   contractYear: String! @index(name: "byContractYear", queryField: "generationLogsByContractYear")
   templateId: ID!
+  organizationId: String! @index(name: "byOrganization", queryField: "generationLogsByOrganization")
+  organizationGroups: [String]
   generatedAt: AWSDateTime!
   generatedBy: String
   outputType: String
@@ -158,6 +231,8 @@ input CreateContractGenerationLogInput {
   providerId: ID!
   contractYear: String!
   templateId: ID!
+  organizationId: String!
+  organizationGroups: [String]
   generatedAt: AWSDateTime!
   generatedBy: String
   outputType: String
@@ -172,6 +247,8 @@ input UpdateContractGenerationLogInput {
   providerId: ID
   contractYear: String
   templateId: ID
+  organizationId: String
+  organizationGroups: [String]
   generatedAt: AWSDateTime
   generatedBy: String
   outputType: String
@@ -204,5 +281,6 @@ input DeleteTemplateMappingInput {
 
 input CreateGeneratorPreferencesInput {
   userId: String!
+  organizationId: String!
   columnPreferences: AWSJSON!
 }

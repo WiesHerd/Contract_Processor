@@ -414,9 +414,8 @@ export default function ProviderDataManager() {
   // Handle clear table with DynamoDB sync
   const handleClearTable = useCallback(() => {
     setShowConfirm(false); // Close the confirmation modal immediately
-    dispatch(fetchProvidersByYear(selectedYear)).then(() => {
-      dispatch(clearAllProviders());
-    });
+    // Directly dispatch clearAllProviders - no need to fetch first
+    dispatch(clearAllProviders());
   }, [dispatch]);
 
   const downloadTemplate = () => {

@@ -384,13 +384,13 @@ export const awsProviders = {
       }
     }
     
-    // Fallback to listing all providers and filtering by year on client side
-    console.log('[awsProviders.list] Using fallback: listProviders query');
-    do {
-      try {
-        const result: any = await client.graphql({
-          query: listProviders,
-          variables: { limit: 1000, nextToken },
+                // Fallback to listing all providers and filtering by year on client side
+            console.log('[awsProviders.list] Using fallback: listProviders query');
+            do {
+              try {
+                const result: any = await client.graphql({
+                  query: listProviders,
+                  variables: { limit: 1000, nextToken },
         });
         console.log('[awsProviders.list] listProviders result:', result);
         const providerData = result.data?.listProviders;
@@ -1026,81 +1026,115 @@ export const awsTemplateMappings = {
 // Bulk Operations
 export const awsBulkOperations = {
   async countAllProviders(): Promise<number> {
-    const tableName = import.meta.env.VITE_DYNAMODB_PROVIDER_TABLE as string;
-    if (!tableName) {
-      throw new Error("Provider table name is not configured in environment variables.");
-    }
-    const command = new ScanCommand({
-      TableName: tableName,
-      Select: "COUNT",
-    });
-    const result = await docClient.send(command);
-    return result.Count || 0;
+    console.log('[awsBulkOperations.countAllProviders] Counting providers via GraphQL API...');
+    
+    let totalCount = 0;
+    let nextToken: string | undefined;
+    let pageCount = 0;
+    
+    do {
+      pageCount++;
+      console.log(`[awsBulkOperations.countAllProviders] Counting page ${pageCount}...`);
+      
+      try {
+        const result = await client.graphql({
+          query: listProviders,
+          variables: {
+            limit: 1000, // Maximum limit
+            nextToken
+          }
+        });
+        
+        const providers = result.data.listProviders.items || [];
+        totalCount += providers.length;
+        nextToken = result.data.listProviders.nextToken;
+        
+        console.log(`[awsBulkOperations.countAllProviders] Page ${pageCount}: Found ${providers.length} providers`);
+      } catch (error) {
+        console.error(`[awsBulkOperations.countAllProviders] Error counting page ${pageCount}:`, error);
+        throw error;
+      }
+    } while (nextToken);
+
+    console.log(`[awsBulkOperations.countAllProviders] Total providers found: ${totalCount}`);
+    return totalCount;
   },
 
   async deleteAllProviders(onProgress?: (progress: { deleted: number; total: number }) => void): Promise<void> {
-    const tableName = import.meta.env.VITE_DYNAMODB_PROVIDER_TABLE as string;
-    if (!tableName) {
-      throw new Error("Provider table name is not configured in environment variables.");
-    }
-
-    // 1. Scan the table to get all item keys with strong consistency
-    let lastEvaluatedKey: Record<string, any> | undefined;
-    const allItems: Record<string, any>[] = [];
-    let scanPageCount = 0;
+    console.log('[awsBulkOperations.deleteAllProviders] Starting deletion via GraphQL API...');
+    
+    // 1. Get all providers via GraphQL (respects authorization rules)
+    let allProviders: Provider[] = [];
+    let nextToken: string | undefined;
+    let pageCount = 0;
     
     do {
-      const scanParams: ScanCommandInput = {
-        TableName: tableName,
-        ProjectionExpression: "id", // Only fetch the primary key
-        ExclusiveStartKey: lastEvaluatedKey,
-        ConsistentRead: true, // Force strong consistency to see all items
-      };
-      const command = new ScanCommand(scanParams);
-      const scanResult: ScanCommandOutput = await docClient.send(command);
-      scanPageCount++;
-      console.log(`[awsBulkOperations.deleteAllProviders] Scan page ${scanPageCount}, items: ${scanResult.Items?.length || 0}, LastEvaluatedKey: ${JSON.stringify(scanResult.LastEvaluatedKey)}`);
-      if (scanResult.Items) {
-        allItems.push(...scanResult.Items);
+      pageCount++;
+      console.log(`[awsBulkOperations.deleteAllProviders] Fetching page ${pageCount}...`);
+      
+      try {
+        const result = await client.graphql({
+          query: listProviders,
+          variables: {
+            limit: 1000, // Maximum limit
+            nextToken
+          }
+        });
+        
+        const providers = result.data.listProviders.items || [];
+        allProviders.push(...providers);
+        nextToken = result.data.listProviders.nextToken;
+        
+        console.log(`[awsBulkOperations.deleteAllProviders] Page ${pageCount}: Found ${providers.length} providers`);
+      } catch (error) {
+        console.error(`[awsBulkOperations.deleteAllProviders] Error fetching page ${pageCount}:`, error);
+        throw error;
       }
-      lastEvaluatedKey = scanResult.LastEvaluatedKey;
-    } while (lastEvaluatedKey);
+    } while (nextToken);
 
-    const total = allItems.length;
-    console.log(`[awsBulkOperations.deleteAllProviders] Total items found: ${total}`);
-    console.log(`[awsBulkOperations.deleteAllProviders] First 10 IDs: ${(allItems.slice(0, 10).map(item => item.id).join(', '))}`);
-    console.log(`[awsBulkOperations.deleteAllProviders] Total scan pages: ${scanPageCount}`);
-
+    const total = allProviders.length;
+    console.log(`[awsBulkOperations.deleteAllProviders] Total providers found: ${total}`);
+    
     if (total === 0) {
       onProgress?.({ deleted: 0, total });
-      return; // Nothing to delete
+      console.log('[awsBulkOperations.deleteAllProviders] No providers to delete');
+      return;
     }
 
-    // 2. Batch delete all items
-    const batchSize = 25; // DynamoDB BatchWriteItem limit
+    // 2. Delete providers in batches via GraphQL
+    const batchSize = 25; // Reasonable batch size for GraphQL
     let deletedCount = 0;
     onProgress?.({ deleted: 0, total });
 
     for (let i = 0; i < total; i += batchSize) {
-      const batch = allItems.slice(i, i + batchSize);
-      const deleteRequests = batch.map(item => ({
-        DeleteRequest: {
-          Key: { id: item.id },
-        },
-      }));
+      const batch = allProviders.slice(i, i + batchSize);
+      console.log(`[awsBulkOperations.deleteAllProviders] Deleting batch ${Math.floor(i/batchSize) + 1}, providers ${i+1}-${Math.min(i+batchSize, total)}`);
+      
+      // Delete providers in parallel within the batch
+      const deletePromises = batch.map(async (provider) => {
+        try {
+          await client.graphql({
+            query: deleteProvider,
+            variables: {
+              input: { id: provider.id }
+            }
+          });
+          return true;
+        } catch (error) {
+          console.error(`[awsBulkOperations.deleteAllProviders] Failed to delete provider ${provider.id}:`, error);
+          return false;
+        }
+      });
 
-      const batchWriteParams: BatchWriteCommandInput = {
-        RequestItems: {
-          [tableName]: deleteRequests,
-        },
-      };
-      const command = new BatchWriteCommand(batchWriteParams);
-      await docClient.send(command);
-      deletedCount += batch.length;
+      const results = await Promise.allSettled(deletePromises);
+      const successfulDeletes = results.filter(result => result.status === 'fulfilled' && result.value).length;
+      deletedCount += successfulDeletes;
+      
       onProgress?.({ deleted: deletedCount, total });
+      console.log(`[awsBulkOperations.deleteAllProviders] Batch ${Math.floor(i/batchSize) + 1} complete: ${successfulDeletes}/${batch.length} deleted`);
     }
     
-    console.log(`[awsBulkOperations.deleteAllProviders] Deletion complete. Deleted: ${deletedCount}, Total scanned: ${total}`);
+    console.log(`[awsBulkOperations.deleteAllProviders] Deletion complete. Deleted: ${deletedCount}, Total found: ${total}`);
   },
 
   async createProviders(

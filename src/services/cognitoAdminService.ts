@@ -790,6 +790,34 @@ function generateTemporaryPassword(): string {
   return password.split('').sort(() => Math.random() - 0.5).join('');
 }
 
+/**
+ * Get user details including groups
+ */
+export const getUserDetails = async (username: string): Promise<any> => {
+  try {
+    console.log(`🔍 Fetching details for user ${username}...`);
+    
+    const client = new CognitoIdentityProviderClient({ region: 'us-east-2' });
+    const command = new AdminGetUserCommand({
+      UserPoolId: 'us-east-2_ldPO5ZKCR',
+      Username: username
+    });
+    
+    const response = await client.send(command);
+    
+    // Get user groups
+    const groups = await getUserGroups(username);
+    
+    return {
+      ...response,
+      Groups: groups
+    };
+  } catch (error) {
+    console.error(`❌ Error fetching user details:`, error);
+    throw new Error(`Failed to fetch user details: ${error}`);
+  }
+};
+
 // Test function to verify User Pool configuration
 export async function testUserPoolConfiguration() {
   try {
