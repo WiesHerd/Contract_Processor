@@ -218,7 +218,7 @@ export class ProviderUploadService {
       // Transform the provider data to match the DynamoDB schema
       const input: CreateProviderInput = {
         id: provider.id,
-        name: provider.name || 'Unknown Provider', // Ensure name is never null/undefined
+        name: provider.name && provider.name.trim() !== '' ? provider.name : 'Unknown Provider', // Ensure name is never null/undefined/empty
         employeeId: provider.employeeId,
         providerType: provider.providerType,
         specialty: provider.specialty,
@@ -230,8 +230,8 @@ export class ProviderUploadService {
         hourlyWage: provider.hourlyWage,
         baseSalary: provider.baseSalary,
         originalAgreementDate: provider.originalAgreementDate,
-        organizationName: provider.organizationName || 'Default Organization', // Required field
-        organizationId: provider.organizationId || 'default-org-id', // Required field
+        organizationName: provider.organizationName && provider.organizationName.trim() !== '' ? provider.organizationName : 'Default Organization', // Required field
+        organizationId: provider.organizationId && provider.organizationId.trim() !== '' ? provider.organizationId : 'default-org-id', // Required field
         startDate: provider.startDate,
         contractTerm: provider.contractTerm,
         ptoDays: provider.ptoDays,
@@ -258,6 +258,12 @@ export class ProviderUploadService {
       console.log('wRVU Target:', provider.wRVUTarget, 'Type:', typeof provider.wRVUTarget);
       console.log('Compensation Type:', provider.compensationModel, 'Type:', typeof provider.compensationModel);
       console.log('Conversion Factor:', provider.conversionFactor, 'Type:', typeof provider.conversionFactor);
+      
+      // Check for any null/undefined values in the input
+      const nullFields = Object.entries(input).filter(([key, value]) => value === null || value === undefined);
+      if (nullFields.length > 0) {
+        console.log('⚠️ WARNING: Found null/undefined fields:', nullFields);
+      }
 
       // Ensure all required fields are present and not null
       const sanitizedInput: CreateProviderInput = {
@@ -274,11 +280,20 @@ export class ProviderUploadService {
       
       console.log('Final input:', JSON.stringify(finalInput, null, 2));
       
-      await this.client.graphql({
-        query: createProvider,
-        variables: { input: finalInput },
-        authMode: 'apiKey'
-      });
+      // Log the exact GraphQL variables being sent
+      console.log('🔍 GraphQL variables being sent:', JSON.stringify({ input: finalInput }, null, 2));
+      
+      try {
+        await this.client.graphql({
+          query: createProvider,
+          variables: { input: finalInput },
+          authMode: 'apiKey'
+        });
+      } catch (error) {
+        console.error('❌ GraphQL error details:', error);
+        console.error('❌ Failed input:', JSON.stringify(finalInput, null, 2));
+        throw error;
+      }
 
       console.log('Successfully uploaded provider:', provider.name);
     } catch (error) {
