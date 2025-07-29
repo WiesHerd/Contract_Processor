@@ -230,7 +230,8 @@ export class ProviderUploadService {
         hourlyWage: provider.hourlyWage,
         baseSalary: provider.baseSalary,
         originalAgreementDate: provider.originalAgreementDate,
-        organizationName: provider.organizationName,
+        organizationName: provider.organizationName || 'Default Organization', // Required field
+        organizationId: provider.organizationId || 'default-org-id', // Required field
         startDate: provider.startDate,
         contractTerm: provider.contractTerm,
         ptoDays: provider.ptoDays,

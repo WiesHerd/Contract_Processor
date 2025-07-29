@@ -30,6 +30,7 @@ export const ProviderSchema = z.object({
   baseSalary: z.number().positive().nullable(),
   originalAgreementDate: z.string().optional().nullable(),
   organizationName: z.string().optional().nullable(),
+  organizationId: z.string().optional().nullable(),
   startDate: z.string().nullable(),
   contractTerm: z.string().optional().nullable(),
   ptoDays: z.number().optional().nullable(),
