@@ -29,8 +29,47 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { generateClient } from 'aws-amplify/api';
-import { createProvider } from '@/graphql/mutations';
 import { v4 as uuidv4 } from 'uuid';
+
+// Custom GraphQL mutation that only requests fields that exist in the schema
+const createProviderCustom = /* GraphQL */ `
+  mutation CreateProvider($input: CreateProviderInput!) {
+    createProvider(input: $input) {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      organizationId
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      qualityBonus
+      educationBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      administrativeFte
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+    }
+  }
+`;
 import type { ButtonProps } from '@/components/ui/button';
 import type { LucideProps } from 'lucide-react';
 import { parseDynamicFields, getAllProviderFieldNames, getProviderFieldValue } from '@/utils/dynamicFields';
@@ -72,11 +111,18 @@ const providerFieldMap: Record<string, string[]> = {
   providerType: ['providertype', 'provider type'],
   specialty: ['specialty'],
   subspecialty: ['subspecialty'],
-  fte: ['fte'],
-  administrativeFte: ['administrativefte', 'administrative fte'],
-  administrativeRole: [
-    'administrativerole', 'administrative role', 'positiontitle', 'position title'
-  ],
+  // positionTitle: ['positiontitle', 'position title', 'Position Title'], // Temporarily disabled
+  fte: ['fte', 'total fte', 'totalfte', 'Total FTE', 'TotalFTE'],
+  // clinicalFTE: ['clinicalfte', 'clinical fte', 'Clinical FTE', 'ClinicalFTE'], // Temporarily disabled
+  // medicalDirectorFTE: ['medicaldirectorfte', 'medical director fte', 'Medical Director FTE', 'MedicalDirectorFTE'], // Temporarily disabled
+  // divisionChiefFTE: ['divisionchieffte', 'division chief fte', 'Division Chief FTE', 'DivisionChiefFTE'], // Temporarily disabled
+  // researchFTE: ['researchfte', 'research fte', 'Research FTE', 'ResearchFTE'], // Temporarily disabled
+  // teachingFTE: ['teachingfte', 'teaching fte', 'Teaching FTE', 'TeachingFTE'], // Temporarily disabled
+  // totalFTE: ['totalfte', 'total fte', 'Total FTE', 'TotalFTE'], // Temporarily disabled
+  // REMOVED: administrativeFte: ['administrativefte', 'administrative fte'],
+  // administrativeRole: [
+  //   'administrativerole', 'administrative role', 'positiontitle', 'position title'
+  // ], // Temporarily disabled
   yearsExperience: ['yearsofexperience', 'years of experience'],
   hourlyWage: ['hourlywage', 'hourly wage'],
   baseSalary: ['basesalary', 'base salary', 'annualwage', 'annual wage'],
@@ -89,7 +135,7 @@ const providerFieldMap: Record<string, string[]> = {
   cmeDays: ['cmedays', 'cme days'],
   cmeAmount: ['cmeamount', 'cme amount'],
   signingBonus: ['signingbonus', 'signing bonus'],
-  relocationBonus: ['relocationbonus', 'relocation bonus'],
+  // relocationBonus: ['relocationbonus', 'relocation bonus'], // Temporarily disabled
   educationBonus: ['educationbonus', 'education bonus'],
   qualityBonus: ['qualitybonus', 'quality bonus'],
   compensationType: ['compensationtype', 'compensation type'],
@@ -213,8 +259,7 @@ const defaultColumns: ColumnDef<ExtendedProvider>[] = [
   { accessorKey: 'fte', header: 'FTE' },
   { accessorKey: 'baseSalary', header: 'Base Salary', cell: info => formatCurrency(info.getValue()) },
   { accessorKey: 'startDate', header: 'Start Date', cell: info => formatDate(info.getValue()) },
-  { accessorKey: 'administrativeFte', header: 'Admin FTE' },
-  { accessorKey: 'administrativeRole', header: 'Admin Role' },
+  { accessorKey: 'administrativeRole', header: 'Administrative Role' },
   { accessorKey: 'yearsExperience', header: 'Years Exp' },
   { accessorKey: 'hourlyWage', header: 'Hourly Wage', cell: info => formatCurrency(info.getValue()) },
   { accessorKey: 'originalAgreementDate', header: 'Orig Agreement', cell: info => formatDate(info.getValue()) },
@@ -288,7 +333,27 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
   const hiddenColumns = new Set(Object.entries(preferences?.columnVisibility || {})
     .filter(([_, visible]) => !visible)
     .map(([col]) => col));
-  const columnOrder = preferences?.columnOrder || [];
+  
+  // Force reset column order if compensationModel is present (prevents duplicate columns)
+  const columnOrder = useMemo(() => {
+    const currentOrder = preferences?.columnOrder || [];
+    if (currentOrder.includes('compensationModel')) {
+      // Force rebuild column order without compensationModel
+      console.log('🔄 Detected compensationModel in column order, forcing reset...');
+      
+      // Clear all column preferences to force a complete rebuild
+      if (preferences) {
+        updateColumnOrder([]);
+        // Clear column visibility and pinning as well
+        updateColumnVisibility({});
+        updateColumnPinning({ left: [], right: [] });
+      }
+      
+      return [];
+    }
+    return currentOrder;
+  }, [preferences?.columnOrder, preferences, updateColumnOrder, updateColumnVisibility, updateColumnPinning]);
+  
   const savedViews = preferences?.savedViews || {};
   const activeView = preferences?.activeView || 'default';
 
@@ -373,7 +438,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
               startDate: provider.startDate || '',
               contractTerm: provider.contractTerm || '',
             };
-            await client.graphql({ query: createProvider, variables: { input } });
+            await client.graphql({ query: createProviderCustom, variables: { input } });
           } catch (err) {
             console.error('Failed to save provider to AppSync:', err);
           }
@@ -409,7 +474,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
   }, [editRow]);
 
   const allowedFields = [
-    'id', 'employeeId', 'name', 'providerType', 'specialty', 'subspecialty', 'fte', 'administrativeFte', 'administrativeRole', 'yearsExperience', 'hourlyWage', 'baseSalary', 'originalAgreementDate', 'organizationName', 'startDate', 'contractTerm', 'ptoDays', 'holidayDays', 'cmeDays', 'cmeAmount', 'signingBonus', 'educationBonus', 'qualityBonus', 'compensationType', 'conversionFactor', 'wRVUTarget', 'compensationYear', 'credentials', 'compensationModel', 'fteBreakdown', 'templateTag', 'dynamicFields', 'createdAt', 'updatedAt'
+    'id', 'employeeId', 'name', 'providerType', 'specialty', 'subspecialty', 'yearsExperience', 'hourlyWage', 'baseSalary', 'originalAgreementDate', 'organizationName', 'organizationId', 'startDate', 'contractTerm', 'ptoDays', 'holidayDays', 'cmeDays', 'cmeAmount', 'signingBonus', 'educationBonus', 'qualityBonus', 'compensationType', 'conversionFactor', 'wRVUTarget', 'compensationYear', 'credentials', 'templateTag', 'dynamicFields', 'createdAt', 'updatedAt'
   ];
 
   const handleEditSave = useCallback(async () => {
@@ -617,16 +682,19 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
       const allFields = new Set<string>();
       const fieldDataCount = new Map<string, number>();
       
-      // Add uploadedColumns if available
+      // PRIORITY 1: Use uploadedColumns order if available (preserves CSV sequence)
+      let finalColumnOrder: string[] = [];
       if (uploadedColumns && uploadedColumns.length > 0) {
+        // Start with uploaded columns in their original order
+        finalColumnOrder = [...uploadedColumns];
         uploadedColumns.forEach(col => {
           allFields.add(col);
           fieldDataCount.set(col, providers.length); // Assume all providers have uploaded column data
         });
       }
       
+      // Add any additional fields from provider data that aren't in uploadedColumns
       providers.forEach(provider => {
-        // Add flat fields ONLY if they have meaningful data
         Object.keys(provider).forEach(key => {
           if (key !== 'id' && key !== 'createdAt' && key !== 'updatedAt' && key !== '__typename' && key !== 'dynamicFields') {
             const value = provider[key];
@@ -634,6 +702,11 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             if (value !== null && value !== undefined && value !== '' && String(value).trim() !== '') {
               allFields.add(key);
               fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
+              
+              // Add to final order if not already included from uploadedColumns
+              if (!finalColumnOrder.includes(key)) {
+                finalColumnOrder.push(key);
+              }
             }
           }
         });
@@ -644,47 +717,52 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             const dynamicFields = typeof provider.dynamicFields === 'string' 
               ? JSON.parse(provider.dynamicFields) 
               : provider.dynamicFields;
-            Object.keys(dynamicFields).forEach(key => {
-              const value = dynamicFields[key];
-              // Only include fields with actual data (not empty strings, null, undefined)
+            
+            Object.entries(dynamicFields).forEach(([key, value]) => {
               if (value !== null && value !== undefined && value !== '' && String(value).trim() !== '') {
                 allFields.add(key);
                 fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
+                
+                // Add to final order if not already included
+                if (!finalColumnOrder.includes(key)) {
+                  finalColumnOrder.push(key);
+                }
               }
             });
-          } catch (e) {
-            console.warn('Failed to parse dynamicFields:', e);
+          } catch (error) {
+            console.error('Error parsing dynamicFields:', error);
           }
         }
       });
       
-      // Filter out fields that have data in less than 1% of providers
-      const minDataThreshold = Math.max(1, Math.floor(providers.length * 0.01));
-      const fieldsWithSufficientData = Array.from(allFields).filter(field => {
-        const dataCount = fieldDataCount.get(field) || 0;
-        return dataCount >= minDataThreshold;
-      });
+      // If we have uploaded columns, use their order as the base and append any additional fields
+      if (uploadedColumns && uploadedColumns.length > 0) {
+        // Keep uploaded columns in their original order, then add any additional fields
+        const additionalFields = finalColumnOrder.filter(field => !uploadedColumns.includes(field));
+        finalColumnOrder = [...uploadedColumns, ...additionalFields];
+      } else {
+        // Fallback to the old logic for non-CSV data
+        finalColumnOrder = Array.from(allFields).sort((a, b) => {
+          // Priority order for known fields
+          const priorityOrder = ['name', 'employeeId', 'providerType', 'specialty', 'fte', 'baseSalary', 'startDate'];
+          const aPriority = priorityOrder.indexOf(a);
+          const bPriority = priorityOrder.indexOf(b);
+          
+          if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
+          if (aPriority !== -1) return -1;
+          if (bPriority !== -1) return 1;
+          
+          // Sort by data availability
+          const aCount = fieldDataCount.get(a) || 0;
+          const bCount = fieldDataCount.get(b) || 0;
+          if (aCount !== bCount) return bCount - aCount;
+          
+          return a.localeCompare(b);
+        });
+      }
       
-      // Sort fields by priority
-      const sortedFields = fieldsWithSufficientData.sort((a, b) => {
-        const priorityOrder = ['name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 'credentials', 'fte', 'baseSalary', 'startDate'];
-        const aPriority = priorityOrder.indexOf(a);
-        const bPriority = priorityOrder.indexOf(b);
-        
-        if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
-        if (aPriority !== -1) return -1;
-        if (bPriority !== -1) return 1;
-        
-        // Sort by data availability
-        const aCount = fieldDataCount.get(a) || 0;
-        const bCount = fieldDataCount.get(b) || 0;
-        if (aCount !== bCount) return bCount - aCount;
-        
-        return a.localeCompare(b);
-      });
-      
-      if (preferences && JSON.stringify(sortedFields) !== JSON.stringify(preferences.columnOrder)) {
-        updateColumnOrder(sortedFields);
+      if (preferences && JSON.stringify(finalColumnOrder) !== JSON.stringify(preferences.columnOrder)) {
+        updateColumnOrder(finalColumnOrder);
       }
     }
   }, [providers, uploadedColumns, columnOrder.length, preferences, updateColumnOrder]);
@@ -695,7 +773,9 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
     const rightPinned = preferences?.columnPinning?.right || [];
     
     // Use columnOrder as the single source of truth for column definitions
-    const baseCols = columnOrder.map((field, idx) => {
+    // Additional safety filter to ensure compensationModel is never rendered
+    const filteredColumnOrder = columnOrder.filter(field => field !== 'compensationModel');
+    const baseCols = filteredColumnOrder.map((field, idx) => {
           let valueFormatter: ((params: any) => string) | undefined;
           let headerName = field;
           
@@ -706,7 +786,6 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           else if (field === 'baseSalary') headerName = 'Base Salary';
           else if (field === 'startDate') headerName = 'Start Date';
           else if (field === 'originalAgreementDate') headerName = 'Orig Agreement';
-          else if (field === 'administrativeFte') headerName = 'Admin FTE';
           else if (field === 'administrativeRole') headerName = 'Admin Role';
           else if (field === 'yearsExperience') headerName = 'Years Exp';
           else if (field === 'hourlyWage') headerName = 'Hourly Wage';
@@ -719,9 +798,11 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           else if (field === 'wRVUTarget') headerName = 'wRVU Target';
           else if (field === 'conversionFactor') headerName = 'CF';
           else if (field === 'compensationYear') headerName = 'Comp Year';
-          else if (field === 'compensationType') headerName = 'Comp Type';
+          else if (field === 'compensationType') headerName = 'Compensation Model';
           else if (field === 'organizationName') headerName = 'Organization';
-          else if (field.includes('FTE')) headerName = field; // Keep FTE fields as-is
+          else if (field === 'totalFTE') headerName = 'FTE'; // Map totalFTE to FTE display
+          else if (field === 'fte') headerName = 'FTE'; // Ensure FTE is all caps
+          else if (field.includes('FTE')) headerName = field; // Keep other FTE fields as-is
           else if (field.includes(' ')) headerName = field; // Keep uploaded column names with spaces as-is
           else headerName = field.charAt(0).toUpperCase() + field.slice(1);
           
@@ -730,7 +811,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             valueFormatter = (params: any) => formatCurrency(params.value);
           } else if (String(field).toLowerCase().includes('date')) {
             valueFormatter = (params: any) => formatDate(params.value);
-          } else if (field.toLowerCase().includes('fte') || field === 'fte') {
+          } else if (field.toLowerCase().includes('fte') || field === 'fte' || field === 'totalFTE') {
             valueFormatter = (params: any) => {
               const v = params.value;
               return typeof v === 'number' ? v.toFixed(2) : String(v ?? '');
@@ -741,9 +822,31 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           const valueGetter = (params: any) => {
             const provider = params.data;
             
+            // Debug logging for FTE and administrative role
+            if (field === 'fte' || field === 'totalFTE' || field === 'administrativeRole') {
+              console.log(`🔍 [DEBUG] ValueGetter for ${field}:`, {
+                providerName: provider.name,
+                directField: provider[field],
+                dynamicFields: provider.dynamicFields,
+                field: field
+              });
+            }
+            
             // First try flat field (provider properties)
             if (provider[field] !== undefined && provider[field] !== null) {
+              if (field === 'fte' || field === 'totalFTE' || field === 'administrativeRole') {
+                console.log(`🔍 [DEBUG] Found ${field} in direct field:`, provider[field]);
+              }
               return provider[field];
+            }
+            
+            // Special handling for FTE fields - check both 'fte' and 'totalFTE'
+            if (field === 'fte' || field === 'totalFTE') {
+              const fteValue = provider.fte || provider.totalFTE;
+              if (fteValue !== undefined && fteValue !== null) {
+                console.log(`🔍 [DEBUG] Found FTE value:`, fteValue);
+                return fteValue;
+              }
             }
             
             // Then try dynamicFields (uploaded CSV columns)
@@ -753,9 +856,27 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                   ? JSON.parse(provider.dynamicFields) 
                   : provider.dynamicFields;
                 
+                if (field === 'fte' || field === 'totalFTE' || field === 'administrativeRole') {
+                  console.log(`🔍 [DEBUG] Dynamic fields for ${field}:`, dynamicFields);
+                }
+                
                 // Try exact field name match first
                 if (dynamicFields[field] !== undefined && dynamicFields[field] !== null) {
+                  if (field === 'fte' || field === 'totalFTE' || field === 'administrativeRole') {
+                    console.log(`🔍 [DEBUG] Found ${field} in dynamicFields exact match:`, dynamicFields[field]);
+                  }
                   return dynamicFields[field];
+                }
+                
+                // Special handling for FTE field - check for "Total FTE" variations
+                if (field === 'fte' || field === 'totalFTE') {
+                  const fteVariations = ['Total FTE', 'TotalFTE', 'total fte', 'totalfte', 'FTE'];
+                  for (const variation of fteVariations) {
+                    if (dynamicFields[variation] !== undefined && dynamicFields[variation] !== null) {
+                      console.log(`🔍 [DEBUG] Found FTE in dynamicFields variation "${variation}":`, dynamicFields[variation]);
+                      return dynamicFields[variation];
+                    }
+                  }
                 }
                 
                 // Try case-insensitive match for uploaded columns
@@ -764,11 +885,18 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                   key.toLowerCase() === fieldLower
                 );
                 if (matchingKey && dynamicFields[matchingKey] !== undefined && dynamicFields[matchingKey] !== null) {
+                  if (field === 'fte' || field === 'totalFTE' || field === 'administrativeRole') {
+                    console.log(`🔍 [DEBUG] Found ${field} in dynamicFields case-insensitive match "${matchingKey}":`, dynamicFields[matchingKey]);
+                  }
                   return dynamicFields[matchingKey];
                 }
               } catch (e) {
                 console.warn('Failed to parse dynamicFields:', e);
               }
+            }
+            
+            if (field === 'fte' || field === 'totalFTE' || field === 'administrativeRole') {
+              console.log(`🔍 [DEBUG] No value found for ${field}`);
             }
             
             return null;

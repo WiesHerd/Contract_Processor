@@ -1,6 +1,5 @@
 import { Provider, ProviderUploadSchema } from '../../../types/provider';
 import { generateClient } from 'aws-amplify/api';
-import { createProvider } from '../../../graphql/mutations';
 import { performHealthCheck, validateHealthCheck } from '../../../utils/aws-health-check';
 import Papa from 'papaparse';
 import type { CreateProviderInput } from '../../../API';
@@ -11,6 +10,49 @@ import {
   parseFieldValue, 
   isSchemaField 
 } from '../../../config/providerSchema';
+
+// Custom GraphQL mutation that only requests fields that exist in the schema
+const createProviderCustom = /* GraphQL */ `
+  mutation CreateProvider($input: CreateProviderInput!) {
+    createProvider(input: $input) {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      organizationId
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      qualityBonus
+      educationBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      administrativeFte
+      administrativeRole
+      totalFTE
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+    }
+  }
+`;
 
 type CompensationModel = 'BASE' | 'PRODUCTIVITY' | 'HYBRID' | 'HOSPITALIST' | 'LEADERSHIP';
 
@@ -107,12 +149,24 @@ export class ProviderUploadService {
 
   private async parseCSV(file: File): Promise<Provider[]> {
     return new Promise((resolve, reject) => {
+      console.log('🔍 [DEBUG] Starting CSV parse for file:', file.name, 'Size:', file.size);
+      
       Papa.parse<Record<string, string>>(file, {
         header: true,
         skipEmptyLines: true,
         complete: (results) => {
           try {
-            const providers = results.data.map((row) => {
+            console.log('🔍 [DEBUG] Papa.parse results:', {
+              data: results.data.length,
+              errors: results.errors.length,
+              meta: results.meta
+            });
+            
+            console.log('🔍 [DEBUG] First few rows:', results.data.slice(0, 3));
+            
+            const providers = results.data.map((row, index) => {
+              console.log(`🔍 [DEBUG] Processing row ${index + 1}:`, row);
+              
               // Initialize provider with required fields
               const provider: any = {
                 id: crypto.randomUUID(),
@@ -125,20 +179,55 @@ export class ProviderUploadService {
               
               // Process each CSV column
               Object.entries(row).forEach(([csvHeader, value]) => {
-                if (!value || value.trim() === '') return;
-
+                console.log(`🔍 [DEBUG] Row ${index + 1}, Column "${csvHeader}": "${value}"`);
+                
                 // Try to map CSV header to schema field
                 const schemaField = mapCsvHeader(csvHeader);
+                console.log(`🔍 [DEBUG] Mapped "${csvHeader}" to schema field: "${schemaField}"`);
+                
+                // Special debug for FTE and administrative role
+                if (csvHeader.toLowerCase().includes('fte') || csvHeader.toLowerCase().includes('administrative')) {
+                  console.log(`🔍 [DEBUG] FTE/Admin field mapping: "${csvHeader}" -> "${schemaField}"`);
+                }
                 
                 if (schemaField) {
+                  // For required fields, always set them even if empty
+                  const isRequiredField = ['name', 'organizationName', 'organizationId'].includes(schemaField);
+                  
+                  if (!value || value.trim() === '' || value.toLowerCase() === 'null') {
+                    if (isRequiredField) {
+                      // Set default values for required fields
+                      if (schemaField === 'organizationId') {
+                        provider[schemaField] = 'default-org-id';
+                        console.log(`🔍 [DEBUG] Set required field ${schemaField} = default-org-id`);
+                      } else if (schemaField === 'organizationName') {
+                        provider[schemaField] = 'Default Organization';
+                        console.log(`🔍 [DEBUG] Set required field ${schemaField} = Default Organization`);
+                      } else if (schemaField === 'name') {
+                        provider[schemaField] = 'Unknown Provider';
+                        console.log(`🔍 [DEBUG] Set required field ${schemaField} = Unknown Provider`);
+                      }
+                    } else {
+                      // Skip empty values for non-required fields
+                      console.log(`🔍 [DEBUG] Skipping empty value for field: ${schemaField}`);
+                    }
+                    return;
+                  }
+                  
                   // Store as flat field in DynamoDB
                   const parsedValue = parseFieldValue(schemaField, value);
+                  console.log(`🔍 [DEBUG] Parsed value for ${schemaField}:`, parsedValue);
                   if (parsedValue !== null) {
                     provider[schemaField] = parsedValue;
+                    
+                    // Special debug for FTE and administrative role
+                    if (schemaField === 'totalFTE' || schemaField === 'administrativeRole') {
+                      console.log(`🔍 [DEBUG] Set ${schemaField} = ${parsedValue}`);
+                    }
                   }
                 } else {
                   // Store as dynamic field only if truly unknown
-                  console.log(`Unknown column detected: "${csvHeader}" - storing in dynamicFields`);
+                  console.log(`🔍 [DEBUG] Unknown column detected: "${csvHeader}" - storing in dynamicFields`);
                   dynamicFields[csvHeader] = value.trim();
                 }
               });
@@ -146,24 +235,30 @@ export class ProviderUploadService {
               // Only add dynamicFields if there are truly unknown columns
               if (Object.keys(dynamicFields).length > 0) {
                 provider.dynamicFields = JSON.stringify(dynamicFields);
-                console.log(`Provider ${provider.name} has ${Object.keys(dynamicFields).length} dynamic fields:`, Object.keys(dynamicFields));
+                console.log(`🔍 [DEBUG] Provider ${provider.name} has ${Object.keys(dynamicFields).length} dynamic fields:`, Object.keys(dynamicFields));
               }
 
               // Ensure required fields have defaults
               if (!provider.name) provider.name = 'Unknown Provider';
+              if (!provider.organizationName) provider.organizationName = 'Default Organization';
+              if (!provider.organizationId) provider.organizationId = 'default-org-id';
               if (!provider.fte) provider.fte = 1.0;
               if (!provider.compensationModel) provider.compensationModel = 'BASE';
 
+              console.log(`🔍 [DEBUG] Final provider object for row ${index + 1}:`, provider);
               return provider as Provider;
             });
 
-            console.log(`Parsed ${providers.length} providers from CSV`);
+            console.log(`🔍 [DEBUG] Parsed ${providers.length} providers from CSV`);
+            console.log(`🔍 [DEBUG] Sample provider structure:`, providers[0]);
             resolve(providers);
           } catch (error) {
+            console.error('🔍 [DEBUG] Error in parseCSV:', error);
             reject(new Error('Failed to parse provider data: ' + (error instanceof Error ? error.message : 'Unknown error')));
           }
         },
         error: (error) => {
+          console.error('🔍 [DEBUG] Papa.parse error:', error);
           reject(new Error('CSV parsing error: ' + error.message));
         }
       });
@@ -215,23 +310,27 @@ export class ProviderUploadService {
 
   private async uploadWithRetry(provider: Provider, attempt = 1): Promise<void> {
     try {
-      // Transform the provider data to match the DynamoDB schema
+      console.log(`🔍 [DEBUG] Starting upload for provider: ${provider.name} (attempt ${attempt})`);
+      console.log(`🔍 [DEBUG] Provider object:`, JSON.stringify(provider, null, 2));
+      
+      // STEP 1: Create the initial input with proper defaults for required fields
       const input: CreateProviderInput = {
         id: provider.id,
-        name: provider.name && provider.name.trim() !== '' ? provider.name : 'Unknown Provider', // Ensure name is never null/undefined/empty
+        name: provider.name && provider.name.trim() !== '' && provider.name.toLowerCase() !== 'null' ? provider.name : 'Unknown Provider',
         employeeId: provider.employeeId,
         providerType: provider.providerType,
         specialty: provider.specialty,
         subspecialty: provider.subspecialty,
+        // TEMPORARILY REMOVED: positionTitle: (provider as any).positionTitle,
         fte: provider.fte,
-        administrativeFte: provider.administrativeFte,
         administrativeRole: provider.administrativeRole,
         yearsExperience: provider.yearsExperience,
         hourlyWage: provider.hourlyWage,
         baseSalary: provider.baseSalary,
         originalAgreementDate: provider.originalAgreementDate,
-        organizationName: provider.organizationName && provider.organizationName.trim() !== '' ? provider.organizationName : 'Default Organization', // Required field
-        organizationId: provider.organizationId && provider.organizationId.trim() !== '' ? provider.organizationId : 'default-org-id', // Required field
+        // CRITICAL: These are required in GraphQL schema but optional in TypeScript
+        organizationName: provider.organizationName && provider.organizationName.trim() !== '' && provider.organizationName.toLowerCase() !== 'null' ? provider.organizationName : 'Default Organization',
+        organizationId: provider.organizationId && provider.organizationId.trim() !== '' && provider.organizationId.toLowerCase() !== 'null' ? provider.organizationId : 'default-org-id',
         startDate: provider.startDate,
         contractTerm: provider.contractTerm,
         ptoDays: provider.ptoDays,
@@ -239,69 +338,94 @@ export class ProviderUploadService {
         cmeDays: provider.cmeDays,
         cmeAmount: provider.cmeAmount,
         signingBonus: provider.signingBonus,
+        // TEMPORARILY REMOVED: relocationBonus: (provider as any).relocationBonus,
         educationBonus: provider.educationBonus,
         qualityBonus: provider.qualityBonus,
-        compensationType: provider.compensationModel || null, // Handle empty compensation type
-        conversionFactor: provider.conversionFactor || null, // Handle empty conversion factor
-        wRVUTarget: provider.wRVUTarget || null, // Handle empty wRVU Target values
-        compensationYear: provider.compensationYear || null, // Handle empty compensation year
+        compensationType: provider.compensationModel || null,
+        conversionFactor: provider.conversionFactor || null,
+        wRVUTarget: provider.wRVUTarget || null,
+        compensationYear: provider.compensationYear || null,
         credentials: provider.credentials,
-        // Only include dynamicFields if it exists and has content
+        // TEMPORARILY REMOVED: clinicalFTE: (provider as any).clinicalFTE,
+        // TEMPORARILY REMOVED: medicalDirectorFTE: (provider as any).medicalDirectorFTE,
+        // TEMPORARILY REMOVED: divisionChiefFTE: (provider as any).divisionChiefFTE,
+        // TEMPORARILY REMOVED: researchFTE: (provider as any).researchFTE,
+        // TEMPORARILY REMOVED: teachingFTE: (provider as any).teachingFTE,
+        // TEMPORARILY REMOVED: totalFTE: (provider as any).totalFTE,
         dynamicFields: typeof provider.dynamicFields === 'string' ? provider.dynamicFields : null,
       };
 
-      console.log('Original provider data:', JSON.stringify(provider, null, 2));
-      console.log('Transformed input data:', JSON.stringify(input, null, 2));
-      console.log('Provider name:', provider.name, 'Type:', typeof provider.name);
-      console.log('Organization name:', provider.organizationName, 'Type:', typeof provider.organizationName);
-      console.log('Organization ID:', provider.organizationId, 'Type:', typeof provider.organizationId);
-      console.log('wRVU Target:', provider.wRVUTarget, 'Type:', typeof provider.wRVUTarget);
-      console.log('Compensation Type:', provider.compensationModel, 'Type:', typeof provider.compensationModel);
-      console.log('Conversion Factor:', provider.conversionFactor, 'Type:', typeof provider.conversionFactor);
-      
-      // Check for any null/undefined values in the input
-      const nullFields = Object.entries(input).filter(([key, value]) => value === null || value === undefined);
-      if (nullFields.length > 0) {
-        console.log('⚠️ WARNING: Found null/undefined fields:', nullFields);
+      console.log('🔍 [DEBUG] Original provider data:', JSON.stringify(provider, null, 2));
+      console.log('🔍 [DEBUG] Initial input data:', JSON.stringify(input, null, 2));
+
+      // STEP 2: Validate required fields before any filtering
+      const requiredFields = ['name', 'organizationName', 'organizationId'];
+      const missingFields = requiredFields.filter(field => {
+        const value = input[field as keyof CreateProviderInput];
+        return !value || value === '' || value === 'null' || value === null;
+      });
+
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
       }
 
-      // Ensure all required fields are present and not null
+      // STEP 3: Create sanitized input with guaranteed required field values
       const sanitizedInput: CreateProviderInput = {
         ...input,
+        // Force required fields to have non-null values
         name: input.name || 'Unknown Provider',
         organizationName: input.organizationName || 'Default Organization',
         organizationId: input.organizationId || 'default-org-id',
       };
-      
-      // Remove null/undefined values
+
+      // STEP 4: Filter out null/undefined values EXCEPT for required fields
       const finalInput = Object.fromEntries(
-        Object.entries(sanitizedInput).filter(([key, value]) => value !== null && value !== undefined)
+        Object.entries(sanitizedInput).filter(([key, value]) => {
+          // Always include required fields, even if they have default values
+          if (requiredFields.includes(key)) {
+            return true;
+          }
+          // Remove null/undefined for optional fields
+          return value !== null && value !== undefined;
+        })
       ) as CreateProviderInput;
+
+      console.log('🔍 [DEBUG] Final input being sent to GraphQL:', JSON.stringify(finalInput, null, 2));
+      console.log('🔍 [DEBUG] CreateProviderInput type check - required fields present:', {
+        name: !!finalInput.name,
+        organizationName: !!finalInput.organizationName,
+        organizationId: !!finalInput.organizationId
+      });
+
+      // STEP 5: Make the GraphQL call
+      console.log('🔍 [DEBUG] Making GraphQL createProvider call...');
+      const response = await this.client.graphql({
+        query: createProviderCustom, // Use custom mutation instead of auto-generated one
+        variables: { input: finalInput }
+      });
+
+      console.log('🔍 [DEBUG] GraphQL response:', JSON.stringify(response, null, 2));
       
-      console.log('Final input:', JSON.stringify(finalInput, null, 2));
-      
-      // Log the exact GraphQL variables being sent
-      console.log('🔍 GraphQL variables being sent:', JSON.stringify({ input: finalInput }, null, 2));
-      
-      try {
-        await this.client.graphql({
-          query: createProvider,
-          variables: { input: finalInput },
-          authMode: 'apiKey'
-        });
-      } catch (error) {
-        console.error('❌ GraphQL error details:', error);
-        console.error('❌ Failed input:', JSON.stringify(finalInput, null, 2));
-        throw error;
+      if ((response as any).data?.createProvider) {
+        console.log('🔍 [DEBUG] Successfully created provider:', (response as any).data.createProvider.id);
+      } else {
+        console.error('🔍 [DEBUG] No data in GraphQL response');
       }
 
-      console.log('Successfully uploaded provider:', provider.name);
     } catch (error) {
-      if (attempt < (this.options.retries || DEFAULT_OPTIONS.retries)) {
-        console.log(`Retrying upload for ${provider.name} (attempt ${attempt + 1})`);
+      console.error(`🔍 [DEBUG] Error uploading provider ${provider.name}:`, error);
+      
+      if (error instanceof Error) {
+        console.error('🔍 [DEBUG] Error message:', error.message);
+        console.error('🔍 [DEBUG] Error stack:', error.stack);
+      }
+      
+      if (attempt < this.options.retries) {
+        console.log(`🔍 [DEBUG] Retrying... (attempt ${attempt + 1}/${this.options.retries})`);
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
         return this.uploadWithRetry(provider, attempt + 1);
       }
+      
       throw error;
     }
   }

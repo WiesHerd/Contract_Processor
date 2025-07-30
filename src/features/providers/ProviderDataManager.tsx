@@ -27,6 +27,8 @@ import { Badge } from '@/components/ui/badge';
 import { generateClient } from 'aws-amplify/api';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { LoadingAction } from '@/types/provider';
+import { useAuth } from '@/contexts/AuthContext';
+import { Link } from 'react-router-dom';
 
 // Enterprise-grade field mapping configuration
 const REQUIRED_FIELDS = [
@@ -52,7 +54,6 @@ const FIELD_DISPLAY_NAMES: Record<string, string> = {
   employeeId: 'Employee ID',
   subspecialty: 'Subspecialty',
   credentials: 'Credentials',
-  administrativeFte: 'Administrative FTE',
   administrativeRole: 'Administrative Role',
   yearsExperience: 'Years Experience',
   hourlyWage: 'Hourly Wage',
@@ -86,8 +87,8 @@ const FIELD_MAP: Record<string, string> = {
   
   // FTE and administrative
   'fte': 'fte',
-  'administrative fte': 'administrativeFte',
-  'administrativefte': 'administrativeFte',
+  // REMOVED: 'administrative fte': 'administrativeFte',
+  // REMOVED: 'administrativefte': 'administrativeFte',
   'administrative role': 'administrativeRole',
   'administrativerole': 'administrativeRole',
   'years of experience': 'yearsExperience',
@@ -164,7 +165,7 @@ const FIELD_MAP: Record<string, string> = {
 
 const ALLOWED_FIELDS = [
   'id', 'employeeId', 'name', 'providerType', 'specialty', 'subspecialty',
-  'fte', 'administrativeFte', 'administrativeRole', 'yearsExperience', 'hourlyWage',
+  'fte', 'administrativeRole', 'yearsExperience', 'hourlyWage',
   'baseSalary', 'originalAgreementDate', 'organizationName', 'startDate', 'contractTerm',
   'ptoDays', 'holidayDays', 'cmeDays', 'cmeAmount', 'signingBonus', 'educationBonus',
   'qualityBonus', 'compensationType', 'conversionFactor', 'wRVUTarget', 'compensationYear',
@@ -216,7 +217,7 @@ function parseValue(field: string, value: any) {
   
   // Handle numeric fields
   if ([
-    'fte', 'administrativeFte', 'hourlyWage', 'baseSalary', 'cmeAmount', 
+    'fte', 'hourlyWage', 'baseSalary', 'cmeAmount', 
     'signingBonus', 'qualityBonus', 'conversionFactor', 'wRVUTarget', 'educationBonus',
     'relocationBonus'
   ].includes(field)) {
@@ -245,18 +246,20 @@ function parseValue(field: string, value: any) {
 export default function ProviderDataManager() {
   const dispatch = useDispatch<AppDispatch>();
   const { selectedYear, setSelectedYear } = useYear();
+  const { isAuthenticated, user } = useAuth();
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSticky, setIsSticky] = useState(true);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [showValidationModal, setShowValidationModal] = useState(false);
-  const [pendingUploadSummary, setPendingUploadSummary] = useState<{ uploaded: number; skipped: number; errors: ValidationError[] } | null>(null);
-  const [showFinalUploadSummary, setShowFinalUploadSummary] = useState(false);
+  // Remove upload summary modal state
   const [csvRowCount, setCsvRowCount] = useState<number | null>(null);
   
   const providers = useSelector(selectProviders);
   const loading = useSelector(selectProvidersLoading);
   const error = useSelector(selectProvidersError);
   const lastSync = useSelector((state: RootState) => state.provider.lastSync);
+  
+  console.log('ProviderDataManager: Current state - providers:', providers.length, 'loading:', loading, 'error:', error);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { 
@@ -290,20 +293,24 @@ export default function ProviderDataManager() {
     }
   }, [loadingAction, showClearingModal]);
 
-  // Load providers from DynamoDB on component mount if they are stale or not present
+  // Load providers from DynamoDB on component mount
   useEffect(() => {
-    const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
-    const now = new Date().getTime();
-    const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
+    console.log('ProviderDataManager: selectedYear changed to:', selectedYear);
+    console.log('ProviderDataManager: Authentication status - isAuthenticated:', isAuthenticated, 'user:', user?.username);
     
-    // Fetch if:
-    // 1. No lastSync (first time loading)
-    // 2. The data is stale (older than 5 minutes)
-    // 3. We have a selected year
-    if (selectedYear && (!lastSync || (now - lastSyncTime > CACHE_DURATION_MS))) {
+    if (selectedYear && isAuthenticated) {
+      console.log('ProviderDataManager: Dispatching fetchProvidersByYear with year:', selectedYear);
       dispatch(fetchProvidersByYear(selectedYear));
+    } else if (!isAuthenticated) {
+      console.log('ProviderDataManager: User not authenticated, skipping fetch');
+      // Clear any existing providers if user is not authenticated
+      if (providers.length > 0) {
+        dispatch(clearProviders());
+      }
+    } else if (!selectedYear) {
+      console.log('ProviderDataManager: No selected year, skipping fetch');
     }
-  }, [dispatch, lastSync, selectedYear]);
+  }, [dispatch, selectedYear, isAuthenticated, user, providers.length]);
 
   // Show error toast if there's an error
   useEffect(() => {
@@ -311,8 +318,6 @@ export default function ProviderDataManager() {
       toast.error(error);
     }
   }, [error]);
-
-
 
   // Simplified CSV upload handler that works with your existing CSV format
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -323,15 +328,20 @@ export default function ProviderDataManager() {
       header: true,
       skipEmptyLines: true,
       complete: async (results: Papa.ParseResult<Record<string, string>>) => {
+        
         const headers = results.meta.fields || [];
         const data = results.data;
+        
         setCsvRowCount(data.length);
+        
         const mappedData = data.map(mapCsvRowToProviderFields);
         const providersToCreate: CreateProviderInput[] = [];
         const errors: ValidationError[] = [];
+        
         for (let i = 0; i < mappedData.length; i++) {
           const row = mappedData[i];
           const rowNumber = i + 2;
+          
           const provider: any = { id: crypto.randomUUID() };
           Object.entries(row).forEach(([key, value]) => {
             if (value !== undefined && value !== '') {
@@ -358,7 +368,6 @@ export default function ProviderDataManager() {
               const value = data[i][header];
               if (value !== undefined && value !== '') {
                 dynamicFieldsObj[header] = value;
-                console.log(`Unknown column detected: "${header}" - storing in dynamicFields`);
               }
             }
           });
@@ -366,6 +375,7 @@ export default function ProviderDataManager() {
           if (Object.keys(dynamicFieldsObj).length > 0) {
             provider.dynamicFields = JSON.stringify(dynamicFieldsObj);
           }
+          
           // Robust validation: check all required fields
           for (const req of REQUIRED_FIELDS) {
             if (!provider[req] || provider[req].toString().trim() === '') {
@@ -377,27 +387,41 @@ export default function ProviderDataManager() {
               });
             }
           }
-          if (errors.some(e => e.row === rowNumber)) continue;
+          
+          if (errors.some(e => e.row === rowNumber)) {
+            continue;
+          }
+          
           const filteredProvider: any = {};
           Object.keys(provider).forEach(key => {
             if (ALLOWED_FIELDS.includes(key) && provider[key] !== undefined) {
               filteredProvider[key] = provider[key];
             }
           });
+          
           providersToCreate.push(filteredProvider as CreateProviderInput);
         }
-        // Store summary, but do not show modal yet
-        setPendingUploadSummary({ uploaded: providersToCreate.length, skipped: errors.length, errors });
+        
         if (providersToCreate.length === 0) {
           toast.error('No valid rows to upload. Please check your CSV and try again.');
           return;
         }
+        
         try {
+          // Upload providers
           await dispatch(uploadProviders(providersToCreate)).unwrap();
-          toast.success(`Successfully uploaded ${providersToCreate.length} providers`);
-          await dispatch(fetchProvidersByYear(selectedYear));
-          // Now show the summary modal after upload is complete
-          setShowFinalUploadSummary(true);
+          
+          // Show success toast with upload summary
+          const successMessage = `Successfully uploaded ${providersToCreate.length} providers`;
+          if (errors.length > 0) {
+            toast.success(`${successMessage} (${errors.length} rows skipped due to errors)`);
+          } else {
+            toast.success(successMessage);
+          }
+          
+          // Force refresh the data to ensure UI updates
+          await dispatch(fetchProvidersByYear(selectedYear)).unwrap();
+          
         } catch (error: unknown) {
           console.error('Provider upload error:', error);
           toast.error('Provider upload failed');
@@ -413,9 +437,11 @@ export default function ProviderDataManager() {
 
   // Handle clear table with DynamoDB sync
   const handleClearTable = useCallback(() => {
+    console.log('handleClearTable: Starting clear operation...');
     setShowConfirm(false); // Close the confirmation modal immediately
     // Directly dispatch clearAllProviders - no need to fetch first
     dispatch(clearAllProviders());
+    console.log('handleClearTable: clearAllProviders dispatched');
   }, [dispatch]);
 
   const downloadTemplate = () => {
@@ -426,7 +452,6 @@ export default function ProviderDataManager() {
       'Specialty',
       'Subspecialty',
       'FTE',
-      'Administrative FTE',
       'Administrative Role',
       'Years of Experience',
       'Hourly Wage',
@@ -585,7 +610,6 @@ export default function ProviderDataManager() {
                 </Tooltip>
               </TooltipProvider>
             </div>
-            {/* Removed duplicate year selector - using global YearSelector in header instead */}
           </div>
           <hr className="my-3 border-gray-100" />
           <div className="flex flex-wrap items-center justify-between gap-4 mt-4">
@@ -624,7 +648,7 @@ export default function ProviderDataManager() {
                 Export All Data
               </Button>
             </div>
-            {/* Right group: Sticky toggle, Clear Table */}
+            {/* Right group: Clear Table */}
             <div className="flex items-center gap-3">
               <Button
                 variant="destructive"
@@ -643,6 +667,8 @@ export default function ProviderDataManager() {
             loading={loading}
           />
         </div>
+
+
 
         {/* Validation Errors Modal */}
         <Dialog open={showValidationModal} onOpenChange={setShowValidationModal}>
@@ -735,58 +761,6 @@ export default function ProviderDataManager() {
           progress={clearTotal && clearProgress ? Math.round((clearProgress / clearTotal) * 100) : 0}
           message={`Deleting ${clearProgress || 0} of ${clearTotal || 0} providers...`}
         />
-
-        {/* Modern, minimal upload summary (audit) modal with CSV total */}
-        {showFinalUploadSummary && pendingUploadSummary && (
-          <Dialog open={showFinalUploadSummary} onOpenChange={setShowFinalUploadSummary}>
-            <DialogContent className="max-w-md w-full bg-white shadow-lg rounded-lg p-6">
-              <DialogHeader>
-                <DialogTitle className="text-lg font-semibold text-gray-900">Upload Summary</DialogTitle>
-              </DialogHeader>
-              <div className="py-2 text-center">
-                <div className="text-base text-gray-800 mb-2">Upload Complete</div>
-                <div className="flex flex-col items-center gap-2 mb-2">
-                  <span className="text-gray-900">Total rows in CSV: {csvRowCount ?? '-'}</span>
-                  <span className="text-gray-900">Rows uploaded: {pendingUploadSummary.uploaded}</span>
-                  <span className="text-gray-500">Rows skipped: {pendingUploadSummary.skipped}</span>
-                </div>
-                {csvRowCount !== null && pendingUploadSummary.uploaded !== csvRowCount && (
-                  <div className="mb-2 text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2">
-                    Warning: The number of uploaded rows does not match the number of rows in your CSV. Please review the skipped rows below.
-                  </div>
-                )}
-                {pendingUploadSummary.errors.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-gray-700 mb-1">Some rows were skipped due to errors:</p>
-                    <ul className="text-xs text-gray-600 max-h-32 overflow-y-auto border rounded bg-gray-50 p-2">
-                      {pendingUploadSummary.errors.slice(0, 10).map((err, idx) => (
-                        <li key={idx}>Row {err.row}: {err.field} - {err.message}</li>
-                      ))}
-                    </ul>
-                    {pendingUploadSummary.errors.length > 10 && <p className="text-xs text-gray-400">...and {pendingUploadSummary.errors.length - 10} more</p>}
-                    <Button className="mt-2" variant="outline" onClick={() => {
-                      // Download error log as CSV
-                      const csv = [
-                        'Row,Field,Message,Type',
-                        ...pendingUploadSummary.errors.map(e => `${e.row},${e.field},${e.message},${e.type}`)
-                      ].join('\n');
-                      const blob = new Blob([csv], { type: 'text/csv' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'upload_errors.csv';
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}>Download Error Log</Button>
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button onClick={() => setShowFinalUploadSummary(false)} variant="secondary">Close</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
       </div>
     </div>
   );

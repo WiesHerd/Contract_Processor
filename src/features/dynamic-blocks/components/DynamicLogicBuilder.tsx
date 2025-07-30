@@ -16,16 +16,15 @@ import { Switch } from '@/components/ui/switch';
 
 // Sample data - matches current provider schema
 const availableFields = [
-  'name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 'positionTitle',
+  'name', 'employeeId', 'providerType', 'specialty', 'subspecialty',
   'yearsExperience', 'baseSalary', 'hourlyWage', 'originalAgreementDate', 'organizationName',
   'startDate', 'contractTerm', 'ptoDays', 'holidayDays', 'cmeDays', 'cmeAmount',
-  'signingBonus', 'relocationBonus', 'educationBonus', 'qualityBonus', 'compensationType',
-  'conversionFactor', 'wRVUTarget', 'credentials', 'compensationModel', 'compensationYear',
-  'fte', 'administrativeFte', 'administrativeRole', 'totalFTE', 'templateTag',
+  'signingBonus', 'educationBonus', 'qualityBonus', 'compensationType',
+  'conversionFactor', 'wRVUTarget', 'credentials', 'compensationYear',
+  'fte', 'templateTag',
   // Dynamic fields that are stored in the dynamicFields JSON (exact casing from real data)
-  'ClinicalFTE', 'MedicalDirectorFTE', 'DivisionChiefFTE', 'ResearchFTE', 'TeachingFTE', 'TotalFTE',
-  // Alternative casings for backward compatibility  
-  'clinicalFTE', 'medicalDirectorFTE', 'divisionChiefFTE', 'researchFTE', 'teachingFTE'
+  'Clinical FTE', 'Medical Director FTE', 'Division Chief FTE', 'Research FTE', 'Teaching FTE', 'Total FTE',
+  'Administrative FTE', 'Admin FTE', 'CME Amount', 'Position Title', 'Relocation Bonus'
 ];
 
 const operators = [
@@ -64,22 +63,17 @@ const testProviders: TestProvider[] = [
     name: 'Dr. Sarah Johnson',
     employeeId: 'EMP001',
     specialty: 'Cardiology',
-    clinicalFTE: 0.8,
-    administrativeFte: 0.2,
-    researchFTE: 0,
-    teachingFTE: 0,
-    divisionChiefFTE: 0,
-    medicalDirectorFTE: 0,
     baseSalary: 280000,
     compensationType: 'Salary',
     compensationYear: '2024',
+    startDate: '08/18/2023',
     dynamicFields: JSON.stringify({
-      ClinicalFTE: "0.8",
-      MedicalDirectorFTE: "0.0",
-      DivisionChiefFTE: "0.0",
-      ResearchFTE: "0.0",
-      TeachingFTE: "0.0",
-      TotalFTE: "1.0"
+      "Clinical FTE": "0.8",
+      "Medical Director FTE": "0.0",
+      "Division Chief FTE": "0.0",
+      "Research FTE": "0.0",
+      "Teaching FTE": "0.0",
+      "Total FTE": "1.0"
     })
   },
   {
@@ -87,48 +81,35 @@ const testProviders: TestProvider[] = [
     name: 'Dr. Michael Chen',
     employeeId: 'EMP002',
     specialty: 'Oncology',
-    clinicalFTE: 0.6,
-    administrativeFte: 0.1,
-    researchFTE: 0.2,
-    teachingFTE: 0.1,
-    divisionChiefFTE: 0,
-    medicalDirectorFTE: 0.1,
     baseSalary: 320000,
-    compensationType: 'Salary + Productivity',
-    wRVUTarget: 5000,
-    conversionFactor: 45,
+    compensationType: 'Productivity',
     compensationYear: '2024',
+    startDate: '09/01/2023',
     dynamicFields: JSON.stringify({
-      ClinicalFTE: "0.6",
-      MedicalDirectorFTE: "0.1",
-      DivisionChiefFTE: "0.0",
-      ResearchFTE: "0.2",
-      TeachingFTE: "0.1",
-      TotalFTE: "1.0"
+      "Clinical FTE": "0.6",
+      "Medical Director FTE": "0.1",
+      "Division Chief FTE": "0.0",
+      "Research FTE": "0.2",
+      "Teaching FTE": "0.1",
+      "Total FTE": "1.0"
     })
   },
   {
     id: 3,
     name: 'Dr. Emily Rodriguez',
     employeeId: 'EMP003',
-    specialty: 'Internal Medicine',
-    clinicalFTE: 0.5,
-    administrativeFte: 0.1,
-    researchFTE: 0.1,
-    teachingFTE: 0.2,
-    divisionChiefFTE: 0.3,
-    medicalDirectorFTE: 0.1,
-    baseSalary: 380000,
-    compensationType: 'Salary',
-    signingBonus: 50000,
+    specialty: 'Pediatrics',
+    baseSalary: 250000,
+    compensationType: 'Base',
     compensationYear: '2024',
+    startDate: '07/15/2023',
     dynamicFields: JSON.stringify({
-      ClinicalFTE: "0.5",
-      MedicalDirectorFTE: "0.1",
-      DivisionChiefFTE: "0.3",
-      ResearchFTE: "0.1",
-      TeachingFTE: "0.2",
-      TotalFTE: "1.2"
+      "Clinical FTE": "0.9",
+      "Medical Director FTE": "0.0",
+      "Division Chief FTE": "0.0",
+      "Research FTE": "0.0",
+      "Teaching FTE": "0.1",
+      "Total FTE": "1.0"
     })
   }
 ];
@@ -662,7 +643,6 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
           for (const variation of fieldVariations) {
             if (dynamicData[variation] !== undefined) {
               fieldValue = dynamicData[variation];
-              console.log(`✅ Found field value in dynamicFields using variation "${variation}": ${fieldValue}`);
               break;
             }
           }
@@ -683,25 +663,13 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
         for (const variation of fieldVariations) {
           if (provider[variation] !== undefined) {
             fieldValue = provider[variation];
-            console.log(`✅ Found field value using direct variation "${variation}": ${fieldValue}`);
             break;
           }
         }
       }
       
-      // If still not found, log available fields
+      // If still not found, return false
       if (fieldValue === undefined || fieldValue === null) {
-        console.log(`📋 Available direct fields:`, Object.keys(provider));
-        if (provider.dynamicFields) {
-          try {
-            const dynamicData = typeof provider.dynamicFields === 'string' 
-              ? JSON.parse(provider.dynamicFields) 
-              : provider.dynamicFields;
-            console.log(`📋 Available dynamicFields:`, Object.keys(dynamicData));
-          } catch (error) {
-            console.log(`📋 dynamicFields (raw):`, provider.dynamicFields);
-          }
-        }
         return false;
       }
     }
@@ -710,7 +678,6 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
     
     // Handle non-numeric values
     if (isNaN(compareValue)) {
-      console.log(`⚠️ Compare value "${condition.value}" is not a number`);
       return false;
     }
     
@@ -718,7 +685,6 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
     const numericFieldValue = typeof fieldValue === 'string' ? parseFloat(fieldValue) : fieldValue;
     
     if (isNaN(numericFieldValue)) {
-      console.log(`⚠️ Field value "${fieldValue}" is not a number`);
       return false;
     }
     
@@ -742,31 +708,28 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
   const generatePreview = useCallback((providerData: any) => {
     if (!providerData) return '';
     
-    console.log('🎯 Generating preview for:', providerData.name);
-    console.log('📊 Provider data:', providerData);
-    console.log('📋 Data source:', providers.length > 0 ? 'Real Database' : 'Test Data');
-    
     // If there are no conditions or always include items, return empty string
     if (debouncedBlock.conditions.length === 0 && debouncedBlock.alwaysInclude.length === 0) {
-      console.log('⚠️ No conditions or always include items configured');
       return '';
     }
     
     const items: Array<{label: string, value: string}> = [];
     
     // Add conditional items (only show if condition is met)
-
     debouncedBlock.conditions.forEach((condition: Condition, index: number) => {
       // Use the same field lookup logic as evaluateCondition
       let fieldValue = providerData[condition.field];
       
       // Handle undefined fields - check dynamicFields first (same as evaluateCondition)
       if (fieldValue === undefined || fieldValue === null) {
+        console.log(`  ⚠️ Field "${condition.field}" not found directly, checking dynamicFields...`);
         if (providerData.dynamicFields) {
           try {
             const dynamicData = typeof providerData.dynamicFields === 'string' 
               ? JSON.parse(providerData.dynamicFields) 
               : providerData.dynamicFields;
+            
+            console.log(`  📋 Available dynamicFields:`, Object.keys(dynamicData));
             
             // Try field name variations in dynamicFields
             const fieldVariations = [
@@ -775,6 +738,8 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
               condition.field.replace(/FTE$/, 'FTE'), // ensure FTE is uppercase
               condition.field.replace(/Fte$/, 'FTE'), // convert Fte to FTE
             ];
+            
+            console.log(`  🔍 Trying field variations:`, fieldVariations);
             
             for (const variation of fieldVariations) {
               if (dynamicData[variation] !== undefined) {
@@ -787,34 +752,38 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
             console.error('❌ Error parsing dynamicFields:', error);
           }
         }
+      } else {
+        console.log(`  ✅ Found field value directly: ${fieldValue}`);
       }
       
       const conditionMet = evaluateCondition(condition, providerData);
       
-      console.log(`  ${index + 1}. "${condition.label}" (${condition.field} ${condition.operator} ${condition.value})`);
-      console.log(`     Field value: ${fieldValue}, Condition met: ${conditionMet}`);
+      console.log(`  📊 Condition evaluation: Field value = ${fieldValue}, Condition met = ${conditionMet}`);
       
       if (condition.field && condition.label && conditionMet) {
         if (fieldValue !== undefined && fieldValue !== null) {
           const displayValue = typeof fieldValue === 'number' ? fieldValue.toLocaleString() : fieldValue.toString();
           items.push({ label: condition.label, value: displayValue });
-          console.log(`     ✅ Added: ${condition.label}: ${displayValue}`);
+          console.log(`  ✅ Added: ${condition.label}: ${displayValue}`);
         } else {
-          console.log(`     ❌ Field value is null/undefined after all lookups`);
+          console.log(`  ❌ Field value is null/undefined after all lookups`);
         }
       } else {
-        console.log(`     ❌ Condition not met or missing data`);
+        console.log(`  ❌ Condition not met or missing data`);
       }
     });
     
     // Add always include items (always show regardless of value)
-
+    console.log('\n🔍 Processing', debouncedBlock.alwaysInclude.length, 'always include items...');
     debouncedBlock.alwaysInclude.forEach((item: AlwaysInclude, index: number) => {
+      console.log(`\n🔍 Processing always include ${index + 1}: "${item.label}" (${item.valueField})`);
+      
       if (item.label && item.valueField) {
         let value = providerData[item.valueField];
         
         // If value not found directly, check dynamicFields
         if (value === undefined || value === null) {
+          console.log(`  ⚠️ Field "${item.valueField}" not found directly, checking dynamicFields...`);
           if (providerData.dynamicFields) {
             try {
               const dynamicData = typeof providerData.dynamicFields === 'string' 
@@ -829,10 +798,12 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
                 item.valueField.replace(/Fte$/, 'FTE'), // convert Fte to FTE
               ];
               
+              console.log(`  🔍 Trying field variations:`, fieldVariations);
+              
               for (const variation of fieldVariations) {
                 if (dynamicData[variation] !== undefined) {
                   value = dynamicData[variation];
-                  console.log(`  Found "${item.valueField}" in dynamicFields as "${variation}": ${value}`);
+                  console.log(`  ✅ Found "${item.valueField}" in dynamicFields as "${variation}": ${value}`);
                   break;
                 }
               }
@@ -840,20 +811,23 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
               console.error('Error parsing dynamicFields for always include item:', error);
             }
           }
+        } else {
+          console.log(`  ✅ Found field value directly: ${value}`);
         }
         
-        console.log(`  ${index + 1}. "${item.label}" (${item.valueField}): ${value}`);
+        console.log(`  📊 Always include evaluation: Field value = ${value}`);
         if (value !== undefined && value !== null) {
           const displayValue = typeof value === 'number' ? value.toLocaleString() : value.toString();
           items.push({ label: item.label, value: displayValue });
-          console.log(`     ✅ Added: ${item.label}: ${displayValue}`);
+          console.log(`  ✅ Added: ${item.label}: ${displayValue}`);
         } else {
-          console.log(`     ❌ Field value is null/undefined`);
+          console.log(`  ❌ Field value is null/undefined`);
         }
       }
     });
     
-    console.log('📋 Total items to display:', items.length);
+    console.log('\n📋 Total items to display:', items.length);
+    console.log('📋 Items:', items);
     
     // Return empty if no items
     if (items.length === 0) {
