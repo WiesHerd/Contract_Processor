@@ -66,6 +66,8 @@ export const useGeneratorEvents = ({
     
     try {
       await generateAndDownloadDocx(provider, assignedTemplate);
+      // Add a small delay to ensure DynamoDB write has propagated
+      await new Promise(resolve => setTimeout(resolve, 500));
       await hydrateGeneratedContracts();
     } catch (e) {
       setUserError("Failed to generate contract. Please try again.");
@@ -242,6 +244,7 @@ b, strong { font-weight: bold !important; }
         providerId: provider.id,
         contractYear: contractYear,
         templateId: selectedTemplate.id,
+        organizationId: provider.organizationId || 'default-org-id',
         generatedAt: new Date().toISOString(),
         generatedBy: localStorage.getItem('userEmail') || 'unknown',
         outputType: 'DOCX',
@@ -253,6 +256,8 @@ b, strong { font-weight: bold !important; }
 
       try {
         const logEntry = await ContractGenerationLogService.createLog(logInput);
+        // Add a small delay to ensure DynamoDB write has propagated
+        await new Promise(resolve => setTimeout(resolve, 500));
         // Refresh contracts from database to ensure consistency
         await hydrateGeneratedContracts();
       } catch (logError) {

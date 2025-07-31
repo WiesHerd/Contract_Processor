@@ -379,7 +379,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
   const [credential, setCredential] = useState('__all__');
   const [specialty, setSpecialty] = useState('__all__');
   const [subspecialty, setSubspecialty] = useState('__all__');
-  const [adminRole, setAdminRole] = useState('__all__');
+  const [providerType, setProviderType] = useState('__all__');
   const [agreementDateFrom, setAgreementDateFrom] = useState('');
   const [agreementDateTo, setAgreementDateTo] = useState('');
   const [pageSize, setPageSize] = useState(25);
@@ -572,13 +572,13 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
     return Array.from(specialties).sort();
   }, [providers]);
 
-  // Compute unique admin roles from provider data
-  const adminRoleOptions = React.useMemo(() => {
-    const roles = new Set<string>();
+  // Compute unique provider types from provider data
+  const providerTypeOptions = React.useMemo(() => {
+    const types = new Set<string>();
     providers.forEach((p) => {
-      if (p.administrativeRole) roles.add(p.administrativeRole);
+      if (p.providerType) types.add(p.providerType);
     });
-    return Array.from(roles).sort();
+    return Array.from(types).sort();
   }, [providers]);
 
   // Compute unique subspecialties from provider data - CASCADE based on selected specialty
@@ -610,6 +610,34 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
 
   // Update filteredProviders to include subspecialty and agreement date range
   const filteredProviders = useMemo(() => {
+    // Debug: Log FTE distribution
+    const fteValues = providers.map(provider => {
+      let fteValue = 0;
+      if (provider.TotalFTE !== undefined && provider.TotalFTE !== null) {
+        fteValue = Number(provider.TotalFTE) || 0;
+      } else if (provider.fte !== undefined && provider.fte !== null) {
+        fteValue = Number(provider.fte) || 0;
+      } else if (provider.dynamicFields) {
+        try {
+          const dynamicFields = typeof provider.dynamicFields === 'string' 
+            ? JSON.parse(provider.dynamicFields) 
+            : provider.dynamicFields;
+          if (dynamicFields.TotalFTE !== undefined && dynamicFields.TotalFTE !== null) {
+            fteValue = Number(dynamicFields.TotalFTE) || 0;
+          } else if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
+            fteValue = Number(dynamicFields.fte) || 0;
+          } else if (dynamicFields['Total FTE'] !== undefined && dynamicFields['Total FTE'] !== null) {
+            fteValue = Number(dynamicFields['Total FTE']) || 0;
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+      return fteValue;
+    }).filter(fte => fte > 0);
+    
+    console.log('📊 [FTE Debug] Total providers:', providers.length, 'Providers with FTE > 0:', fteValues.length, 'FTE values:', fteValues.slice(0, 10));
+    
     return providers.filter(provider => {
       // Use dynamic column names for search/filter
       const providerNameValue = providerNameCol ? (provider[providerNameCol] || '') : (provider.name || '');
@@ -635,10 +663,37 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           } else if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
             fteValue = Number(dynamicFields.fte) || 0;
           }
+          // Also check for "Total FTE" with space
+          if (dynamicFields['Total FTE'] !== undefined && dynamicFields['Total FTE'] !== null) {
+            fteValue = Number(dynamicFields['Total FTE']) || 0;
+          }
         } catch (e) {
           // Ignore parsing errors
         }
       }
+      
+      // Debug logging for FTE filtering
+      if (fteValue > 0) {
+        console.log('🔍 [FTE Filter Debug] Provider:', provider.name || provider.id, 'FTE:', fteValue, 'Range:', fteRange, 'Matches:', fteValue >= fteRange[0] && fteValue <= fteRange[1]);
+      }
+      
+      // Also log when FTE doesn't match the filter
+      if (fteValue > 0 && !(fteValue >= fteRange[0] && fteValue <= fteRange[1])) {
+        console.log('❌ [FTE Filter Debug] Provider filtered out:', provider.name || provider.id, 'FTE:', fteValue, 'Range:', fteRange);
+      }
+      
+      // Debug: Log the first few providers to see their FTE values
+      if (providers.length > 0 && providers.indexOf(provider) < 3) {
+        console.log('🔍 [FTE Filter Debug] Provider sample:', {
+          name: provider.name,
+          id: provider.id,
+          fte: provider.fte,
+          TotalFTE: provider.TotalFTE,
+          dynamicFields: provider.dynamicFields,
+          calculatedFTE: fteValue
+        });
+      }
+      
       const matchesFte = fteValue >= fteRange[0] && fteValue <= fteRange[1];
 
       // Always use normalized provider.credentials for filtering
@@ -649,8 +704,8 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
       const matchesSpecialty =
         specialty === '__all__' || provider.specialty === specialty;
 
-      // Always use normalized provider.administrativeRole for filtering
-      const matchesAdminRole = adminRole === '__all__' || provider.administrativeRole === adminRole;
+      // Always use normalized provider.providerType for filtering
+      const matchesProviderType = providerType === '__all__' || provider.providerType === providerType;
 
       let matchesSubspecialty = true;
       if (subspecialty !== '__all__') {
@@ -665,9 +720,9 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
         matchesAgreementDate = Boolean(provider.originalAgreementDate && provider.originalAgreementDate <= agreementDateTo);
       }
 
-      return matchesSearch && matchesFte && matchesCredential && matchesSpecialty && matchesAdminRole && matchesSubspecialty && matchesAgreementDate;
+      return matchesSearch && matchesFte && matchesCredential && matchesSpecialty && matchesProviderType && matchesSubspecialty && matchesAgreementDate;
     });
-  }, [providers, search, fteRange, credential, specialty, adminRole, subspecialty, agreementDateFrom, agreementDateTo, providerNameCol]);
+      }, [providers, search, fteRange, credential, specialty, providerType, subspecialty, agreementDateFrom, agreementDateTo, providerNameCol]);
 
   // Memoize unique values for filters
   const uniqueCredentials = useMemo(() => 
@@ -976,7 +1031,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                 setCredential('__all__');
                 setSpecialty('__all__');
                 setSubspecialty('__all__');
-                setAdminRole('__all__');
+                setProviderType('__all__');
                 setAgreementDateFrom('');
                 setAgreementDateTo('');
               }}
@@ -1065,14 +1120,14 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
               </Select>
           </div>
             <div className="flex flex-col min-w-[180px]">
-              <label htmlFor="adminrole-select" className="text-sm font-normal text-gray-700 mb-1">Admin Role</label>
-              <Select value={adminRole} onValueChange={setAdminRole}>
-                <SelectTrigger id="adminrole-select" className="w-full font-normal">
-                  <SelectValue placeholder="All Admin Roles" className="font-normal" />
+              <label htmlFor="providertype-select" className="text-sm font-normal text-gray-700 mb-1">Provider Type</label>
+              <Select value={providerType} onValueChange={setProviderType}>
+                <SelectTrigger id="providertype-select" className="w-full font-normal">
+                  <SelectValue placeholder="All Provider Types" className="font-normal" />
                 </SelectTrigger>
                 <SelectContent modal={false}>
-                  <SelectItem value="__all__" className="font-normal">All Admin Roles</SelectItem>
-                  {adminRoleOptions.map(opt => (
+                  <SelectItem value="__all__" className="font-normal">All Provider Types</SelectItem>
+                  {providerTypeOptions.map(opt => (
                     <SelectItem key={opt} value={opt} className="font-normal">{opt}</SelectItem>
                   ))}
                 </SelectContent>

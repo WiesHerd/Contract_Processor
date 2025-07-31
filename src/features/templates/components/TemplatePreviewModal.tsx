@@ -9,11 +9,13 @@ import mammoth from 'mammoth';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { FieldMapping } from '@/features/templates/mappingsSlice';
 import { Provider } from '@/types/provider';
-import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
 import { downloadFile } from '@/utils/s3Storage';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getContractFileName } from '@/utils/filename';
 import { saveDocxFile } from '@/utils/fileUtils';
+
+// Declare htmlDocx as a global variable (loaded from CDN)
+declare const htmlDocx: any;
 
 interface TemplatePreviewModalProps {
   open: boolean;
@@ -25,7 +27,6 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
   const [docxText, setDocxText] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
   const providers = useSelector((state: any) => state.provider.providers);
   const mappings = useSelector((state: any) => state.mappings.mappings);
 
@@ -132,6 +133,39 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
     }
   };
 
+  const handleDownloadOriginal = async () => {
+    if (!template || !template.docxTemplate) {
+      alert("Original template file not found.");
+      return;
+    }
+    
+    try {
+      console.log('🔍 Downloading original template from S3:', template.docxTemplate);
+      const blob = await downloadFile(template.docxTemplate);
+      if (!blob) {
+        alert("Failed to download original template file from S3.");
+        return;
+      }
+      
+      const fileName = `${template.name.replace(/\s+/g, '_')}_ORIGINAL_WITH_PLACEHOLDERS.docx`;
+      
+      // Create a download link for the blob
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log('✅ Original template with placeholders downloaded successfully:', fileName);
+    } catch (error) {
+      console.error("Original template download failed:", error);
+      alert("Failed to download original template from S3. Please try again.");
+    }
+  };
+
   if (!template) return null;
 
   return (
@@ -187,16 +221,10 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({ open, templ
         </div>
         <DialogFooter className="flex justify-end gap-2 mt-6">
           <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={handleDownloadOriginal} disabled={!template?.docxTemplate}>Download Original</Button>
           <Button onClick={handleDownload} disabled={!selectedProvider}>Download as Word</Button>
-          <Button onClick={() => setEditorOpen(true)}>Edit HTML</Button>
         </DialogFooter>
-        {editorOpen && (
-          <TemplateHtmlEditorModal
-            templateId={template?.id || ''}
-            isOpen={editorOpen}
-            onClose={() => setEditorOpen(false)}
-          />
-        )}
+
       </DialogContent>
     </Dialog>
   );

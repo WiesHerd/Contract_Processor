@@ -5,7 +5,7 @@ import type { AppDispatch } from '@/store';
 import { Template } from '@/types/template';
 import { Button } from '@/components/ui/button';
 import { saveAs } from 'file-saver';
-import TemplateHtmlEditorModal from './TemplateHtmlEditorModal';
+
 import Select from 'react-select';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { FieldMapping } from '@/features/templates/mappingsSlice';
@@ -79,7 +79,7 @@ h2, h3, h4, h5, h6 { font-size: 13pt !important; font-weight: bold !important; }
 
 const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId, providerData }) => {
   const dispatch = useDispatch<AppDispatch>();
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
   const [selectedProvider, setSelectedProvider] = useState<Provider>(sampleData);
   const [mergedHtml, setMergedHtml] = useState<string>('');
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -176,10 +176,7 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
     }
   };
 
-  const handleSaveEditedHtml = (editedHtml: string) => {
-    // This should dispatch an action to update the template in Redux store
-    console.log("Saving edited HTML for template:", templateId, editedHtml);
-  };
+
 
   if (!template) {
     return <div className="p-4 text-center text-gray-500">Select a template to see a preview.</div>;
@@ -207,7 +204,6 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setIsEditorOpen(true)}>Edit HTML</Button>
           <Button onClick={handleDownload}>Download as Word</Button>
         </div>
       </div>
@@ -231,14 +227,7 @@ const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({ templateId,
           </div>
         )}
       </div>
-      {/* HTML Editor Modal */}
-      {isEditorOpen && (
-        <TemplateHtmlEditorModal
-          templateId={templateId}
-          isOpen={isEditorOpen}
-          onClose={() => setIsEditorOpen(false)}
-        />
-      )}
+
     </div>
   );
 };

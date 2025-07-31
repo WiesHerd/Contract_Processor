@@ -33,7 +33,7 @@ export const PROVIDER_SCHEMA: ProviderSchemaField[] = [
   // Clinical Classification
   { key: 'specialty', label: 'Specialty', type: 'string', required: true, variants: ['specialty'] },
   { key: 'subspecialty', label: 'Subspecialty', type: 'string', required: false, variants: ['subspecialty', 'sub specialty'] },
-  { key: 'positionTitle', label: 'Position Title', type: 'string', required: false, variants: ['position title', 'positiontitle', 'title'] },
+  // { key: 'positionTitle', label: 'Position Title', type: 'string', required: false, variants: ['position title', 'positiontitle', 'title'] },
   { key: 'yearsExperience', label: 'Years of Experience', type: 'number', required: false, variants: ['years of experience', 'yearsofexperience', 'years experience', 'experience'] },
   
   // Compensation
@@ -42,7 +42,8 @@ export const PROVIDER_SCHEMA: ProviderSchemaField[] = [
   
   // Contract Details
   { key: 'originalAgreementDate', label: 'OriginalAgreementDate', type: 'date', required: false, variants: ['original agreement date', 'originalagreementdate', 'agreement date'] },
-  { key: 'organizationName', label: 'OrganizationName', type: 'string', required: false, variants: ['organization name', 'organizationname', 'organization'] },
+  { key: 'organizationName', label: 'OrganizationName', type: 'string', required: true, variants: ['organization name', 'organizationname', 'organization'] },
+  { key: 'organizationId', label: 'OrganizationID', type: 'string', required: true, variants: ['organization id', 'organizationid', 'org id'] },
   { key: 'startDate', label: 'StartDate', type: 'date', required: false, variants: ['start date', 'startdate'] },
   { key: 'contractTerm', label: 'ContractTerm', type: 'string', required: false, variants: ['contract term', 'contractterm', 'term'] },
   
@@ -54,7 +55,7 @@ export const PROVIDER_SCHEMA: ProviderSchemaField[] = [
   
   // Bonuses
   { key: 'signingBonus', label: 'SigningBonus', type: 'number', required: false, variants: ['signing bonus', 'signingbonus'], format: 'currency' },
-  { key: 'relocationBonus', label: 'RelocationBonus', type: 'number', required: false, variants: ['relocation bonus', 'relocationbonus'], format: 'currency' },
+  // { key: 'relocationBonus', label: 'RelocationBonus', type: 'number', required: false, variants: ['relocation bonus', 'relocationbonus'], format: 'currency' },
   { key: 'qualityBonus', label: 'QualityBonus', type: 'number', required: false, variants: ['quality bonus', 'qualitybonus'], format: 'currency' },
   
   // Productivity
@@ -65,13 +66,16 @@ export const PROVIDER_SCHEMA: ProviderSchemaField[] = [
   // Credentials
   { key: 'credentials', label: 'Credentials', type: 'string', required: false, variants: ['credentials'] },
   
-  // FTE Breakdown - New Target Schema
-  { key: 'clinicalFTE', label: 'ClinicalFTE', type: 'number', required: false, variants: ['clinical fte', 'clinicalfte', 'ClinicalFTE'], format: 'percentage' },
-  { key: 'medicalDirectorFTE', label: 'MedicalDirectorFTE', type: 'number', required: false, variants: ['medical director fte', 'medicaldirectorfte', 'MedicalDirectorFTE'], format: 'percentage' },
-  { key: 'divisionChiefFTE', label: 'DivisionChiefFTE', type: 'number', required: false, variants: ['division chief fte', 'divisionchieffte', 'DivisionChiefFTE'], format: 'percentage' },
-  { key: 'researchFTE', label: 'ResearchFTE', type: 'number', required: false, variants: ['research fte', 'researchfte', 'ResearchFTE'], format: 'percentage' },
-  { key: 'teachingFTE', label: 'TeachingFTE', type: 'number', required: false, variants: ['teaching fte', 'teachingfte', 'TeachingFTE'], format: 'percentage' },
-  { key: 'totalFTE', label: 'TotalFTE', type: 'number', required: false, variants: ['total fte', 'totalfte', 'fte', 'TotalFTE'], format: 'percentage' },
+  // FTE Breakdown - New Target Schema (temporarily disabled until backend schema is updated)
+  // { key: 'clinicalFTE', label: 'Clinical FTE', type: 'number', required: false, variants: ['clinical fte', 'clinicalfte', 'ClinicalFTE'], format: 'percentage' },
+  // { key: 'medicalDirectorFTE', label: 'Medical Director FTE', type: 'number', required: false, variants: ['medical director fte', 'medicaldirectorfte', 'MedicalDirectorFTE'], format: 'percentage' },
+  // { key: 'divisionChiefFTE', label: 'Division Chief FTE', type: 'number', required: false, variants: ['division chief fte', 'divisionchieffte', 'DivisionChiefFTE'], format: 'percentage' },
+  // { key: 'researchFTE', label: 'Research FTE', type: 'number', required: false, variants: ['research fte', 'researchfte', 'ResearchFTE'], format: 'percentage' },
+  // { key: 'teachingFTE', label: 'Teaching FTE', type: 'number', required: false, variants: ['teaching fte', 'teachingfte', 'TeachingFTE'], format: 'percentage' },
+  // { key: 'totalFTE', label: 'Total FTE', type: 'number', required: false, variants: ['total fte', 'totalfte', 'fte', 'TotalFTE'], format: 'percentage' },
+  // { key: 'administrativeFte', label: 'Administrative FTE', type: 'number', required: false, variants: ['administrative fte', 'administrativefte', 'AdministrativeFTE'], format: 'percentage' },
+  // { key: 'administrativeRole', label: 'Administrative Role', type: 'string', required: false, variants: ['administrative role', 'administrativerole', 'admin role'] },
+  { key: 'educationBonus', label: 'Education Bonus', type: 'number', required: false, variants: ['education bonus', 'educationbonus'], format: 'currency' },
 ];
 
 /**

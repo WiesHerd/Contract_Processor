@@ -7,10 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { logSecurityEvent } from '@/store/slices/auditSlice';
 import { AppDispatch } from '@/store';
-import { fetchDynamicBlocksIfNeeded, selectDynamicBlocks, selectDynamicBlocksLoading } from '@/store/slices/dynamicBlockSlice';
 
 // Use a simpler interface that matches what the builder expects
 interface SavedBlock {
@@ -26,9 +25,9 @@ interface SavedBlock {
 
 const DynamicBlocksPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const savedBlocks = useSelector(selectDynamicBlocks);
-  const isLoading = useSelector(selectDynamicBlocksLoading);
+  const [savedBlocks, setSavedBlocks] = useState<DynamicBlockResponse[]>([]);
   const [selectedBlockId, setSelectedBlockId] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
@@ -36,11 +35,23 @@ const DynamicBlocksPage: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const builderRef = useRef<any>(null);
 
-  // Smart caching for dynamic blocks - Enterprise-grade
+  // Load saved blocks on component mount
   useEffect(() => {
-    console.log('🔄 Loading dynamic blocks with smart caching');
-    dispatch(fetchDynamicBlocksIfNeeded());
-  }, [dispatch]);
+    loadSavedBlocks();
+  }, []);
+
+  const loadSavedBlocks = async () => {
+    try {
+      setIsLoading(true);
+      const blocks = await DynamicBlockService.listDynamicBlocks();
+      setSavedBlocks(blocks);
+    } catch (err) {
+      console.error('Error loading saved blocks:', err);
+      setError('Failed to load saved blocks');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleLoadBlock = async (blockId: string) => {
     if (!blockId) {
@@ -53,6 +64,7 @@ const DynamicBlocksPage: React.FC = () => {
     }
 
     try {
+      setIsLoading(true);
       const block = await DynamicBlockService.getDynamicBlock(blockId);
       
       if (block && builderRef.current && builderRef.current.loadBlockData) {
@@ -73,11 +85,14 @@ const DynamicBlocksPage: React.FC = () => {
     } catch (err) {
       console.error('Error loading block:', err);
       setError('Failed to load block');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSaveBlock = async (block: any) => {
     try {
+      setIsLoading(true);
       setError(null);
       
       const blockData = {
@@ -102,8 +117,8 @@ const DynamicBlocksPage: React.FC = () => {
 
       console.log('Block saved successfully:', result);
       
-      // Reload the saved blocks list with smart caching
-      dispatch(fetchDynamicBlocksIfNeeded());
+      // Reload the saved blocks list
+      await loadSavedBlocks();
       
       // Update selected block ID if this was a new block
       if (!block.id || block.id.trim() === '') {
@@ -115,6 +130,8 @@ const DynamicBlocksPage: React.FC = () => {
       console.error('Error saving block:', err);
       setError('Failed to save block. Please try again.');
       toast.error('Failed to save block');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -183,8 +200,8 @@ const DynamicBlocksPage: React.FC = () => {
         }
       }
       
-      // Reload the saved blocks list with smart caching
-      dispatch(fetchDynamicBlocksIfNeeded());
+      // Reload the saved blocks list
+      await loadSavedBlocks();
       
       toast.success('Dynamic block deleted successfully');
     } catch (err) {
@@ -267,8 +284,8 @@ const DynamicBlocksPage: React.FC = () => {
         builderRef.current.resetForm();
       }
       
-      // Reload the saved blocks list with smart caching
-      dispatch(fetchDynamicBlocksIfNeeded());
+      // Reload the saved blocks list
+      await loadSavedBlocks();
       
       if (deletedCount === totalBlocks) {
         toast.success(`All ${deletedCount} dynamic blocks deleted successfully`);

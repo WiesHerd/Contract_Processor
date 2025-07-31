@@ -30,9 +30,7 @@ type Provider @model @auth(rules: [
   providerType: String
   specialty: String
   subspecialty: String
-  fte: Float
-  administrativeFte: Float
-  administrativeRole: String
+  positionTitle: String
   yearsExperience: Int
   hourlyWage: Float
   baseSalary: Float
@@ -47,14 +45,23 @@ type Provider @model @auth(rules: [
   cmeDays: Int
   cmeAmount: Float
   signingBonus: Float
-  educationBonus: Float
+  relocationBonus: Float
   qualityBonus: Float
+  educationBonus: Float
   compensationType: String
   conversionFactor: Float
   wRVUTarget: Float
   compensationYear: String @index(name: "byCompensationYear", queryField: "providersByCompensationYear")
   credentials: String
   compensationModel: String
+  clinicalFTE: Float
+  medicalDirectorFTE: Float
+  divisionChiefFTE: Float
+  researchFTE: Float
+  teachingFTE: Float
+  totalFTE: Float
+  administrativeFte: Float
+  administrativeRole: String
   fteBreakdown: [FTEBreakdownComponent]
   templateTag: String
   dynamicFields: AWSJSON

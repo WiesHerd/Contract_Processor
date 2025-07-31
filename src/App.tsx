@@ -69,7 +69,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const isWelcome = location.pathname === '/';
   
   const navigate = useNavigate();
-  const { isAuthenticated, signOut, isAdmin } = useAuth();
+  const { isAuthenticated, signOut, isAdmin, isLoading } = useAuth();
 
   const handleSignOut = async () => {
     try {
@@ -107,6 +107,18 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     if (isWarningModalOpen) setShowSessionBanner(false);
   }, [isAuthenticated, isWarningModalOpen]);
 
+  // Show loading state while auth is initializing - AFTER all hooks are called
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {showNav && <TopNav onSignOut={handleSignOut} />}
@@ -141,10 +153,11 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 function UserNav({ onSignOut }: { onSignOut: () => void }) {
-  const { user, isAdmin, attributes } = useAuth();
+  const { user, isAdmin, attributes, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  if (!user) return null;
+  // Don't render anything while loading
+  if (isLoading || !user) return null;
 
   const getInitials = (firstName?: string, username?: string) => {
     if (firstName) return firstName.charAt(0).toUpperCase();
@@ -204,6 +217,11 @@ function UserNav({ onSignOut }: { onSignOut: () => void }) {
 function TopNav({ onSignOut }: { onSignOut: () => void }) {
   const location = useLocation();
   const { isAuthenticated, isAdmin, isLoading } = useAuth();
+
+  // Don't render anything while loading
+  if (isLoading) {
+    return null;
+  }
 
   const isActive = (path: string) => {
     return location.pathname === path;

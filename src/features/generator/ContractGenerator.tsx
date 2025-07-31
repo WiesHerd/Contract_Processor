@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import localforage from 'localforage';
 import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { Input } from '@/components/ui/input';
-import { Editor } from '@tinymce/tinymce-react';
+
 import { getContractFileName } from '@/utils/filename';
 import { logSecurityEvent } from '@/store/slices/auditSlice';
 import { v4 as uuidv4 } from 'uuid';
@@ -136,24 +136,54 @@ export default function ContractGenerator() {
   } = useGeneratorPreferences();
   const { selectedYear } = useYear();
 
-  // Load providers for the selected year with caching (same pattern as ProviderDataManager)
+  // Loading state for better UX
+  const [isHydratingContracts, setIsHydratingContracts] = useState(false);
+
+  // Load providers for the selected year with smart caching
   useEffect(() => {
     if (selectedYear) {
-      dispatch(fetchProvidersByYear(selectedYear));
+      console.log('🔄 ContractGenerator: Loading providers for year:', selectedYear);
+      
+      // Check if we already have providers for this year and they're recent (within 5 minutes)
+      const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+      const now = new Date().getTime();
+      const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
+      const isCacheValid = providers.length > 0 && (now - lastSyncTime < CACHE_DURATION_MS);
+      
+      if (isCacheValid) {
+        console.log('✅ ContractGenerator: Using cached providers (', providers.length, 'providers, last sync:', lastSync, ')');
+      } else {
+        console.log('🔄 ContractGenerator: Cache expired or empty, fetching fresh providers');
+        dispatch(fetchProvidersByYear(selectedYear));
+      }
     }
-  }, [dispatch, selectedYear]);
+  }, [dispatch, selectedYear, providers.length, lastSync]);
 
-  // Additional hydration effect to ensure contracts are loaded after providers
+  // Smart contract hydration with proper sequencing
   useEffect(() => {
-    if (selectedYear && providers.length > 0 && generatedContracts.length === 0) {
-      // Add a small delay to ensure providers are fully loaded
-      const timer = setTimeout(() => {
-        hydrateGeneratedContracts();
-      }, 1000);
+    console.log('🔄 ContractGenerator: Hydration effect triggered', {
+      selectedYear,
+      providersLength: providers.length,
+      providersLoading,
+      isHydratingContracts
+    });
+    
+    if (selectedYear && providers.length > 0 && !providersLoading && !isHydratingContracts) {
+      console.log('🔄 ContractGenerator: Providers loaded, hydrating contracts...');
+      setIsHydratingContracts(true);
+      
+      // Use a longer delay to ensure providers are fully processed
+      const timer = setTimeout(async () => {
+        try {
+          await hydrateGeneratedContracts();
+        } finally {
+          setIsHydratingContracts(false);
+        }
+      }, 2000); // Increased from 1000ms to 2000ms
       
       return () => clearTimeout(timer);
     }
-  }, [selectedYear, providers.length, generatedContracts.length]);
+  }, [selectedYear, providers.length, providersLoading, isHydratingContracts]); // Removed generatedContracts.length to prevent loops
 
   // Multi-select state will be managed by the hook
   const [search, setSearch] = useState('');
@@ -179,6 +209,8 @@ export default function ContractGenerator() {
   const [selectedSpecialty, setSelectedSpecialty] = useState("__ALL__");
   const [selectedSubspecialty, setSelectedSubspecialty] = useState("__ALL__");
   const [selectedProviderType, setSelectedProviderType] = useState("__ALL__");
+  const [selectedFTE, setSelectedFTE] = useState<[number, number]>([0, 2]);
+  const [selectedProviderTypeFilter, setSelectedProviderTypeFilter] = useState("__ALL__");
   
   // Modal-specific filter state (separate from main page)
   const [modalSelectedSpecialty, setModalSelectedSpecialty] = useState("__ALL__");
@@ -686,20 +718,36 @@ export default function ContractGenerator() {
   useEffect(() => {
     const loadContractsFromDatabase = async () => {
       try {
+        console.log('🔄 Starting to load contracts from database...');
         let allLogs: ContractGenerationLog[] = [];
         let nextToken = undefined;
+        let pageCount = 0;
         
         do {
+          pageCount++;
+          console.log(`📄 Fetching page ${pageCount} of contract logs...`);
           const result = await ContractGenerationLogService.listLogs(undefined, 1000, nextToken);
           if (result && result.items) {
+            console.log(`📄 Page ${pageCount}: Found ${result.items.length} logs`);
             allLogs = allLogs.concat(result.items);
+          } else {
+            console.log(`📄 Page ${pageCount}: No logs found`);
           }
           nextToken = result?.nextToken;
         } while (nextToken);
         
+        console.log(`📊 Total logs found in database: ${allLogs.length}`);
+        console.log('📋 Sample logs:', allLogs.slice(0, 3));
+        
         // Convert all logs to GeneratedContract format and set them all at once
         const generatedContractsFromDb: GeneratedContract[] = allLogs
-          .filter(log => log.providerId && log.templateId && log.status && log.generatedAt)
+          .filter(log => {
+            const isValid = log.providerId && log.templateId && log.status && log.generatedAt;
+            if (!isValid) {
+              console.log('⚠️ Skipping invalid log:', log);
+            }
+            return isValid;
+          })
           .map(log => {
             // Map DynamoDB status to Redux status, including PARTIAL_SUCCESS
             let reduxStatus: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
@@ -720,6 +768,8 @@ export default function ContractGenerator() {
             };
           });
 
+        console.log(`✅ Converted ${generatedContractsFromDb.length} valid contracts from database`);
+
         // Only update Redux state if we actually have contracts from the database
         if (generatedContractsFromDb.length > 0) {
           console.log('🔄 Loading contracts from database:', generatedContractsFromDb.length, 'contracts');
@@ -732,6 +782,7 @@ export default function ContractGenerator() {
       } catch (e) {
         // Only show error if it's not a benign 'no records found' error
         const err = e as Error;
+        console.error('❌ Error loading contracts from database:', err);
         if (err && err.message && !(err.message.includes('not found') || err.message.includes('No records'))) {
           console.error('❌ Initial hydration failed:', err.message);
           showError({ message: 'Could not load contract generation status from the backend. Please try again later.', severity: 'error' });
@@ -742,13 +793,22 @@ export default function ContractGenerator() {
     loadContractsFromDatabase();
   }, [dispatch]); // Add dispatch to dependency array to ensure it's available
 
-  // Keep the original hydrateGeneratedContracts function for other hooks to use
+  // Smart contract hydration with caching and error handling
   const hydrateGeneratedContracts = React.useCallback(async () => {
     try {
-      console.log('🔄 Starting hydration of generated contracts from database...');
+      console.log('🔄 Starting smart hydration of generated contracts from database...');
+      
+      // Check if we're already loading to prevent duplicate requests
+      if (providersLoading) {
+        console.log('⏳ Providers still loading, deferring contract hydration');
+        return;
+      }
+      
       let allLogs: ContractGenerationLog[] = [];
       let nextToken = undefined;
       let pageCount = 0;
+      const maxPages = 10; // Prevent infinite loops
+      
       do {
         pageCount++;
         console.log(`📄 Fetching page ${pageCount} of contract logs...`);
@@ -760,13 +820,19 @@ export default function ContractGenerator() {
           console.log(`📄 Page ${pageCount}: No logs found`);
         }
         nextToken = result?.nextToken;
-      } while (nextToken);
+      } while (nextToken && pageCount < maxPages);
       
       console.log(`📊 Found ${allLogs.length} contract logs in database`);
       
       // Convert all logs to GeneratedContract format and set them all at once
       const generatedContractsFromDb: GeneratedContract[] = allLogs
-        .filter(log => log.providerId && log.templateId && log.status && log.generatedAt)
+        .filter(log => {
+          const isValid = log.providerId && log.templateId && log.status && log.generatedAt;
+          if (!isValid) {
+            console.log('⚠️ Skipping invalid log:', log);
+          }
+          return isValid;
+        })
         .map(log => {
           // Map DynamoDB status to Redux status, including PARTIAL_SUCCESS
           let reduxStatus: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
@@ -787,7 +853,7 @@ export default function ContractGenerator() {
           };
         });
 
-      console.log(`✅ Converted ${generatedContractsFromDb.length} contracts for Redux state`);
+      console.log(`✅ Converted ${generatedContractsFromDb.length} valid contracts for Redux state`);
       
       // Always update Redux state with contracts from database (even if empty)
       dispatch(setGeneratedContracts(generatedContractsFromDb));
@@ -816,9 +882,85 @@ export default function ContractGenerator() {
       const matchesSpecialty = selectedSpecialty === "__ALL__" || provider.specialty === selectedSpecialty;
       const matchesSubspecialty = selectedSubspecialty === "__ALL__" || provider.subspecialty === selectedSubspecialty;
       const matchesProviderType = selectedProviderType === "__ALL__" || provider.providerType === selectedProviderType;
-      return matchesSearch && matchesSpecialty && matchesSubspecialty && matchesProviderType;
+      
+      // FTE filter - use the same logic as the grid to ensure consistency
+      const getFTEValue = (provider: any): number => {
+        // Check for totalFTE first (new field), then fallback to fte (old field)
+        if (provider.totalFTE !== undefined && provider.totalFTE !== null) {
+          const value = Number(provider.totalFTE);
+          if (!isNaN(value)) return value;
+        }
+        if (provider.TotalFTE !== undefined && provider.TotalFTE !== null) {
+          const value = Number(provider.TotalFTE);
+          if (!isNaN(value)) return value;
+        }
+        if (provider.fte !== undefined && provider.fte !== null) {
+          const value = Number(provider.fte);
+          if (!isNaN(value)) return value;
+        }
+        // Check dynamicFields as fallback
+        if (provider.dynamicFields) {
+          try {
+            const dynamicFields = typeof provider.dynamicFields === 'string' 
+              ? JSON.parse(provider.dynamicFields) 
+              : provider.dynamicFields;
+            
+            if (dynamicFields.totalFTE !== undefined && dynamicFields.totalFTE !== null) {
+              const value = Number(dynamicFields.totalFTE);
+              if (!isNaN(value)) return value;
+            }
+            if (dynamicFields.TotalFTE !== undefined && dynamicFields.TotalFTE !== null) {
+              const value = Number(dynamicFields.TotalFTE);
+              if (!isNaN(value)) return value;
+            }
+            if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
+              const value = Number(dynamicFields.fte);
+              if (!isNaN(value)) return value;
+            }
+            // Check for "Total FTE" with space
+            if (dynamicFields['Total FTE'] !== undefined && dynamicFields['Total FTE'] !== null) {
+              const value = Number(dynamicFields['Total FTE']);
+              if (!isNaN(value)) return value;
+            }
+          } catch (e) {
+            console.error('Error parsing dynamicFields:', e);
+          }
+        }
+        return 0;
+      };
+      
+      const fteValue = getFTEValue(provider);
+      
+      // Debug logging for FTE filtering
+      if (fteValue > 0) {
+        console.log('🔍 [FTE Filter Debug] Provider:', provider.name, 'FTE:', fteValue, 'Range:', selectedFTE, 'Matches:', fteValue >= selectedFTE[0] && fteValue <= selectedFTE[1]);
+      }
+      
+      // Also log when FTE doesn't match the filter
+      if (fteValue > 0 && !(fteValue >= selectedFTE[0] && fteValue <= selectedFTE[1])) {
+        console.log('❌ [FTE Filter Debug] Provider filtered out:', provider.name, 'FTE:', fteValue, 'Range:', selectedFTE);
+      }
+      
+      // Debug: Log the first few providers to see their FTE values
+      if (providers.length > 0 && providers.indexOf(provider) < 3) {
+        console.log('🔍 [FTE Filter Debug] Provider sample:', {
+          name: provider.name,
+          fte: provider.fte,
+          totalFTE: (provider as any).totalFTE,
+          dynamicFields: provider.dynamicFields,
+          calculatedFTE: fteValue
+        });
+      }
+      
+      const matchesFTE = fteValue >= selectedFTE[0] && fteValue <= selectedFTE[1];
+      
+      // Provider Type filter (replacing Admin Role)
+      const providerType = provider.providerType || "None";
+      const matchesProviderTypeFilter = selectedProviderTypeFilter === "__ALL__" || providerType === selectedProviderTypeFilter;
+      
+      return matchesSearch && matchesSpecialty && matchesSubspecialty && matchesProviderType && matchesFTE && matchesProviderTypeFilter;
     });
-  }, [providers, search, selectedSpecialty, selectedSubspecialty, selectedProviderType]);
+      }, [providers, search, selectedSpecialty, selectedSubspecialty, selectedProviderType, selectedFTE, selectedProviderTypeFilter]);
 
   // Bulk generation hook - replaces all bulk generation logic
   const {
@@ -1134,6 +1276,16 @@ export default function ContractGenerator() {
       .sort();
   }, [providers, selectedSpecialty, selectedSubspecialty]);
 
+  const providerTypeFilterOptions = useMemo(() => {
+    return providers
+      .filter(p => (selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty) &&
+                   (selectedSubspecialty === "__ALL__" || p.subspecialty === selectedSubspecialty))
+      .map(p => p.providerType)
+      .filter((s): s is string => !!s)
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .sort();
+  }, [providers, selectedSpecialty, selectedSubspecialty]);
+
   // Reset lower-level filters if their value is no longer valid
   useEffect(() => {
     if (selectedSubspecialty !== "__ALL__" && !subspecialtyOptions.includes(selectedSubspecialty)) {
@@ -1306,13 +1458,20 @@ export default function ContractGenerator() {
     clickedProvider,
     showAssignmentHint,
     
+    // Loading states
+    providersLoading,
+    isHydratingContracts,
+    
     // Filter state
     selectedSpecialty,
     selectedSubspecialty,
     selectedProviderType,
+    selectedFTE,
+    selectedProviderTypeFilter,
     specialtyOptions,
     subspecialtyOptions,
     providerTypeOptions,
+    providerTypeFilterOptions,
     
     // Computed values
     filteredProviders,
@@ -1337,6 +1496,8 @@ export default function ContractGenerator() {
     setSelectedSpecialty,
     setSelectedSubspecialty,
     setSelectedProviderType,
+    setSelectedFTE,
+    setSelectedProviderTypeFilter,
     setInstructionsModalOpen,
     setShowClearConfirm,
     clearTemplateAssignments,

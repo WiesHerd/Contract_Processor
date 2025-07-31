@@ -9,6 +9,7 @@ export interface ContractGenerationLog {
   providerId: string;
   contractYear: string;
   templateId: string;
+  organizationId: string;
   generatedAt: string;
   generatedBy?: string;
   outputType?: string;
@@ -23,6 +24,7 @@ export interface CreateContractGenerationLogInput {
   providerId: string;
   contractYear: string;
   templateId: string;
+  organizationId: string;
   generatedAt: string;
   generatedBy?: string;
   outputType?: string;

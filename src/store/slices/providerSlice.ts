@@ -48,7 +48,9 @@ export const fetchProvidersIfNeeded = createAsyncThunk(
 export const fetchProvidersByYear = createAsyncThunk(
   'providers/fetchByYear',
   async (year: number) => {
+    console.log('providerSlice: fetchProvidersByYear called with year:', year);
     const response = await awsProviders.list(year);
+    console.log('providerSlice: awsProviders.list returned:', response);
     return response;
   }
 );
@@ -67,13 +69,18 @@ export const uploadProviders = createAsyncThunk(
 export const clearAllProviders = createAsyncThunk(
   'providers/clearAllProviders',
   async (_, { dispatch, rejectWithValue }) => {
+    console.log('clearAllProviders thunk: Starting...');
     try {
       const onProgress = ({ deleted, total }: { deleted: number, total: number }) => {
+        console.log('clearAllProviders thunk: Progress update:', { deleted, total });
         dispatch(providerSlice.actions.setClearProgress({ progress: deleted, total: total }));
       };
+      console.log('clearAllProviders thunk: Calling awsBulkOperations.deleteAllProviders...');
       await awsBulkOperations.deleteAllProviders(onProgress);
+      console.log('clearAllProviders thunk: Completed successfully');
       return true;
     } catch (error: any) {
+      console.error('clearAllProviders thunk: Error:', error);
       return rejectWithValue(error.message || 'Failed to clear providers');
     }
   }
@@ -241,20 +248,20 @@ const providerSlice = createSlice({
 
     // Fetch Providers By Year
     builder.addCase(fetchProvidersByYear.pending, (state) => {
-      console.log('🔍 providerSlice: fetchProvidersByYear.pending');
+      console.log('providerSlice: fetchProvidersByYear.pending');
       state.loading = true;
       state.loadingAction = 'fetchingByYear';
       state.error = null;
     });
     builder.addCase(fetchProvidersByYear.fulfilled, (state, action) => {
-      console.log('🔍 providerSlice: fetchProvidersByYear.fulfilled', action.payload?.length);
+      console.log('providerSlice: fetchProvidersByYear.fulfilled with', action.payload?.length || 0, 'providers');
       state.loading = false;
       state.loadingAction = null;
       state.providers = action.payload as unknown as Provider[];
       state.lastSync = new Date().toISOString();
     });
     builder.addCase(fetchProvidersByYear.rejected, (state, action) => {
-      console.log('🔍 providerSlice: fetchProvidersByYear.rejected', action.error);
+      console.log('providerSlice: fetchProvidersByYear.rejected with error:', action.error.message);
       state.loading = false;
       state.loadingAction = null;
       state.error = action.error.message || 'Failed to fetch providers by year';

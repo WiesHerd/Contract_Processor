@@ -12,6 +12,8 @@ const fileStorage = localforage.createInstance({
   storeName: 'files',
 });
 
+// Global function assignments will be set at the end of the file
+
 /**
  * Stores a DOCX file in localforage
  * @param key The key to store the file under
@@ -103,8 +105,49 @@ export const clearTemplateStorage = async (): Promise<void> => {
       templateStorage.clear(),
       fileStorage.clear()
     ]);
+    console.log('✅ Template storage cleared successfully');
   } catch (error) {
     console.error('Error clearing template storage:', error);
     throw error;
   }
-}; 
+};
+
+/**
+ * Debug function to show what's currently stored in localForage
+ */
+export const debugTemplateStorage = async (): Promise<void> => {
+  try {
+    console.log('🔍 Debugging template storage...');
+    
+    // Check template storage
+    const templateKeys = await templateStorage.keys();
+    console.log('📁 Template storage keys:', templateKeys);
+    
+    for (const key of templateKeys) {
+      const value = await templateStorage.getItem(key);
+      console.log(`📄 Template key "${key}":`, value);
+    }
+    
+    // Check file storage
+    const fileKeys = await fileStorage.keys();
+    console.log('📁 File storage keys:', fileKeys);
+    
+    for (const key of fileKeys) {
+      const value = await fileStorage.getItem(key);
+      console.log(`📄 File key "${key}":`, value ? `ArrayBuffer(${(value as ArrayBuffer).byteLength} bytes)` : 'null');
+    }
+    
+    // Check all localForage instances
+    const allKeys = await localforage.keys();
+    console.log('📁 All localForage keys:', allKeys);
+    
+  } catch (error) {
+    console.error('Error debugging template storage:', error);
+  }
+};
+
+// Make functions available globally for debugging
+if (typeof window !== 'undefined') {
+  (window as any).clearTemplateCache = clearTemplateStorage;
+  (window as any).debugTemplateCache = debugTemplateStorage;
+} 

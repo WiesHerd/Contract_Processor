@@ -85,14 +85,12 @@ export const createProvider = /* GraphQL */ `mutation CreateProvider(
     providerType
     specialty
     subspecialty
-    fte
-    administrativeFte
-    administrativeRole
     yearsExperience
     hourlyWage
     baseSalary
     originalAgreementDate
     organizationName
+    organizationId
     startDate
     contractTerm
     ptoDays
@@ -100,14 +98,15 @@ export const createProvider = /* GraphQL */ `mutation CreateProvider(
     cmeDays
     cmeAmount
     signingBonus
-    educationBonus
     qualityBonus
+    educationBonus
     compensationType
     conversionFactor
     wRVUTarget
     compensationYear
     credentials
     compensationModel
+    administrativeFte
     fteBreakdown {
       activity
       percentage
@@ -136,14 +135,13 @@ export const updateProvider = /* GraphQL */ `mutation UpdateProvider(
     providerType
     specialty
     subspecialty
-    fte
-    administrativeFte
-    administrativeRole
+    positionTitle
     yearsExperience
     hourlyWage
     baseSalary
     originalAgreementDate
     organizationName
+    organizationId
     startDate
     contractTerm
     ptoDays
@@ -151,19 +149,23 @@ export const updateProvider = /* GraphQL */ `mutation UpdateProvider(
     cmeDays
     cmeAmount
     signingBonus
-    educationBonus
+    relocationBonus
     qualityBonus
+    educationBonus
     compensationType
     conversionFactor
     wRVUTarget
     compensationYear
     credentials
     compensationModel
-    fteBreakdown {
-      activity
-      percentage
-      __typename
-    }
+    clinicalFTE
+    medicalDirectorFTE
+    divisionChiefFTE
+    researchFTE
+    teachingFTE
+    totalFTE
+    administrativeFte
+    administrativeRole
     templateTag
     dynamicFields
     createdAt
@@ -187,14 +189,13 @@ export const deleteProvider = /* GraphQL */ `mutation DeleteProvider(
     providerType
     specialty
     subspecialty
-    fte
-    administrativeFte
-    administrativeRole
+    positionTitle
     yearsExperience
     hourlyWage
     baseSalary
     originalAgreementDate
     organizationName
+    organizationId
     startDate
     contractTerm
     ptoDays
@@ -202,19 +203,71 @@ export const deleteProvider = /* GraphQL */ `mutation DeleteProvider(
     cmeDays
     cmeAmount
     signingBonus
-    educationBonus
+    relocationBonus
     qualityBonus
+    educationBonus
     compensationType
     conversionFactor
     wRVUTarget
     compensationYear
     credentials
     compensationModel
-    fteBreakdown {
-      activity
-      percentage
-      __typename
-    }
+    clinicalFTE
+    medicalDirectorFTE
+    divisionChiefFTE
+    researchFTE
+    teachingFTE
+    totalFTE
+    administrativeFte
+    administrativeRole
+    templateTag
+    dynamicFields
+    createdAt
+    updatedAt
+    owner
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteProviderMutationVariables,
+  APITypes.DeleteProviderMutation
+>;
+
+export const deleteProviderCustom = /* GraphQL */ `mutation DeleteProviderCustom(
+  $input: DeleteProviderInput!
+  $condition: ModelProviderConditionInput
+) {
+  deleteProvider(input: $input, condition: $condition) {
+    id
+    employeeId
+    name
+    providerType
+    specialty
+    subspecialty
+    yearsExperience
+    hourlyWage
+    baseSalary
+    originalAgreementDate
+    organizationName
+    organizationId
+    startDate
+    contractTerm
+    ptoDays
+    holidayDays
+    cmeDays
+    cmeAmount
+    signingBonus
+    qualityBonus
+    educationBonus
+    compensationType
+    conversionFactor
+    wRVUTarget
+    compensationYear
+    credentials
+    compensationModel
+    administrativeFte
+    administrativeRole
+    totalFTE
     templateTag
     dynamicFields
     createdAt
@@ -722,3 +775,45 @@ export const deleteContractGenerationLog = /* GraphQL */ `mutation DeleteContrac
   APITypes.DeleteContractGenerationLogMutationVariables,
   APITypes.DeleteContractGenerationLogMutation
 >;
+
+export const createProviderCustom = /* GraphQL */ `
+  mutation CreateProviderCustom($input: CreateProviderInput!) {
+    createProvider(input: $input) {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      organizationId
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      qualityBonus
+      educationBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      administrativeFte
+      administrativeRole
+      totalFTE
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+    }
+  }
+`;

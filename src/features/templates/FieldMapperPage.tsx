@@ -13,7 +13,7 @@ import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft, Loader2, Chev
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { CommandDialog } from '@/components/ui/command';
 import localforage from 'localforage';
-import { updateMapping, setMapping, FieldMapping, LocalTemplateMapping, fetchMappingsIfNeeded, clearMappings } from './mappingsSlice';
+import { updateMapping, setMapping, FieldMapping, LocalTemplateMapping } from './mappingsSlice';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -581,17 +581,64 @@ export default function FieldMapperPage() {
   const [autoMapActive, setAutoMapActive] = useState(false);
   const [filter, setFilter] = useState<'all' | 'mapped' | 'unmapped'>('all');
 
-  // Smart caching for template mappings - Enterprise-grade
+  // Load existing mappings from AWS when component mounts
   useEffect(() => {
     const loadTemplateMappings = async () => {
       if (!templateId) return;
       setIsLoading(true);
       setError(null);
-      
       try {
-        // Use smart caching instead of direct database calls
-        console.log('🔄 Loading template mappings with smart caching');
-        await dispatch(fetchMappingsIfNeeded());
+        const mappingRecords = await fetchTemplateMappingsByTemplateId(templateId);
+        if (mappingRecords && mappingRecords.length > 0) {
+          const hydrated = template?.placeholders.map((ph: string) => {
+            const found = mappingRecords.find((rec: any) => rec.field === ph);
+            if (found) {
+              // Parse the value to determine if it's a field or dynamic block
+              let mappedColumn = found.value ?? undefined;
+              let mappedDynamicBlock = undefined;
+              let mappingType: 'field' | 'dynamic' = 'field';
+              
+              // Check if the value is a dynamic block ID (starts with 'dynamic:')
+              if (found.value?.startsWith('dynamic:')) {
+                mappedDynamicBlock = found.value.substring(8); // Remove 'dynamic:' prefix
+                mappedColumn = undefined;
+                mappingType = 'dynamic';
+              } else {
+                // Validate that the mapped column still exists in the current dataset
+                if (mappedColumn && columns.length > 0 && !columns.includes(mappedColumn)) {
+                  console.warn(`Column "${mappedColumn}" no longer exists in current dataset for placeholder "${ph}"`);
+                  // Clear the invalid mapping
+                  mappedColumn = undefined;
+                }
+              }
+              
+              return {
+                placeholder: ph,
+                mappedColumn,
+                mappedDynamicBlock,
+                mappingType,
+                notes: found.notes ?? undefined
+              };
+            }
+            return { placeholder: ph, mappingType: 'field' as const };
+          }) || [];
+          setMappingState(hydrated);
+          dispatch(setMapping({
+            templateId,
+            mapping: {
+              templateId,
+              mappings: hydrated,
+              lastModified: new Date().toISOString(),
+            },
+          }));
+        } else {
+          // No existing mappings, initialize with empty mappings
+          const emptyMappings = template?.placeholders.map((ph: string) => ({
+            placeholder: ph,
+            mappingType: 'field' as const,
+          })) || [];
+          setMappingState(emptyMappings);
+        }
       } catch (error) {
         console.error('Error loading template mappings:', error);
         setError('Failed to load template mappings. Please try again.');
@@ -605,56 +652,6 @@ export default function FieldMapperPage() {
       loadTemplateMappings();
     }
   }, [template, templateId, dispatch]);
-
-  // Update mapping state when existingMapping changes (after cache loads)
-  useEffect(() => {
-    if (template?.placeholders) {
-      if (existingMapping?.mappings && existingMapping.mappings.length > 0) {
-        console.log('🔄 Updating mapping state from cached data');
-        const hydrated = template.placeholders.map((ph: string) => {
-          const found = existingMapping.mappings.find((rec: any) => rec.placeholder === ph);
-          if (found) {
-            // Parse the value to determine if it's a field or dynamic block
-            let mappedColumn = found.mappedColumn ?? undefined;
-            let mappedDynamicBlock = undefined;
-            let mappingType: 'field' | 'dynamic' = 'field';
-            
-            // Check if the value is a dynamic block ID (starts with 'dynamic:')
-            if (found.mappedColumn?.startsWith('dynamic:')) {
-              mappedDynamicBlock = found.mappedColumn.substring(8); // Remove 'dynamic:' prefix
-              mappedColumn = undefined;
-              mappingType = 'dynamic';
-            } else {
-              // Validate that the mapped column still exists in the current dataset
-              if (mappedColumn && columns.length > 0 && !columns.includes(mappedColumn)) {
-                console.warn(`Column "${mappedColumn}" no longer exists in current dataset for placeholder "${ph}"`);
-                // Clear the invalid mapping
-                mappedColumn = undefined;
-              }
-            }
-            
-            return {
-              placeholder: ph,
-              mappedColumn,
-              mappedDynamicBlock,
-              mappingType,
-              notes: found.notes ?? undefined
-            };
-          }
-          return { placeholder: ph, mappingType: 'field' as const };
-        });
-        setMappingState(hydrated);
-      } else {
-        console.log('📝 No existing mappings found, initializing empty mappings');
-        // No existing mappings, initialize with empty mappings
-        const emptyMappings = template.placeholders.map((ph: string) => ({
-          placeholder: ph,
-          mappingType: 'field' as const,
-        }));
-        setMappingState(emptyMappings);
-      }
-    }
-  }, [existingMapping, template, columns]);
 
   // Hydrate columns from localforage if empty
   /*
@@ -683,8 +680,8 @@ export default function FieldMapperPage() {
     const matchesSearch = !search || m.placeholder.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
     if (filter === 'all') return true;
-    if (filter === 'mapped') return !!m.mappedColumn;
-    if (filter === 'unmapped') return !m.mappedColumn;
+    if (filter === 'mapped') return !!(m.mappedColumn || m.mappedDynamicBlock);
+    if (filter === 'unmapped') return !(m.mappedColumn || m.mappedDynamicBlock);
     return true;
   });
   const filteredPlaceholders = filteredMapping.map(m => m.placeholder);
@@ -751,11 +748,6 @@ export default function FieldMapperPage() {
       console.log('Saving mappings for template:', templateId);
       console.log('Mappings to save:', mapping);
       await saveTemplateMappings(mapping, templateId!);
-      
-      // Invalidate cache to force fresh fetch on next load
-      console.log('🔄 Invalidating mappings cache after save');
-      dispatch(clearMappings());
-      
       toast.success('Mappings saved successfully');
     } catch (err) {
       console.error('Error saving mappings:', err);

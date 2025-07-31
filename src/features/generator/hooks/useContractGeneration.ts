@@ -333,6 +333,7 @@ b, strong { font-weight: bold !important; }
           providerId: provider.id,
           contractYear: contractYear,
           templateId: templateToUse.id,
+          organizationId: provider.organizationId || 'default-org-id',
           generatedAt: new Date().toISOString(),
           generatedBy: localStorage.getItem('userEmail') || 'unknown',
           outputType: 'DOCX',

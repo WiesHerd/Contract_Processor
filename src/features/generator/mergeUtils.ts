@@ -111,9 +111,15 @@ const generateDynamicBlockContent = async (blockId: string, provider: Provider):
             const fieldValue = getProviderFieldValue(provider, condition.field);
             console.log(`    Field value: ${fieldValue}`);
             if (fieldValue !== undefined && fieldValue !== null) {
-              const displayValue = typeof fieldValue === 'number' ? fieldValue.toLocaleString() : fieldValue.toString();
-              items.push({ label: condition.label, value: displayValue });
-              console.log(`    ✅ Added item: ${condition.label} = ${displayValue}`);
+              // Only include items with values > 0
+              const numValue = typeof fieldValue === 'string' ? parseFloat(fieldValue) : fieldValue;
+              if (!isNaN(numValue) && numValue > 0) {
+                const displayValue = typeof fieldValue === 'number' ? fieldValue.toLocaleString() : fieldValue.toString();
+                items.push({ label: condition.label, value: displayValue });
+                console.log(`    ✅ Added item: ${condition.label} = ${displayValue}`);
+              } else {
+                console.log(`    ❌ Field value is 0 or not a positive number: ${fieldValue}`);
+              }
             }
           }
         }
@@ -141,9 +147,15 @@ const generateDynamicBlockContent = async (blockId: string, provider: Provider):
           const value = getProviderFieldValue(provider, item.valueField);
           console.log(`    Field value: ${value}`);
           if (value !== undefined && value !== null) {
-            const displayValue = typeof value === 'number' ? value.toLocaleString() : value.toString();
-            items.push({ label: item.label, value: displayValue });
-            console.log(`    ✅ Added item: ${item.label} = ${displayValue}`);
+            // Only include items with values > 0
+            const numValue = typeof value === 'string' ? parseFloat(value) : value;
+            if (!isNaN(numValue) && numValue > 0) {
+              const displayValue = typeof value === 'number' ? value.toLocaleString() : value.toString();
+              items.push({ label: item.label, value: displayValue });
+              console.log(`    ✅ Added item: ${item.label} = ${displayValue}`);
+            } else {
+              console.log(`    ❌ Field value is 0 or not a positive number: ${value}`);
+            }
           }
         }
       });
@@ -212,6 +224,59 @@ const generateFTEBreakdown = async (provider: Provider, dynamicBlockId?: string)
       return await generateDynamicBlockContent(dynamicBlockId, provider);
     }
     
+    // Generate FTE breakdown from dynamicFields
+    if (provider.dynamicFields) {
+      try {
+        const dynamicFields = typeof provider.dynamicFields === 'string' 
+          ? JSON.parse(provider.dynamicFields) 
+          : provider.dynamicFields;
+        
+        const fteBreakdown: string[] = [];
+        
+        // Define FTE field mappings with display names
+        const fteFieldMappings = [
+          { field: 'Clinical FTE', display: 'Clinical' },
+          { field: 'ClinicalFTE', display: 'Clinical' },
+          { field: 'Medical Director FTE', display: 'Medical Directors' },
+          { field: 'MedicalDirectorFTE', display: 'Medical Directors' },
+          { field: 'Division Chief FTE', display: 'Division Chief' },
+          { field: 'DivisionChiefFTE', display: 'Division Chief' },
+          { field: 'Research FTE', display: 'Research' },
+          { field: 'ResearchFTE', display: 'Research' },
+          { field: 'Teaching FTE', display: 'Teaching' },
+          { field: 'TeachingFTE', display: 'Teaching' },
+          { field: 'Administrative FTE', display: 'Administrative' },
+          { field: 'AdministrativeFTE', display: 'Administrative' }
+        ];
+        
+        // Check each FTE field and only include those with values > 0
+        fteFieldMappings.forEach(({ field, display }) => {
+          const value = dynamicFields[field];
+          if (value !== undefined && value !== null && value !== '') {
+            const numValue = parseFloat(String(value));
+            if (!isNaN(numValue) && numValue > 0) {
+              fteBreakdown.push(`${display}: ${numValue.toFixed(1)}`);
+            }
+          }
+        });
+        
+        // Add total FTE if available
+        const totalFTE = dynamicFields['Total FTE'] || dynamicFields['TotalFTE'];
+        if (totalFTE !== undefined && totalFTE !== null && totalFTE !== '') {
+          const numTotal = parseFloat(String(totalFTE));
+          if (!isNaN(numTotal) && numTotal > 0) {
+            fteBreakdown.push(`Total FTE: ${numTotal.toFixed(1)}`);
+          }
+        }
+        
+        if (fteBreakdown.length > 0) {
+          return fteBreakdown.join('<br>');
+        }
+      } catch (e) {
+        console.warn('Failed to parse dynamicFields for FTE breakdown:', e);
+      }
+    }
+    
     // Fallback to simple FTE breakdown
     if (provider.fte !== undefined && provider.fte !== null) {
       const hours = Math.round(provider.fte * 40);
@@ -243,6 +308,8 @@ export const mergeTemplateWithData = async (
 ): Promise<MergeResult> => {
   const warnings: string[] = [];
   let content = templateContent;
+  
+
 
   // If mapping is provided, use it to resolve placeholders
   if (mapping && Array.isArray(mapping)) {
@@ -273,14 +340,26 @@ export const mergeTemplateWithData = async (
       } else if (['startdate', 'originalagreementdate'].includes(key)) {
           value = formatDate(String(fieldValue ?? ''));
       } else if (key === 'fte' || key.includes('fte')) {
-          value = typeof fieldValue === 'number' ? fieldValue.toFixed(2) : String(fieldValue ?? '');
+          // Only include FTE values > 0
+          const numValue = typeof fieldValue === 'string' ? parseFloat(fieldValue) : fieldValue;
+          if (!isNaN(numValue) && numValue > 0) {
+            value = typeof fieldValue === 'number' ? fieldValue.toFixed(2) : String(fieldValue ?? '');
+          } else {
+            value = 'HIDE_LINE'; // Special marker to hide entire line
+          }
         } else {
           value = String(fieldValue ?? '');
         }
       }
       
-      // Replace placeholder with resolved value
-      content = content.replace(new RegExp(`{{${placeholder}}}`, 'g'), value);
+      // If value is HIDE_LINE, replace with empty string instead of removing lines
+      if (value === 'HIDE_LINE') {
+        // Replace the placeholder with empty string instead of removing entire lines
+        content = content.replace(new RegExp(`{{${placeholder}}}`, 'g'), '');
+      } else {
+        // Replace placeholder with resolved value
+        content = content.replace(new RegExp(`{{${placeholder}}}`, 'g'), value);
+      }
     }
   } else {
     // Fallback to old logic if no mapping is provided
@@ -300,13 +379,16 @@ export const mergeTemplateWithData = async (
           ? JSON.parse(provider.dynamicFields) 
           : provider.dynamicFields;
         
-        // Add all FTE-related dynamic fields
+        // Add only FTE-related dynamic fields with values > 0
         Object.keys(dynamicFields).forEach(key => {
           if (key.toLowerCase().includes('fte')) {
             const value = dynamicFields[key];
             if (value !== undefined && value !== null && value !== '') {
-              const formattedValue = typeof value === 'number' ? value.toFixed(2) : String(value);
-              placeholderMap[`{{${key}}}`] = formattedValue;
+              const numValue = parseFloat(String(value));
+              if (!isNaN(numValue) && numValue > 0) {
+                const formattedValue = typeof value === 'number' ? value.toFixed(2) : String(value);
+                placeholderMap[`{{${key}}}`] = formattedValue;
+              }
             }
           }
         });
@@ -361,6 +443,78 @@ export const mergeTemplateWithData = async (
     );
   }
 
+  // Clean up empty FTE lines after all replacements
+  // Check if any FTE-related placeholders are mapped (either as fields or dynamic blocks)
+  const hasFTEMappings = mapping?.some(m => 
+    m.placeholder?.toLowerCase().includes('fte') && 
+    (m.mappedColumn || m.mappedDynamicBlock)
+  );
+  
+  // Check if there are any FTE-related placeholders in the original template content
+  const hasFTEPlaceholders = templateContent.includes('{{ClinicalFTE}}') || 
+                             templateContent.includes('{{DivisionChief}}') || 
+                             templateContent.includes('{{MedicalDirector}}') || 
+                             templateContent.includes('{{Research}}') || 
+                             templateContent.includes('{{Teaching}}') || 
+                             templateContent.includes('{{TotalFTE}}');
+  
+  console.log('🔍 Template content check:');
+  console.log('🔍 Template content length:', templateContent.length);
+  console.log('🔍 Contains ClinicalFTE:', templateContent.includes('{{ClinicalFTE}}'));
+  console.log('🔍 Contains DivisionChief:', templateContent.includes('{{DivisionChief}}'));
+  console.log('🔍 Contains MedicalDirector:', templateContent.includes('{{MedicalDirector}}'));
+  console.log('🔍 Contains Research:', templateContent.includes('{{Research}}'));
+  console.log('🔍 Contains Teaching:', templateContent.includes('{{Teaching}}'));
+  console.log('🔍 Contains TotalFTE:', templateContent.includes('{{TotalFTE}}'));
+  
+  if (hasFTEMappings || hasFTEPlaceholders) {
+    console.log('🔍 Template has FTE mappings or placeholders - cleaning up empty FTE lines');
+    console.log('🔍 Before cleanup:', content.substring(0, 1000));
+    console.log('🔍 Has FTE mappings:', hasFTEMappings);
+    console.log('🔍 Has FTE placeholders:', hasFTEPlaceholders);
+    
+    // More aggressive cleanup for FTE lines
+    // Remove lines that are just "Label:" with no value
+    content = content.replace(/^[^:]*:\s*$/gm, ''); // Remove "Label: "
+    content = content.replace(/^[^:]*:\s*\n/gm, ''); // Remove "Label: " followed by newline
+    content = content.replace(/^[^:]*:\s*<br\s*\/?>/gim, ''); // Remove "Label: <br>"
+    content = content.replace(/^[^:]*:\s*<\/p>/gim, ''); // Remove "Label: </p>"
+    
+    // Also try removing lines that have only whitespace after colon
+    content = content.replace(/^([^:]*):\s*$/gm, ''); // Remove "Label: " (empty after colon)
+    
+    // More specific patterns for FTE lines (both plain text and HTML)
+    content = content.replace(/^Clinical:\s*$/gm, ''); // Remove "Clinical:"
+    content = content.replace(/^Division Chief:\s*$/gm, ''); // Remove "Division Chief:"
+    content = content.replace(/^Medical Directors:\s*$/gm, ''); // Remove "Medical Directors:"
+    content = content.replace(/^Research:\s*$/gm, ''); // Remove "Research:"
+    content = content.replace(/^Teaching:\s*$/gm, ''); // Remove "Teaching:"
+    content = content.replace(/^Total FTE:\s*$/gm, ''); // Remove "Total FTE:"
+    
+    // HTML-specific patterns
+    content = content.replace(/<p[^>]*>Clinical:\s*<\/p>/gi, ''); // Remove "<p>Clinical:</p>"
+    content = content.replace(/<p[^>]*>Division Chief:\s*<\/p>/gi, ''); // Remove "<p>Division Chief:</p>"
+    content = content.replace(/<p[^>]*>Medical Directors:\s*<\/p>/gi, ''); // Remove "<p>Medical Directors:</p>"
+    content = content.replace(/<p[^>]*>Research:\s*<\/p>/gi, ''); // Remove "<p>Research:</p>"
+    content = content.replace(/<p[^>]*>Teaching:\s*<\/p>/gi, ''); // Remove "<p>Teaching:</p>"
+    content = content.replace(/<p[^>]*>Total FTE:\s*<\/p>/gi, ''); // Remove "<p>Total FTE:</p>"
+    
+    // Also check for lines that might be in different HTML formats
+    content = content.replace(/<div[^>]*>Clinical:\s*<\/div>/gi, ''); // Remove "<div>Clinical:</div>"
+    content = content.replace(/<div[^>]*>Division Chief:\s*<\/div>/gi, ''); // Remove "<div>Division Chief:</div>"
+    content = content.replace(/<div[^>]*>Medical Directors:\s*<\/div>/gi, ''); // Remove "<div>Medical Directors:</div>"
+    content = content.replace(/<div[^>]*>Research:\s*<\/div>/gi, ''); // Remove "<div>Research:</div>"
+    content = content.replace(/<div[^>]*>Teaching:\s*<\/div>/gi, ''); // Remove "<div>Teaching:</div>"
+    content = content.replace(/<div[^>]*>Total FTE:\s*<\/div>/gi, ''); // Remove "<div>Total FTE:</div>"
+    
+    // Clean up extra blank lines
+    content = content.replace(/\n\s*\n/g, '\n');
+    
+    console.log('🔍 After cleanup:', content.substring(0, 1000));
+  } else {
+    console.log('🔍 Template does not have FTE mappings or placeholders - leaving hardcoded FTE lines as-is');
+  }
+  
   // Ensure content is not empty after all replacements
   if (!content || content.trim().length === 0) {
     warnings.push('Warning: Template content is empty after merging');
@@ -397,6 +551,7 @@ function getProviderFieldValue(provider: Provider, fieldName: string): any {
       
       // Try exact field name match first
       if (dynamicFields[fieldName] !== undefined && dynamicFields[fieldName] !== null) {
+        console.log(`✅ Found field "${fieldName}" in dynamicFields:`, dynamicFields[fieldName]);
         return dynamicFields[fieldName];
       }
       
@@ -406,13 +561,43 @@ function getProviderFieldValue(provider: Provider, fieldName: string): any {
         key.toLowerCase() === fieldLower
       );
       if (matchingKey && dynamicFields[matchingKey] !== undefined && dynamicFields[matchingKey] !== null) {
+        console.log(`✅ Found field "${fieldName}" as "${matchingKey}" in dynamicFields:`, dynamicFields[matchingKey]);
         return dynamicFields[matchingKey];
+      }
+      
+      // Special handling for FTE fields - try common variations
+      if (fieldName.toLowerCase().includes('fte')) {
+        const fteVariations = [
+          fieldName,
+          fieldName.replace('FTE', ' FTE'),
+          fieldName.replace('FTE', ' Fte'),
+          fieldName.replace('FTE', ' fte'),
+          fieldName.replace('FTE', 'Fte'),
+          fieldName.replace('FTE', 'fte')
+        ];
+        
+        for (const variation of fteVariations) {
+          if (dynamicFields[variation] !== undefined && dynamicFields[variation] !== null) {
+            console.log(`✅ Found FTE field "${fieldName}" as "${variation}" in dynamicFields:`, dynamicFields[variation]);
+            return dynamicFields[variation];
+          }
+        }
+        
+        // Log available FTE fields for debugging
+        const availableFteFields = Object.keys(dynamicFields).filter(key => 
+          key.toLowerCase().includes('fte')
+        );
+        if (availableFteFields.length > 0) {
+          console.log(`🔍 Available FTE fields in dynamicFields:`, availableFteFields);
+          console.log(`❌ Looking for "${fieldName}" but not found`);
+        }
       }
     } catch (e) {
       console.warn('Failed to parse dynamicFields:', e);
     }
   }
   
+  console.log(`❌ Field "${fieldName}" not found in provider data`);
   return null;
 } 
 

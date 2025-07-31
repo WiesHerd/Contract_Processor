@@ -69,14 +69,13 @@ export const getProvider = /* GraphQL */ `query GetProvider($id: ID!) {
     providerType
     specialty
     subspecialty
-    fte
-    administrativeFte
-    administrativeRole
+    positionTitle
     yearsExperience
     hourlyWage
     baseSalary
     originalAgreementDate
     organizationName
+    organizationId
     startDate
     contractTerm
     ptoDays
@@ -84,14 +83,24 @@ export const getProvider = /* GraphQL */ `query GetProvider($id: ID!) {
     cmeDays
     cmeAmount
     signingBonus
-    educationBonus
+    relocationBonus
     qualityBonus
+    educationBonus
     compensationType
     conversionFactor
     wRVUTarget
     compensationYear
     credentials
     compensationModel
+    clinicalFTE
+    medicalDirectorFTE
+    divisionChiefFTE
+    researchFTE
+    teachingFTE
+    totalFTE
+    administrativeFte
+    administrativeRole
+    administrativeRole
     fteBreakdown {
       activity
       percentage
@@ -122,14 +131,13 @@ export const listProviders = /* GraphQL */ `query ListProviders(
       providerType
       specialty
       subspecialty
-      fte
-      administrativeFte
-      administrativeRole
+      positionTitle
       yearsExperience
       hourlyWage
       baseSalary
       originalAgreementDate
       organizationName
+      organizationId
       startDate
       contractTerm
       ptoDays
@@ -137,14 +145,23 @@ export const listProviders = /* GraphQL */ `query ListProviders(
       cmeDays
       cmeAmount
       signingBonus
-      educationBonus
+      relocationBonus
       qualityBonus
+      educationBonus
       compensationType
       conversionFactor
       wRVUTarget
       compensationYear
       credentials
       compensationModel
+      clinicalFTE
+      medicalDirectorFTE
+      divisionChiefFTE
+      researchFTE
+      teachingFTE
+      totalFTE
+      administrativeFte
+      administrativeRole
       templateTag
       dynamicFields
       createdAt
@@ -532,14 +549,13 @@ export const providersByCompensationYear = /* GraphQL */ `query ProvidersByCompe
       providerType
       specialty
       subspecialty
-      fte
-      administrativeFte
-      administrativeRole
+      positionTitle
       yearsExperience
       hourlyWage
       baseSalary
       originalAgreementDate
       organizationName
+      organizationId
       startDate
       contractTerm
       ptoDays
@@ -547,14 +563,23 @@ export const providersByCompensationYear = /* GraphQL */ `query ProvidersByCompe
       cmeDays
       cmeAmount
       signingBonus
-      educationBonus
+      relocationBonus
       qualityBonus
+      educationBonus
       compensationType
       conversionFactor
       wRVUTarget
       compensationYear
       credentials
       compensationModel
+      clinicalFTE
+      medicalDirectorFTE
+      divisionChiefFTE
+      researchFTE
+      teachingFTE
+      totalFTE
+      administrativeFte
+      administrativeRole
       templateTag
       dynamicFields
       createdAt
@@ -843,3 +868,111 @@ export const generationLogsByContractYear = /* GraphQL */ `query GenerationLogsB
   APITypes.GenerationLogsByContractYearQueryVariables,
   APITypes.GenerationLogsByContractYearQuery
 >;
+
+export const providersByCompensationYearCustom = /* GraphQL */ `query ProvidersByCompensationYearCustom(
+  $compensationYear: String!
+  $sortDirection: ModelSortDirection
+  $filter: ModelProviderFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  providersByCompensationYear(
+    compensationYear: $compensationYear
+    sortDirection: $sortDirection
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      organizationId
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      qualityBonus
+      educationBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      administrativeFte
+      administrativeRole
+      totalFTE
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+`;
+
+export const listProvidersCustom = /* GraphQL */ `query ListProvidersCustom(
+  $filter: ModelProviderFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listProviders(filter: $filter, limit: $limit, nextToken: $nextToken) {
+    items {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      organizationId
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      qualityBonus
+      educationBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      administrativeFte
+      administrativeRole
+      totalFTE
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}
+`;

@@ -39,6 +39,7 @@ import {
   createProvider,
   updateProvider,
   deleteProvider,
+  deleteProviderCustom,
   createMapping,
   updateMapping,
   deleteMapping,
@@ -65,7 +66,9 @@ import {
   listAuditLogs,
   getTemplateMapping,
   listTemplateMappings,
-  providersByCompensationYear
+  providersByCompensationYear,
+  providersByCompensationYearCustom,
+  listProvidersCustom
 } from '../graphql/queries';
 
 // Direct DynamoDB client for advanced operations
@@ -274,29 +277,112 @@ export const awsTemplates = {
   }
 };
 
+// Custom GraphQL mutation that only requests fields that exist in the schema
+const createProviderCustom = /* GraphQL */ `
+  mutation CreateProvider($input: CreateProviderInput!) {
+    createProvider(input: $input) {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      organizationId
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      qualityBonus
+      educationBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      administrativeFte
+      administrativeRole
+      totalFTE
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+    }
+  }
+`;
+
 // Enhanced Provider Operations
 export const awsProviders = {
-  async create(input: CreateProviderInput): Promise<Provider | null> {
-    return withRetry(async () => {
-      try {
-        console.log('[awsProviders.create] Creating provider with input:', input);
-        const result = await client.graphql({
-          query: createProvider,
-          variables: { input }
-        });
-        console.log('[awsProviders.create] Success result:', result);
-        return result.data?.createProvider || null;
-      } catch (error: any) {
-        console.error('Error creating provider:', error);
-        console.error('Provider input that failed:', input);
-        if (error.errors) {
-          console.error('GraphQL errors:', error.errors);
-        }
-        // Print the full error object for debugging
-        console.error('Full error object:', JSON.stringify(error, null, 2));
-        throw error;
+  create: async (input: CreateProviderInput): Promise<Provider> => {
+    console.log('[awsProviders.create] Creating provider with input:', input);
+    console.log('[awsProviders.create] Input keys:', Object.keys(input));
+    
+    // Create a minimal input with only the fields we know are definitely in the deployed schema
+    const minimalInput = {
+      id: input.id,
+      name: input.name || 'Unknown Provider',
+      employeeId: input.employeeId || '',
+      providerType: input.providerType || '',
+      specialty: input.specialty || '',
+      subspecialty: input.subspecialty || '',
+      yearsExperience: input.yearsExperience || 0,
+      hourlyWage: input.hourlyWage || 0,
+      baseSalary: input.baseSalary || 0,
+      originalAgreementDate: input.originalAgreementDate || null,
+      organizationName: input.organizationName || 'Default Organization',
+      organizationId: input.organizationId || 'default',
+      startDate: input.startDate || null,
+      contractTerm: input.contractTerm || '',
+      ptoDays: input.ptoDays || 0,
+      holidayDays: input.holidayDays || 0,
+      cmeDays: input.cmeDays || 0,
+      cmeAmount: input.cmeAmount || 0,
+      signingBonus: input.signingBonus || 0,
+      qualityBonus: input.qualityBonus || 0,
+      educationBonus: input.educationBonus || 0,
+      compensationType: input.compensationType || '',
+      conversionFactor: input.conversionFactor || 0,
+      wRVUTarget: input.wRVUTarget || 0,
+      compensationYear: input.compensationYear || '',
+      credentials: input.credentials || '',
+      compensationModel: input.compensationModel || '',
+      administrativeFte: input.administrativeFte || 0,
+      templateTag: input.templateTag || '',
+      dynamicFields: input.dynamicFields || null
+    };
+
+    console.log('[awsProviders.create] Minimal input:', minimalInput);
+    console.log('[awsProviders.create] Input keys:', Object.keys(minimalInput));
+
+    try {
+      const result = await client.graphql({
+        query: createProvider,
+        variables: { input: minimalInput }
+      });
+
+      console.log('[awsProviders.create] GraphQL result:', result);
+      
+      return (result as any).data?.createProvider;
+    } catch (error) {
+      console.error('[awsProviders.create] Error creating provider:', error);
+      console.error('[awsProviders.create] Provider input that failed:', input);
+      
+      if (error.errors) {
+        console.error('[awsProviders.create] GraphQL errors:', error.errors);
+        console.error('[awsProviders.create] Full error object:', JSON.stringify(error, null, 2));
       }
-    });
+      
+      throw error;
+    }
   },
 
   async update(input: UpdateProviderInput): Promise<Provider | null> {
@@ -345,62 +431,74 @@ export const awsProviders = {
   },
 
   async list(year?: number): Promise<Provider[]> {
+    console.log('awsServices: list called with year:', year);
     let allProviders: Provider[] = [];
-    let nextToken: string | null | undefined = null;
+    let nextToken: string | null | null = null;
 
-    console.log('[awsProviders.list] Calling providers query with year:', year);
+    // Skip the providersByCompensationYear query since it's failing due to schema mismatch
+    // and just use listProviders with client-side filtering
+    console.log('awsServices: Using listProviders query with client-side filtering');
     
-    // If year is provided, try the year-specific query first
-    if (year) {
-      try {
-        do {
-          const result: any = await client.graphql({
-            query: providersByCompensationYear,
-            variables: { 
-              compensationYear: year.toString(),
-              limit: 1000, 
-              nextToken 
-            },
-          });
-          console.log('[awsProviders.list] providersByCompensationYear result:', result);
-          const providerData = result.data?.providersByCompensationYear;
-          if (providerData?.items) {
-            allProviders.push(...providerData.items.filter(Boolean));
+    // Use a simplified listProviders query
+    const simplifiedListQuery = `
+      query ListProviders($limit: Int, $nextToken: String) {
+        listProviders(limit: $limit, nextToken: $nextToken) {
+          items {
+            id
+            employeeId
+            name
+            providerType
+            specialty
+            subspecialty
+            yearsExperience
+            hourlyWage
+            baseSalary
+            originalAgreementDate
+            organizationName
+            organizationId
+            startDate
+            contractTerm
+            ptoDays
+            holidayDays
+            cmeDays
+            cmeAmount
+            signingBonus
+            qualityBonus
+            educationBonus
+            compensationType
+            conversionFactor
+            wRVUTarget
+            compensationYear
+            credentials
+            administrativeFte
+            templateTag
+            dynamicFields
+            createdAt
+            updatedAt
+            owner
           }
-          nextToken = providerData?.nextToken;
-        } while (nextToken);
-        
-        // If we got results, return them
-        if (allProviders.length > 0) {
-          console.log('[awsProviders.list] Successfully fetched providers by year:', allProviders.length);
-          return allProviders;
+          nextToken
         }
-      } catch (error) {
-        console.error('[awsProviders.list] Error listing providers by year:', error);
-        console.log('[awsProviders.list] Falling back to listProviders query...');
-        // Reset for fallback
-        allProviders = [];
-        nextToken = null;
       }
-    }
+    `;
     
-                // Fallback to listing all providers and filtering by year on client side
-            console.log('[awsProviders.list] Using fallback: listProviders query');
-            do {
-              try {
-                const result: any = await client.graphql({
-                  query: listProviders,
-                  variables: { limit: 1000, nextToken },
+    do {
+      try {
+        const result: any = await client.graphql({
+          query: simplifiedListQuery,
+          variables: { limit: 1000, nextToken },
         });
-        console.log('[awsProviders.list] listProviders result:', result);
+        
+        console.log('awsServices: listProviders result:', result);
         const providerData = result.data?.listProviders;
         if (providerData?.items) {
-          allProviders.push(...providerData.items.filter(Boolean));
+          const validItems = providerData.items.filter(Boolean);
+          console.log('awsServices: Found', validItems.length, 'total providers');
+          allProviders.push(...validItems);
         }
         nextToken = providerData?.nextToken;
       } catch (error) {
-        console.error('[awsProviders.list] Error listing providers:', error);
-        // On error, break the loop and return what we have so far
+        console.error('awsServices: Error listing providers:', error);
         break;
       }
     } while (nextToken);
@@ -410,15 +508,11 @@ export const awsProviders = {
       const filteredProviders = allProviders.filter(provider => 
         provider.compensationYear === year.toString()
       );
-      console.log('[awsProviders.list] Filtered providers by year on client side:', {
-        total: allProviders.length,
-        filtered: filteredProviders.length,
-        year: year.toString()
-      });
+      console.log('awsServices: Filtered to', filteredProviders.length, 'providers for year', year);
       return filteredProviders;
     }
     
-    console.log('[awsProviders.list] Returning providers:', allProviders.length);
+    console.log('awsServices: Returning', allProviders.length, 'total providers');
     return allProviders;
   },
 
@@ -429,11 +523,11 @@ export const awsProviders = {
         // Use GraphQL API instead of direct DynamoDB calls
         const results = await Promise.all(
           providers.map(async (provider) => {
-            const result = await client.graphql({
-              query: createProvider,
+                    const result = await client.graphql({
+          query: createProvider, // Use standard mutation
               variables: { input: provider }
             });
-            return result.data?.createProvider || null;
+            return (result as any).data?.createProvider || null;
           })
         );
         
@@ -1038,16 +1132,16 @@ export const awsBulkOperations = {
       
       try {
         const result = await client.graphql({
-          query: listProviders,
+          query: listProvidersCustom,
           variables: {
             limit: 1000, // Maximum limit
             nextToken
           }
         });
         
-        const providers = result.data.listProviders.items || [];
+        const providers = (result as any).data.listProviders.items || [];
         totalCount += providers.length;
-        nextToken = result.data.listProviders.nextToken;
+        nextToken = (result as any).data.listProviders.nextToken;
         
         console.log(`[awsBulkOperations.countAllProviders] Page ${pageCount}: Found ${providers.length} providers`);
       } catch (error) {
@@ -1074,16 +1168,56 @@ export const awsBulkOperations = {
       
       try {
         const result = await client.graphql({
-          query: listProviders,
+          query: `
+            query ListProvidersForDelete($limit: Int, $nextToken: String) {
+              listProviders(limit: $limit, nextToken: $nextToken) {
+                items {
+                  id
+                  employeeId
+                  name
+                  providerType
+                  specialty
+                  subspecialty
+                  yearsExperience
+                  hourlyWage
+                  baseSalary
+                  originalAgreementDate
+                  organizationName
+                  organizationId
+                  startDate
+                  contractTerm
+                  ptoDays
+                  holidayDays
+                  cmeDays
+                  cmeAmount
+                  signingBonus
+                  qualityBonus
+                  educationBonus
+                  compensationType
+                  conversionFactor
+                  wRVUTarget
+                  compensationYear
+                  credentials
+                  administrativeFte
+                  templateTag
+                  dynamicFields
+                  createdAt
+                  updatedAt
+                  owner
+                }
+                nextToken
+              }
+            }
+          `,
           variables: {
             limit: 1000, // Maximum limit
             nextToken
           }
         });
         
-        const providers = result.data.listProviders.items || [];
+        const providers = (result as any).data.listProviders.items || [];
         allProviders.push(...providers);
-        nextToken = result.data.listProviders.nextToken;
+        nextToken = (result as any).data.listProviders.nextToken;
         
         console.log(`[awsBulkOperations.deleteAllProviders] Page ${pageCount}: Found ${providers.length} providers`);
       } catch (error) {
@@ -1113,8 +1247,48 @@ export const awsBulkOperations = {
       // Delete providers in parallel within the batch
       const deletePromises = batch.map(async (provider) => {
         try {
+          // Use a simplified delete mutation that only requests existing fields
+          const simplifiedDeleteMutation = `
+            mutation DeleteProvider($input: DeleteProviderInput!) {
+              deleteProvider(input: $input) {
+                id
+                employeeId
+                name
+                providerType
+                specialty
+                subspecialty
+                yearsExperience
+                hourlyWage
+                baseSalary
+                originalAgreementDate
+                organizationName
+                organizationId
+                startDate
+                contractTerm
+                ptoDays
+                holidayDays
+                cmeDays
+                cmeAmount
+                signingBonus
+                qualityBonus
+                educationBonus
+                compensationType
+                conversionFactor
+                wRVUTarget
+                compensationYear
+                credentials
+                administrativeFte
+                templateTag
+                dynamicFields
+                createdAt
+                updatedAt
+                owner
+              }
+            }
+          `;
+          
           await client.graphql({
-            query: deleteProvider,
+            query: simplifiedDeleteMutation,
             variables: {
               input: { id: provider.id }
             }

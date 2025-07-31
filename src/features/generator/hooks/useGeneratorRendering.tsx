@@ -69,13 +69,20 @@ interface UseGeneratorRenderingProps {
   clickedProvider: Provider | null;
   showAssignmentHint: boolean;
   
+  // Loading states
+  providersLoading?: boolean;
+  isHydratingContracts?: boolean;
+  
   // Filter state
   selectedSpecialty: string;
   selectedSubspecialty: string;
   selectedProviderType: string;
+  selectedFTE: [number, number];
+  selectedProviderTypeFilter: string;
   specialtyOptions: string[];
   subspecialtyOptions: string[];
   providerTypeOptions: string[];
+  providerTypeFilterOptions: string[];
   
   // Computed values
   filteredProviders: Provider[];
@@ -100,6 +107,8 @@ interface UseGeneratorRenderingProps {
   setSelectedSpecialty: (specialty: string) => void;
   setSelectedSubspecialty: (subspecialty: string) => void;
   setSelectedProviderType: (type: string) => void;
+  setSelectedFTE: (fte: [number, number]) => void;
+  setSelectedProviderTypeFilter: (type: string) => void;
   setInstructionsModalOpen: (open: boolean) => void;
   setShowClearConfirm: (show: boolean) => void;
   clearTemplateAssignments: () => void;
@@ -152,13 +161,20 @@ export const useGeneratorRendering = ({
   clickedProvider,
   showAssignmentHint,
   
+  // Loading states
+  providersLoading = false,
+  isHydratingContracts = false,
+  
   // Filter state
   selectedSpecialty,
   selectedSubspecialty,
   selectedProviderType,
+  selectedFTE,
+  selectedProviderTypeFilter,
   specialtyOptions,
   subspecialtyOptions,
   providerTypeOptions,
+  providerTypeFilterOptions,
   
   // Computed values
   filteredProviders,
@@ -183,6 +199,8 @@ export const useGeneratorRendering = ({
   setSelectedSpecialty,
   setSelectedSubspecialty,
   setSelectedProviderType,
+  setSelectedFTE,
+  setSelectedProviderTypeFilter,
   setInstructionsModalOpen,
   setShowClearConfirm,
   clearTemplateAssignments,
@@ -361,26 +379,94 @@ export const useGeneratorRendering = ({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col min-w-[160px]">
-                <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Provider Type</span>
-                <Select
-                  value={selectedProviderType}
-                  onValueChange={val => {
-                    setSelectedProviderType(val);
-                    setPageIndex(0);
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="All Types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__ALL__">All Types</SelectItem>
-                    {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                             <div className="flex flex-col min-w-[160px]">
+                 <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Provider Type</span>
+                 <Select
+                   value={selectedProviderType}
+                   onValueChange={val => {
+                     setSelectedProviderType(val);
+                     setPageIndex(0);
+                   }}
+                 >
+                   <SelectTrigger className="w-full">
+                     <SelectValue placeholder="All Types" />
+                   </SelectTrigger>
+                   <SelectContent>
+                     <SelectItem value="__ALL__">All Types</SelectItem>
+                     {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
+                       <SelectItem key={s} value={s}>{s}</SelectItem>
+                     ))}
+                   </SelectContent>
+                 </Select>
+               </div>
+               
+                               <div className="flex flex-col min-w-[160px]">
+                  <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Provider Type</span>
+                  <Select
+                    value={selectedProviderTypeFilter}
+                    onValueChange={val => {
+                      setSelectedProviderTypeFilter(val);
+                      setPageIndex(0);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__ALL__">All Types</SelectItem>
+                      {providerTypeFilterOptions.filter(s => s && s.trim() !== '').map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex flex-col min-w-[200px]">
+                  <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Total FTE Range</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">{selectedFTE[0].toFixed(2)}</span>
+                    <div className="flex-1 h-2 bg-gray-200 rounded-full relative">
+                      <div 
+                        className="h-2 bg-blue-600 rounded-full absolute"
+                        style={{ 
+                          left: `${(selectedFTE[0] / 2) * 100}%`,
+                          width: `${((selectedFTE[1] - selectedFTE[0]) / 2) * 100}%`
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-600">{selectedFTE[1].toFixed(2)}</span>
+                  </div>
+                  <div className="flex gap-1 mt-1">
+                    <button
+                      onClick={() => setSelectedFTE([Math.max(0, selectedFTE[0] - 0.1), selectedFTE[1]])}
+                      className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+                      title="Decrease minimum FTE"
+                    >
+                      Min -
+                    </button>
+                    <button
+                      onClick={() => setSelectedFTE([selectedFTE[0] + 0.1, selectedFTE[1]])}
+                      className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+                      title="Increase minimum FTE"
+                    >
+                      Min +
+                    </button>
+                    <button
+                      onClick={() => setSelectedFTE([selectedFTE[0], Math.min(2, selectedFTE[1] + 0.1)])}
+                      className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+                      title="Increase maximum FTE"
+                    >
+                      Max +
+                    </button>
+                    <button
+                      onClick={() => setSelectedFTE([selectedFTE[0], Math.max(selectedFTE[0] + 0.1, selectedFTE[1] - 0.1)])}
+                      className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+                      title="Decrease maximum FTE"
+                    >
+                      Max -
+                    </button>
+                  </div>
+                </div>
             </div>
             
             {/* Reset Actions - Right Side */}
@@ -393,13 +479,15 @@ export const useGeneratorRendering = ({
                   {/* Microsoft/Google-style compact button group */}
                   <div className="flex items-center border border-gray-300 rounded-md overflow-hidden">
                     {/* Clear Filters - Primary Action */}
-                    <button
-                      onClick={() => {
-                        setSelectedSpecialty("__ALL__");
-                        setSelectedSubspecialty("__ALL__");
-                        setSelectedProviderType("__ALL__");
-                        setPageIndex(0);
-                      }}
+                                         <button
+                       onClick={() => {
+                         setSelectedSpecialty("__ALL__");
+                         setSelectedSubspecialty("__ALL__");
+                         setSelectedProviderType("__ALL__");
+                                                 setSelectedFTE([0, 2]);
+                        setSelectedProviderTypeFilter("__ALL__");
+                         setPageIndex(0);
+                       }}
                       className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-r border-gray-300 flex items-center gap-1.5"
                       title="Clear all filters"
                     >
@@ -445,7 +533,19 @@ export const useGeneratorRendering = ({
   );
 
   const renderMainContent = () => (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 relative">
+      {/* Loading overlay for providers and contracts */}
+      {(providersLoading || isHydratingContracts) && (
+        <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-600">
+              {providersLoading ? 'Loading providers...' : 'Loading contracts...'}
+            </p>
+          </div>
+        </div>
+      )}
+      
       {/* Modern Filter Sections */}
       <div className="flex flex-col gap-4 mb-6">
         {renderBulkProcessingSection()}

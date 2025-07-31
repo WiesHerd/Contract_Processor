@@ -6,9 +6,55 @@
  */
 
 import { generateClient } from 'aws-amplify/api';
-import { createProvider, updateProvider } from '../graphql/mutations';
+import { updateProvider } from '../graphql/mutations';
 import { SYSTEM_FIELDS } from '../config/providerSchema';
 import type { ProviderData } from './csvUploadService';
+
+// Custom GraphQL mutation that only requests fields that exist in the schema
+const createProviderCustom = /* GraphQL */ `
+  mutation CreateProvider($input: CreateProviderInput!) {
+    createProvider(input: $input) {
+      id
+      employeeId
+      name
+      providerType
+      specialty
+      subspecialty
+      yearsExperience
+      hourlyWage
+      baseSalary
+      originalAgreementDate
+      organizationName
+      organizationId
+      startDate
+      contractTerm
+      ptoDays
+      holidayDays
+      cmeDays
+      cmeAmount
+      signingBonus
+      qualityBonus
+      educationBonus
+      compensationType
+      conversionFactor
+      wRVUTarget
+      compensationYear
+      credentials
+      compensationModel
+      administrativeFte
+      administrativeRole
+      fteBreakdown {
+        activity
+        percentage
+      }
+      templateTag
+      dynamicFields
+      createdAt
+      updatedAt
+      owner
+    }
+  }
+`;
 
 export interface StorageResult {
   success: boolean;
@@ -112,7 +158,7 @@ export class ProviderStorageService {
     
     try {
       await this.client.graphql({
-        query: createProvider,
+        query: createProviderCustom, // Use custom mutation instead of auto-generated one
         variables: { input },
         authMode: 'apiKey'
       });

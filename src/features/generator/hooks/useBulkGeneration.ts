@@ -165,6 +165,7 @@ b, strong { font-weight: bold !important; }
           providerId: provider.id,
           contractYear: contractYear,
           templateId: assignedTemplate.id,
+          organizationId: provider.organizationId || 'default-org-id',
           generatedAt: generationTimestamp,
           status: 'SUCCESS',
           fileUrl: fileName,
@@ -183,6 +184,7 @@ b, strong { font-weight: bold !important; }
             providerId: provider.id,
             contractYear: contractYear,
             templateId: assignedTemplate.id,
+            organizationId: provider.organizationId || 'default-org-id',
             generatedAt: generationTimestamp,
             status: 'PARTIAL_SUCCESS',
             fileUrl: fileName,
@@ -706,8 +708,9 @@ b, strong { font-weight: bold !important; }
     setProgressModalOpen(false);
     // Clear selected providers to hide the bottom menu
     setSelectedProviderIds([]);
-    // Refresh contracts from database to ensure Processed tab shows correctly
-    await hydrateGeneratedContracts();
+    // NOTE: Removed hydration call here because it was overwriting the Redux state
+    // with empty database results, causing contracts to disappear from the UI
+    // The contracts are already in Redux state from the generation process
     console.log('Modal bulk generation completed. Contracts added to Redux state:', successful.length);
     
     // Show simple success message instead of modal

@@ -38,14 +38,26 @@ interface UseGeneratorGridProps {
 
 // Memoized utility functions to avoid recreating on every render
 const getFTEValue = (provider: any): number => {
+  // Debug logging to see what's available
+  console.log('🔍 [FTE Debug] Provider FTE fields:', {
+    totalFTE: provider.totalFTE,
+    TotalFTE: provider.TotalFTE,
+    fte: provider.fte,
+    hasDynamicFields: !!provider.dynamicFields,
+    providerName: provider.name
+  });
+  
   // Check for totalFTE first (new field), then fallback to fte (old field)
   if (provider.totalFTE !== undefined && provider.totalFTE !== null) {
+    console.log('🔍 [FTE Debug] Found totalFTE:', provider.totalFTE);
     return Number(provider.totalFTE);
   }
   if (provider.TotalFTE !== undefined && provider.TotalFTE !== null) {
+    console.log('🔍 [FTE Debug] Found TotalFTE:', provider.TotalFTE);
     return Number(provider.TotalFTE);
   }
   if (provider.fte !== undefined && provider.fte !== null) {
+    console.log('🔍 [FTE Debug] Found fte:', provider.fte);
     return Number(provider.fte);
   }
   // Check dynamicFields as fallback
@@ -54,19 +66,25 @@ const getFTEValue = (provider: any): number => {
       const dynamicFields = typeof provider.dynamicFields === 'string' 
         ? JSON.parse(provider.dynamicFields) 
         : provider.dynamicFields;
+      console.log('🔍 [FTE Debug] Dynamic fields:', dynamicFields);
+      
       if (dynamicFields.totalFTE !== undefined && dynamicFields.totalFTE !== null) {
+        console.log('🔍 [FTE Debug] Found totalFTE in dynamicFields:', dynamicFields.totalFTE);
         return Number(dynamicFields.totalFTE);
       }
       if (dynamicFields.TotalFTE !== undefined && dynamicFields.TotalFTE !== null) {
+        console.log('🔍 [FTE Debug] Found TotalFTE in dynamicFields:', dynamicFields.TotalFTE);
         return Number(dynamicFields.TotalFTE);
       }
       if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
+        console.log('🔍 [FTE Debug] Found fte in dynamicFields:', dynamicFields.fte);
         return Number(dynamicFields.fte);
       }
     } catch (e) {
-      // Ignore parsing errors
+      console.error('🔍 [FTE Debug] Error parsing dynamicFields:', e);
     }
   }
+  console.log('🔍 [FTE Debug] No FTE value found, returning 0');
   return 0;
 };
 
@@ -238,124 +256,357 @@ export const useGeneratorGrid = ({
 
   // Define all possible columns with optimized valueGetters
   const allColumnDefs = useMemo(() => ({
-          name: {
-        headerName: 'Provider Name',
-        field: 'name',
-        width: 220,
-        minWidth: 180,
-        filter: false,
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
+    name: {
+      headerName: 'Provider Name',
+      field: 'name',
+      width: 220,
+      minWidth: 180,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
       },
-          employeeId: {
-        headerName: 'Employee ID',
-        field: 'employeeId',
-        width: 130,
-        minWidth: 100,
-        filter: false,
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
+    },
+    employeeId: {
+      headerName: 'Employee ID',
+      field: 'employeeId',
+      width: 130,
+      minWidth: 100,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
       },
-          specialty: {
-        headerName: 'Specialty',
-        field: 'specialty',
-        width: 180,
-        minWidth: 140,
-        filter: false,
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
+    },
+    specialty: {
+      headerName: 'Specialty',
+      field: 'specialty',
+      width: 180,
+      minWidth: 140,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
       },
-          subspecialty: {
-        headerName: 'Subspecialty',
-        field: 'subspecialty',
-        width: 180,
-        minWidth: 140,
-        filter: false,
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
+    },
+    subspecialty: {
+      headerName: 'Subspecialty',
+      field: 'subspecialty',
+      width: 180,
+      minWidth: 140,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
       },
-          providerType: {
-        headerName: 'Provider Type',
-        field: 'providerType',
-        width: 140,
-        minWidth: 120,
-        filter: false,
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
+    },
+    providerType: {
+      headerName: 'Provider Type',
+      field: 'providerType',
+      width: 140,
+      minWidth: 120,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
       },
-          administrativeRole: {
-        headerName: 'Administrative Role',
-        field: 'administrativeRole',
-        width: 180,
-        minWidth: 150,
-        filter: false,
-        tooltipValueGetter: (params: any) => params.value,
-        cellStyle: { 
-          textOverflow: 'ellipsis',
-          overflow: 'hidden',
-          whiteSpace: 'nowrap'
-        },
+    },
+    yearsExperience: {
+      headerName: 'Years Experience',
+      field: 'yearsExperience',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
       },
-          baseSalary: {
-        headerName: 'Base Salary',
-        field: 'baseSalary',
-        width: 140,
-        minWidth: 120,
-        valueFormatter: (params: any) => formatCurrency(params.value),
-        filter: false,
-        tooltipValueGetter: (params: any) => formatCurrency(params.value),
-        cellStyle: { 
-          textAlign: 'right',
-          fontFamily: 'monospace'
-        },
+    },
+    hourlyWage: {
+      headerName: 'Hourly Wage',
+      field: 'hourlyWage',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
       },
-          fte: {
-        headerName: 'FTE',
-        field: 'fte',
-        width: 100,
-        minWidth: 80,
-        valueGetter: (params: any) => getFTEValue(params.data),
-        valueFormatter: (params: any) => formatNumber(params.value),
-        filter: false,
-        tooltipValueGetter: (params: any) => formatNumber(params.value),
-        cellStyle: { 
-          textAlign: 'right',
-          fontFamily: 'monospace'
-        },
+    },
+    baseSalary: {
+      headerName: 'Base Salary',
+      field: 'baseSalary',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
       },
-          startDate: {
-        headerName: 'Start Date',
-        field: 'startDate',
-        width: 140,
-        minWidth: 120,
-        valueFormatter: (params: any) => formatDate(params.value),
-        filter: false,
-        tooltipValueGetter: (params: any) => formatDate(params.value),
-        cellStyle: { 
-          textAlign: 'center',
-          fontFamily: 'monospace'
-        },
+    },
+    originalAgreementDate: {
+      headerName: 'Original Agreement Date',
+      field: 'originalAgreementDate',
+      width: 160,
+      minWidth: 140,
+      valueFormatter: (params: any) => formatDate(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatDate(params.value),
+      cellStyle: { 
+        textAlign: 'center',
+        fontFamily: 'monospace'
       },
+    },
+    organizationName: {
+      headerName: 'Organization Name',
+      field: 'organizationName',
+      width: 200,
+      minWidth: 160,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
+    organizationId: {
+      headerName: 'Organization ID',
+      field: 'organizationId',
+      width: 140,
+      minWidth: 120,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
+    startDate: {
+      headerName: 'Start Date',
+      field: 'startDate',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatDate(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatDate(params.value),
+      cellStyle: { 
+        textAlign: 'center',
+        fontFamily: 'monospace'
+      },
+    },
+    contractTerm: {
+      headerName: 'Contract Term',
+      field: 'contractTerm',
+      width: 140,
+      minWidth: 120,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
+    ptoDays: {
+      headerName: 'PTO Days',
+      field: 'ptoDays',
+      width: 100,
+      minWidth: 80,
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    holidayDays: {
+      headerName: 'Holiday Days',
+      field: 'holidayDays',
+      width: 120,
+      minWidth: 100,
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    cmeDays: {
+      headerName: 'CME Days',
+      field: 'cmeDays',
+      width: 100,
+      minWidth: 80,
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    cmeAmount: {
+      headerName: 'CME Amount',
+      field: 'cmeAmount',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    signingBonus: {
+      headerName: 'Signing Bonus',
+      field: 'signingBonus',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    educationBonus: {
+      headerName: 'Education Bonus',
+      field: 'educationBonus',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    qualityBonus: {
+      headerName: 'Quality Bonus',
+      field: 'qualityBonus',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    retentionBonus: {
+      headerName: 'Retention Bonus',
+      field: 'retentionBonus',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    relocationBonus: {
+      headerName: 'Relocation Bonus',
+      field: 'relocationBonus',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatCurrency(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatCurrency(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    compensationType: {
+      headerName: 'Compensation Type',
+      field: 'compensationType',
+      width: 160,
+      minWidth: 140,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
+    conversionFactor: {
+      headerName: 'Conversion Factor',
+      field: 'conversionFactor',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    wRVUTarget: {
+      headerName: 'wRVU Target',
+      field: 'wRVUTarget',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    compensationYear: {
+      headerName: 'Compensation Year',
+      field: 'compensationYear',
+      width: 140,
+      minWidth: 120,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
+    credentials: {
+      headerName: 'Credentials',
+      field: 'credentials',
+      width: 120,
+      minWidth: 100,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
     compensationModel: {
       field: 'compensationModel',
       headerName: 'Compensation Model',
@@ -363,16 +614,68 @@ export const useGeneratorGrid = ({
       minWidth: 150,
       maxWidth: 250,
       valueGetter: (params: any) => getCompensationModel(params.data),
-              sortable: true,
-        filter: false,
-        tooltipValueGetter: (params: any) => params.value,
+      sortable: true,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
       cellStyle: { 
         textOverflow: 'ellipsis',
         overflow: 'hidden',
         whiteSpace: 'nowrap'
       },
     },
-
+    administrativeFte: {
+      headerName: 'Administrative FTE',
+      field: 'administrativeFte',
+      width: 140,
+      minWidth: 120,
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
+    administrativeRole: {
+      headerName: 'Administrative Role',
+      field: 'administrativeRole',
+      width: 180,
+      minWidth: 150,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
+    templateTag: {
+      headerName: 'Template Tag',
+      field: 'templateTag',
+      width: 140,
+      minWidth: 120,
+      filter: false,
+      tooltipValueGetter: (params: any) => params.value,
+      cellStyle: { 
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      },
+    },
+    fte: {
+      headerName: 'FTE',
+      field: 'fte',
+      width: 100,
+      minWidth: 80,
+      valueGetter: (params: any) => getFTEValue(params.data),
+      valueFormatter: (params: any) => formatNumber(params.value),
+      filter: false,
+      tooltipValueGetter: (params: any) => formatNumber(params.value),
+      cellStyle: { 
+        textAlign: 'right',
+        fontFamily: 'monospace'
+      },
+    },
     assignedTemplate: {
       field: 'assignedTemplate',
       headerName: 'Template',
@@ -425,8 +728,7 @@ export const useGeneratorGrid = ({
         cursor: 'help'
       },
     },
-
-    }), [templates, getAssignedTemplate, updateProviderTemplate]);
+  }), [templates, getAssignedTemplate, updateProviderTemplate]);
 
   // Generation Status column - Always show
   const generationStatusColumn = {
