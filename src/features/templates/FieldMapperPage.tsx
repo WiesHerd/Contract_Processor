@@ -13,7 +13,7 @@ import { CheckCircle, XCircle, AlertTriangle, Sparkles, ArrowLeft, Loader2, Chev
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { CommandDialog } from '@/components/ui/command';
 import localforage from 'localforage';
-import { updateMapping, setMapping, FieldMapping, LocalTemplateMapping } from './mappingsSlice';
+import { updateMapping, setMapping, FieldMapping, LocalTemplateMapping, fetchMappingsIfNeeded, clearMappings } from './mappingsSlice';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -363,10 +363,38 @@ async function saveTemplateMappings(mapping: LocalMapping[], templateId: string)
       value = m.mappedColumn;
     }
     
+    console.log('🔍 Processing mapping:', {
+      placeholder: m.placeholder,
+      mappingType: m.mappingType,
+      mappedColumn: m.mappedColumn,
+      mappedDynamicBlock: m.mappedDynamicBlock,
+      value,
+      hasValue: !!value,
+      templateId,
+      organizationId: 'default-org-id'
+    });
+    
+    // Skip mappings with empty values (unmapped fields)
+    if (!value) {
+      console.log('⏭️ Skipping unmapped field:', m.placeholder);
+      continue;
+    }
+    
+    // Validate required fields
+    if (!m.placeholder || !templateId) {
+      console.warn('⚠️ Skipping mapping with missing required fields:', {
+        placeholder: m.placeholder,
+        templateId,
+        mapping: m
+      });
+      continue;
+    }
+
     const input = {
       templateID: templateId,
+      organizationId: 'default-org-id', // Required field - using consistent default
       field: m.placeholder,
-      value,
+      value: value || '', // Ensure value is never null
       notes: m.notes || '',
     };
     
@@ -376,6 +404,15 @@ async function saveTemplateMappings(mapping: LocalMapping[], templateId: string)
     );
     
     try {
+      console.log('🔍 Attempting to save mapping:', {
+        placeholder: m.placeholder,
+        mappingType: m.mappingType,
+        mappedColumn: m.mappedColumn,
+        mappedDynamicBlock: m.mappedDynamicBlock,
+        value,
+        input
+      });
+
       if (existingMapping) {
         // Update existing mapping
         const updateInput = {
@@ -383,21 +420,30 @@ async function saveTemplateMappings(mapping: LocalMapping[], templateId: string)
           ...input
         };
         
+        console.log('🔄 Updating existing mapping:', updateInput);
         const updateResult = await client.graphql({
           query: updateTemplateMapping,
           variables: { input: updateInput },
         });
+        console.log('✅ Update result:', updateResult);
         results.push(input);
       } else {
         // Create new mapping (let DynamoDB auto-generate the ID)
+        console.log('🆕 Creating new mapping:', input);
         const createResult = await client.graphql({
           query: createTemplateMapping,
           variables: { input },
         });
+        console.log('✅ Create result:', createResult);
         results.push(input);
       }
     } catch (err) {
-      console.error('Failed to save mapping:', input, err);
+      console.error('❌ Failed to save mapping:', {
+        input,
+        error: err,
+        errorMessage: err instanceof Error ? err.message : 'Unknown error',
+        errorStack: err instanceof Error ? err.stack : undefined
+      });
       throw new Error(`Failed to save mapping for ${m.placeholder}: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   }
@@ -535,28 +581,43 @@ export default function FieldMapperPage() {
   const [autoMapActive, setAutoMapActive] = useState(false);
   const [filter, setFilter] = useState<'all' | 'mapped' | 'unmapped'>('all');
 
-  // Load existing mappings from AWS when component mounts
+  // Smart caching for template mappings - Enterprise-grade
   useEffect(() => {
     const loadTemplateMappings = async () => {
       if (!templateId) return;
       setIsLoading(true);
       setError(null);
+      
       try {
-        const mappingRecords = await fetchTemplateMappingsByTemplateId(templateId);
-        if (mappingRecords && mappingRecords.length > 0) {
+        // Use smart caching instead of direct database calls
+        console.log('🔄 Loading template mappings with smart caching');
+        await dispatch(fetchMappingsIfNeeded());
+        
+        // Get the cached mappings from Redux state
+        const templateMappings = existingMapping;
+        
+        if (templateMappings && templateMappings.mappings.length > 0) {
+          console.log('✅ Using cached template mappings');
           const hydrated = template?.placeholders.map((ph: string) => {
-            const found = mappingRecords.find((rec: any) => rec.field === ph);
+            const found = templateMappings.mappings.find((rec: any) => rec.placeholder === ph);
             if (found) {
               // Parse the value to determine if it's a field or dynamic block
-              let mappedColumn = found.value ?? undefined;
+              let mappedColumn = found.mappedColumn ?? undefined;
               let mappedDynamicBlock = undefined;
               let mappingType: 'field' | 'dynamic' = 'field';
               
               // Check if the value is a dynamic block ID (starts with 'dynamic:')
-              if (found.value?.startsWith('dynamic:')) {
-                mappedDynamicBlock = found.value.substring(8); // Remove 'dynamic:' prefix
+              if (found.mappedColumn?.startsWith('dynamic:')) {
+                mappedDynamicBlock = found.mappedColumn.substring(8); // Remove 'dynamic:' prefix
                 mappedColumn = undefined;
                 mappingType = 'dynamic';
+              } else {
+                // Validate that the mapped column still exists in the current dataset
+                if (mappedColumn && columns.length > 0 && !columns.includes(mappedColumn)) {
+                  console.warn(`Column "${mappedColumn}" no longer exists in current dataset for placeholder "${ph}"`);
+                  // Clear the invalid mapping
+                  mappedColumn = undefined;
+                }
               }
               
               return {
@@ -570,15 +631,8 @@ export default function FieldMapperPage() {
             return { placeholder: ph, mappingType: 'field' as const };
           }) || [];
           setMappingState(hydrated);
-          dispatch(setMapping({
-            templateId,
-            mapping: {
-              templateId,
-              mappings: hydrated,
-              lastModified: new Date().toISOString(),
-            },
-          }));
         } else {
+          console.log('📝 No existing mappings found, initializing empty mappings');
           // No existing mappings, initialize with empty mappings
           const emptyMappings = template?.placeholders.map((ph: string) => ({
             placeholder: ph,
@@ -598,7 +652,15 @@ export default function FieldMapperPage() {
     if (template && template.placeholders && template.placeholders.length > 0) {
       loadTemplateMappings();
     }
-  }, [template, templateId, dispatch]);
+  }, [template, templateId, dispatch, existingMapping]);
+
+  // Reload mappings when cache is cleared (after save)
+  useEffect(() => {
+    if (templateId && !existingMapping) {
+      console.log('🔄 Reloading mappings after cache clear');
+      dispatch(fetchMappingsIfNeeded());
+    }
+  }, [templateId, existingMapping, dispatch]);
 
   // Hydrate columns from localforage if empty
   /*
@@ -614,6 +676,12 @@ export default function FieldMapperPage() {
   const mappedCount = mapping.filter(m => m.mappedColumn || m.mappedDynamicBlock).length;
   const totalCount = mapping.length;
   const percent = totalCount > 0 ? Math.round((mappedCount / totalCount) * 100) : 0;
+  
+  // Check for invalid mappings (mapped to columns that no longer exist)
+  const invalidMappings = mapping.filter(m => 
+    m.mappedColumn && columns.length > 0 && !columns.includes(m.mappedColumn)
+  );
+  const hasInvalidMappings = invalidMappings.length > 0;
 
   // Filtered mapping and placeholders
   // Unified filter for both sides
@@ -689,6 +757,11 @@ export default function FieldMapperPage() {
       console.log('Saving mappings for template:', templateId);
       console.log('Mappings to save:', mapping);
       await saveTemplateMappings(mapping, templateId!);
+      
+      // Invalidate cache to force fresh fetch on next load
+      console.log('🔄 Invalidating mappings cache after save');
+      dispatch(clearMappings());
+      
       toast.success('Mappings saved successfully');
     } catch (err) {
       console.error('Error saving mappings:', err);
@@ -844,6 +917,12 @@ export default function FieldMapperPage() {
                   <span className="text-sm">Some fields are unmapped</span>
                 </div>
               )}
+              {hasInvalidMappings && (
+                <div className="flex items-center gap-2 text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="text-sm">{invalidMappings.length} mapping{invalidMappings.length === 1 ? '' : 's'} point{invalidMappings.length === 1 ? 's' : ''} to columns that no longer exist</span>
+                </div>
+              )}
             </div>
             {/* Filter tabs and search on the same row */}
             <div className="flex items-center justify-between mb-2">
@@ -990,9 +1069,16 @@ export default function FieldMapperPage() {
                           </TableCell>
                           <TableCell>
                             {isMapped ? (
-                              <CheckCircle className="h-5 w-5 text-green-600" />
+                              m.mappedColumn && !columns.includes(m.mappedColumn) ? (
+                                <div className="flex items-center gap-2 text-amber-600">
+                                  <AlertTriangle className="h-5 w-5" />
+                                  <span className="text-xs">Invalid</span>
+                                </div>
+                              ) : (
+                                <CheckCircle className="h-5 w-5 text-green-600" />
+                              )
                             ) : (
-                              <AlertTriangle className="h-5 w-5 text-amber-500" />
+                              <XCircle className="h-5 w-5 text-red-400" />
                             )}
                           </TableCell>
                         </TableRow>

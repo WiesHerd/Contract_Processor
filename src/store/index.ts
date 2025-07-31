@@ -5,6 +5,7 @@ import generatorReducer from '@/features/generator/generatorSlice';
 import clauseReducer from './slices/clauseSlice';
 import auditReducer from './slices/auditSlice';
 import providerReducer from './slices/providerSlice';
+import dynamicBlockReducer from './slices/dynamicBlockSlice';
 import userReducer from './slices/userSlice';
 import { useDispatch } from 'react-redux';
 
@@ -15,6 +16,7 @@ const rootReducer = combineReducers({
   clauses: clauseReducer,
   audit: auditReducer,
   provider: providerReducer,
+  dynamicBlocks: dynamicBlockReducer,
   users: userReducer,
 });
 
