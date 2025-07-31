@@ -27,6 +27,8 @@ import { PageHeader } from '@/components/PageHeader';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { debugS3Contents } from '@/utils/s3Storage';
+import { clearTemplateStorage } from '@/utils/storage';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 // FORCE DEPLOYMENT - Template loading fix v2.2 - Direct S3 with user credentials
 console.log('🚀 TEMPLATE MANAGER LOADED - DEPLOYMENT V2.2 - DIRECT S3 USER CREDENTIALS');
@@ -64,6 +66,8 @@ export default function TemplateManager() {
     if (window.confirm('Are you sure you want to delete ALL templates? This cannot be undone.')) {
       setDeletingAll(true);
       try {
+        // Clear both S3 and local storage
+        await clearTemplateStorage();
         await dispatch(deleteAllTemplates()).unwrap();
         alert('All templates have been deleted from the backend and view.');
       } catch (error) {
@@ -373,6 +377,8 @@ export default function TemplateManager() {
     }
   };
 
+
+
   return (
     <div className="min-h-screen bg-gray-50/50 pt-0 pb-4 px-2 sm:px-4">
       <div className="max-w-7xl mx-auto">
@@ -666,6 +672,7 @@ export default function TemplateManager() {
             </DialogContent>
           </Dialog>
         )}
+
       </div>
     </div>
   );

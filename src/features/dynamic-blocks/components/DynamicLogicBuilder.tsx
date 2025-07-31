@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -474,7 +474,7 @@ const ContractPreviewSection = React.memo<ContractPreviewSectionProps>(({
 
 ContractPreviewSection.displayName = 'ContractPreviewSection';
 
-// Searchable Select Component using standard Select with filter - Memoized
+// Searchable Select Component with external search input - No focus conflicts
 const SearchableSelect = React.memo(({ value, onValueChange, placeholder, options, className = "" }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -482,10 +482,13 @@ const SearchableSelect = React.memo(({ value, onValueChange, placeholder, option
   options: string[] | Array<{value: string; label: string}>;
   className?: string;
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   
+  // Filter options based on search term
   const filteredOptions = useMemo(() => {
-    if (options.length === 0) return [];
+    if (!searchTerm) return options;
     
     if (typeof options[0] === 'string') {
       return (options as string[]).filter(option =>
@@ -498,44 +501,89 @@ const SearchableSelect = React.memo(({ value, onValueChange, placeholder, option
     }
   }, [options, searchTerm]);
 
+  // Get the display value for the selected option
+  const getDisplayValue = () => {
+    if (typeof options[0] === 'string') {
+      return value || placeholder;
+    } else {
+      const selectedOption = (options as Array<{value: string; label: string}>).find(opt => opt.value === value);
+      return selectedOption?.label || placeholder;
+    }
+  };
+
+  const handleSelectOption = (optionValue: string) => {
+    onValueChange(optionValue);
+    setSearchTerm(""); // Clear search when selection is made
+    setIsOpen(false);
+  };
+
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (open) {
+      // Focus the search input when opening
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 100);
+    } else {
+      setSearchTerm(""); // Clear search when closing
+    }
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
+
   return (
     <div className={className}>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          <div className="p-2">
+      <Popover open={isOpen} onOpenChange={handleOpenChange}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={isOpen}
+            className="w-full justify-between h-10"
+          >
+            {getDisplayValue()}
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-full p-0" align="start">
+          {/* Search input outside of any conflicting components */}
+          <div className="p-2 border-b border-gray-200">
             <Input
-              placeholder="Search..."
+              ref={searchInputRef}
+              placeholder="Search providers..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="mb-2"
+              onChange={handleSearchChange}
+              className="w-full"
             />
           </div>
-          <div className="max-h-60 overflow-y-auto">
+          <ScrollArea className="max-h-60">
             {filteredOptions.length === 0 ? (
-              <div className="p-2 text-sm text-gray-500">No results found</div>
+              <div className="p-2 text-sm text-gray-500">
+                {searchTerm ? "No providers found" : "No providers available"}
+              </div>
             ) : (
-              filteredOptions.map((option) => {
-                if (typeof option === 'string') {
+              <div className="p-1">
+                {filteredOptions.map((option) => {
+                  const optionValue = typeof option === 'string' ? option : option.value;
+                  const optionLabel = typeof option === 'string' ? option : option.label;
+                  
                   return (
-                    <SelectItem key={option} value={option}>
-                  {option}
-                    </SelectItem>
+                    <div
+                      key={optionValue}
+                      className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+                      onClick={() => handleSelectOption(optionValue)}
+                    >
+                      {optionLabel}
+                    </div>
                   );
-                } else {
-                  return (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  );
-                }
-              })
+                })}
+              </div>
             )}
-          </div>
-        </SelectContent>
-      </Select>
+          </ScrollArea>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 });
@@ -762,9 +810,15 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
       
       if (condition.field && condition.label && conditionMet) {
         if (fieldValue !== undefined && fieldValue !== null) {
-          const displayValue = typeof fieldValue === 'number' ? fieldValue.toLocaleString() : fieldValue.toString();
-          items.push({ label: condition.label, value: displayValue });
-          console.log(`  ✅ Added: ${condition.label}: ${displayValue}`);
+          // Only include items with values > 0
+          const numValue = typeof fieldValue === 'string' ? parseFloat(fieldValue) : fieldValue;
+          if (!isNaN(numValue) && numValue > 0) {
+            const displayValue = typeof fieldValue === 'number' ? fieldValue.toLocaleString() : fieldValue.toString();
+            items.push({ label: condition.label, value: displayValue });
+            console.log(`  ✅ Added: ${condition.label}: ${displayValue}`);
+          } else {
+            console.log(`  ❌ Field value is 0 or not a positive number: ${fieldValue}`);
+          }
         } else {
           console.log(`  ❌ Field value is null/undefined after all lookups`);
         }
@@ -817,9 +871,15 @@ export const DynamicLogicBuilder = React.forwardRef<any, DynamicLogicBuilderProp
         
         console.log(`  📊 Always include evaluation: Field value = ${value}`);
         if (value !== undefined && value !== null) {
-          const displayValue = typeof value === 'number' ? value.toLocaleString() : value.toString();
-          items.push({ label: item.label, value: displayValue });
-          console.log(`  ✅ Added: ${item.label}: ${displayValue}`);
+          // Only include items with values > 0
+          const numValue = typeof value === 'string' ? parseFloat(value) : value;
+          if (!isNaN(numValue) && numValue > 0) {
+            const displayValue = typeof value === 'number' ? value.toLocaleString() : value.toString();
+            items.push({ label: item.label, value: displayValue });
+            console.log(`  ✅ Added: ${item.label}: ${displayValue}`);
+          } else {
+            console.log(`  ❌ Field value is 0 or not a positive number: ${value}`);
+          }
         } else {
           console.log(`  ❌ Field value is null/undefined`);
         }
