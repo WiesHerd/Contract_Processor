@@ -1,6 +1,7 @@
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand, AdminCreateUserCommand, ListGroupsCommand, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminSetUserPasswordCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import config from '../amplifyconfiguration.json';
-import { sendWelcomeEmailViaLambda, sendPasswordResetEmailViaLambda } from './lambdaEmailService';
+import { sendWelcomeEmailDirect } from './simpleEmailService';
+import { sendPasswordResetEmailViaLambda } from './lambdaEmailService';
 
 // Get AWS configuration from Amplify config with fallbacks
 const getAWSConfig = () => {
@@ -390,36 +391,36 @@ export async function createCognitoUser(username: string, email: string, firstNa
     let emailResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: 'No email sent' };
     
     // Try Lambda email first, then fall back to Cognito's built-in email
-    try {
-      console.log(`📧 Attempting to send welcome email via Lambda to ${email}`);
-      emailResult = await sendWelcomeEmailViaLambda(email, username, tempPassword, firstName);
-      
-      if (emailResult.success) {
-        console.log(`✅ Welcome email sent successfully via Lambda. Message ID: ${emailResult.messageId}`);
-      } else {
-        console.warn(`⚠️ Lambda welcome email failed: ${emailResult.error}`);
-        console.log(`📧 Falling back to Cognito's built-in email system...`);
-        
-        // Fall back to Cognito's built-in email by updating the user
-        const updateCommand = new AdminSetUserPasswordCommand({
-          UserPoolId: USER_POOL_ID,
-          Username: username,
-          Password: tempPassword,
-          Permanent: false
-        });
-        
-        await client.send(updateCommand);
-        console.log(`✅ Cognito will send automatic welcome email to ${email}`);
-        emailResult = { success: true, messageId: 'cognito-fallback' };
-      }
-    } catch (error: any) {
-      console.error('❌ Error sending welcome email:', error);
-      emailResult.error = `Email error: ${error.message}`;
-      
-      // Final fallback - let Cognito handle the email
-      console.log(`📧 Using Cognito's built-in email system as final fallback...`);
-      emailResult = { success: true, messageId: 'cognito-fallback' };
-    }
+                try {
+              console.log(`📧 Attempting to send welcome email directly via SES to ${email}`);
+              emailResult = await sendWelcomeEmailDirect(email, username, tempPassword, firstName);
+              
+              if (emailResult.success) {
+                console.log(`✅ Welcome email sent successfully via SES. Message ID: ${emailResult.messageId}`);
+              } else {
+                console.warn(`⚠️ SES welcome email failed: ${emailResult.error}`);
+                console.log(`📧 Falling back to Cognito's built-in email system...`);
+                
+                // Fall back to Cognito's built-in email by updating the user
+                const updateCommand = new AdminSetUserPasswordCommand({
+                  UserPoolId: USER_POOL_ID,
+                  Username: username,
+                  Password: tempPassword,
+                  Permanent: false
+                });
+                
+                await client.send(updateCommand);
+                console.log(`✅ Cognito will send automatic welcome email to ${email}`);
+                emailResult = { success: true, messageId: 'cognito-fallback' };
+              }
+            } catch (error: any) {
+              console.error('❌ Error sending welcome email:', error);
+              emailResult.error = `Email error: ${error.message}`;
+              
+              // Final fallback - let Cognito handle the email
+              console.log(`📧 Using Cognito's built-in email system as final fallback...`);
+              emailResult = { success: true, messageId: 'cognito-fallback' };
+            }
     
     return {
       success: true,
