@@ -1619,17 +1619,7 @@ export default function ContractGenerator() {
                         </Button>
                       )}
 
-                      {selectedProviderIds.length > 0 && (
-                        <Button
-                          onClick={clearSelection}
-                          disabled={isBulkGenerating}
-                          size="sm"
-                          variant="ghost"
-                          className="h-9 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-                        >
-                          Clear Selection
-                        </Button>
-                      )}
+
                     </div>
                   </div>
                 </div>
@@ -1639,34 +1629,48 @@ export default function ContractGenerator() {
                     <div className="text-sm font-semibold text-gray-700 mb-3">Filters & Advanced Options</div>
                     
                     {/* Selection Actions */}
-                    <div className="flex gap-2 flex-wrap mb-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
-                          setSelectedProviderIds(allFilteredIds);
-                        }}
-                        disabled={filteredProviders.length === 0 || isBulkGenerating}
-                        className="font-medium text-xs"
-                        title="Select all providers across all tabs and pages"
-                      >
-                        All Filtered ({filteredProviders.length})
-                      </Button>
+                    <div className="flex gap-2 flex-wrap mb-4 items-center justify-between">
+                      <div className="flex gap-2 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
+                            setSelectedProviderIds(allFilteredIds);
+                          }}
+                          disabled={filteredProviders.length === 0 || isBulkGenerating}
+                          className="font-medium text-xs"
+                          title="Select all providers across all tabs and pages"
+                        >
+                          All Filtered ({filteredProviders.length})
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const visibleIds = visibleRows.map((p: Provider) => p.id);
+                            setSelectedProviderIds(visibleIds);
+                          }}
+                          disabled={providers.length === 0 || isBulkGenerating}
+                          className="font-medium text-xs"
+                          title="Select all providers currently visible on this page"
+                        >
+                          Visible
+                        </Button>
+                      </div>
                       
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const visibleIds = visibleRows.map((p: Provider) => p.id);
-                          setSelectedProviderIds(visibleIds);
-                        }}
-                        disabled={providers.length === 0 || isBulkGenerating}
-                        className="font-medium text-xs"
-                        title="Select all providers currently visible on this page"
-                      >
-                        Visible
-                      </Button>
+                      {selectedProviderIds.length > 0 && (
+                        <Button
+                          onClick={clearSelection}
+                          disabled={isBulkGenerating}
+                          size="sm"
+                          variant="default"
+                          className="font-medium text-xs bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
+                        >
+                          Clear Selection ({selectedProviderIds.length})
+                        </Button>
+                      )}
                     </div>
                   
                   {/* Filters Row */}
@@ -1737,9 +1741,11 @@ export default function ContractGenerator() {
                     
                     {/* Reset Actions - Right Side */}
                     <div className="flex flex-col min-w-[400px] mt-4 sm:mt-0">
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <div className={`bg-gray-50 border border-gray-200 rounded-lg p-4 ${statusTab === 'processed' ? 'min-h-[120px]' : 'min-h-[80px]'}`}>
                         <div className="flex justify-center mb-3">
-                          <span className="font-semibold text-blue-700 text-sm tracking-wide">Reset Filters</span>
+                          <span className="font-semibold text-blue-700 text-sm tracking-wide">
+                            {statusTab === 'processed' ? 'Reset Filters & Clear Processed' : 'Reset Filters'}
+                          </span>
                         </div>
                         <div className="flex items-center gap-1">
                           {/* Microsoft/Google-style compact button group */}
@@ -1810,6 +1816,15 @@ export default function ContractGenerator() {
                             </>
                           )}
                         </div>
+                        
+                        {/* Status indicator for non-processed tabs */}
+                        {statusTab !== 'processed' && (
+                          <div className="mt-3 text-center">
+                            <span className="text-xs text-gray-500">
+                              {statusTab === 'notGenerated' ? 'Use "Clear All" on Processed tab to remove completed contracts' : 'Switch to Processed tab to manage completed contracts'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
