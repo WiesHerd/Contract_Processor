@@ -1,0 +1,20 @@
+47f596a1 - fix: add organizationId to GraphQL mutations to resolve null value errors
+37be38cb - fix: add organizationId to GraphQL mutations and enhance name field handling
+51adc267 - fix: enhance debugging and add robust null/empty field handling for provider upload
+d8087590 - fix: handle empty wRVU Target and other nullable fields in CSV upload
+c67e1684 - fix: add debugging and ensure required fields are never null/undefined in provider upload
+1527686b - fix: add missing organizationId field to provider types and upload service to resolve GraphQL validation errors
+62d17b22 - fix: remove undefined getUserGroups function call that was causing build failure
+2c9166e1 - fix: resolve Clear Table button IAM permission issues by using GraphQL API instead of direct DynamoDB access
+3e979668 - fix: correct AWS Cognito user pool ID in amplifyconfiguration.json
+63a7d8eb - fix: add missing files and force redeployment for User Pool ID fix
+94170ce0 - fix: force redeployment with User Pool ID fix - updated App.tsx deployment trigger and cognitoAdminService
+e879834e - Add User Pool ID testing tool to debug configuration issues
+e1b980a9 - fix: correct User Pool ID typo in amplifyconfiguration.json - change from us-east-2_ldPO5ZKCR to us-east-2_IdPO5ZKCR
+8136da7d - Add comprehensive Cognito permissions testing tool to debug user creation issues
+28074288 - Implement proper welcome email sending for all users with improved error handling
+542acbfc - Fix user creation to properly handle existing users with AdminSetUserPasswordCommand
+f53c6857 - Fix user creation to handle existing users and use correct MessageAction
+4056ae13 - Add enhanced debugging for user creation to identify configuration issues
+7cdd458c - Enable automatic welcome email with login credentials for new users
+89097147 - Implement proper user creation workflow with temporary password and login instructions

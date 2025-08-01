@@ -1026,7 +1026,15 @@ export const awsTemplateMappings = {
           query: createTemplateMapping,
           variables: { input }
         });
-        return result.data?.createTemplateMapping || null;
+        const mapping = result.data?.createTemplateMapping;
+        if (mapping) {
+          // Ensure organizationId is included in the response
+          return {
+            ...mapping,
+            organizationId: (mapping as any).organizationId || input.organizationId
+          } as TemplateMapping;
+        }
+        return null;
       } catch (error) {
         console.error('Error creating template mapping:', error);
         throw error;
@@ -1041,7 +1049,14 @@ export const awsTemplateMappings = {
           query: updateTemplateMapping,
           variables: { input }
         });
-        return result.data?.updateTemplateMapping || null;
+        const mapping = result.data?.updateTemplateMapping;
+        if (mapping) {
+          return {
+            ...mapping,
+            organizationId: (mapping as any).organizationId || input.organizationId
+          } as TemplateMapping;
+        }
+        return null;
       } catch (error) {
         console.error('Error updating template mapping:', error);
         throw error;
@@ -1056,7 +1071,14 @@ export const awsTemplateMappings = {
           query: deleteTemplateMapping,
           variables: { input }
         });
-        return result.data?.deleteTemplateMapping || null;
+        const mapping = result.data?.deleteTemplateMapping;
+        if (mapping) {
+          return {
+            ...mapping,
+            organizationId: (mapping as any).organizationId || 'default'
+          } as TemplateMapping;
+        }
+        return null;
       } catch (error) {
         console.error('Error deleting template mapping:', error);
         throw error;
@@ -1071,7 +1093,14 @@ export const awsTemplateMappings = {
           query: getTemplateMapping,
           variables: { id }
         });
-        return result.data?.getTemplateMapping || null;
+        const mapping = result.data?.getTemplateMapping;
+        if (mapping) {
+          return {
+            ...mapping,
+            organizationId: (mapping as any).organizationId || 'default'
+          } as TemplateMapping;
+        }
+        return null;
       } catch (error) {
         console.error('Error getting template mapping:', error);
         throw error;

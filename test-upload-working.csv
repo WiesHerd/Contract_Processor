@@ -1,0 +1,3 @@
+Provider Name,Employee ID,Provider Type,Specialty,Organization Name,Organization ID,Compensation Year
+Dr. Test Provider 1,EMP999,Physician,Internal Medicine,Test Organization,test-org-id,2025
+Dr. Test Provider 2,EMP998,Physician,Cardiology,Test Organization,test-org-id,2025 

@@ -10,6 +10,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   isAdmin: boolean;
+  rememberMe: boolean;
   checkUser: () => Promise<void>;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [attributes, setAttributes] = useState<Partial<Record<UserAttributeKey, string>> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const checkUser = useCallback(async () => {
     setIsLoading(true);
@@ -86,6 +88,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Check for remember me preference on app initialization
+    const storedRememberMe = localStorage.getItem('rememberMe') === 'true';
+    setRememberMe(storedRememberMe);
+    
     checkUser();
   }, [checkUser]);
 
@@ -134,9 +140,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         metadata: { userEmail }
       }));
       
-      // Clear stored user info
+      // Clear stored user info and remember me preference
       localStorage.removeItem('userEmail');
       localStorage.removeItem('userId');
+      localStorage.removeItem('rememberMe');
+      setRememberMe(false);
     } catch (error) {
       console.error('Error signing out:', error);
       throw error;
@@ -217,12 +225,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!user,
     isLoading,
     isAdmin,
+    rememberMe,
     checkUser,
     signIn,
     signOut,
     signUp,
     confirmSignUp,
-  }), [user, attributes, isLoading, isAdmin, checkUser, signIn, signOut, signUp, confirmSignUp]);
+  }), [user, attributes, isLoading, isAdmin, rememberMe, checkUser, signIn, signOut, signUp, confirmSignUp]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -6,8 +6,15 @@ const WARNING_TIME = 2 * 60 * 1000; // 2 minutes before timeout (increased from 
 const ADMIN_SESSION_DURATION = 15 * 60 * 1000; // 15 minutes for admin users
 const ADMIN_WARNING_TIME = 1 * 60 * 1000; // 1 minute warning for admin users
 
+// Remember me extended session durations
+const REMEMBER_ME_SESSION_DURATION = 8 * 60 * 60 * 1000; // 8 hours
+const REMEMBER_ME_WARNING_TIME = 5 * 60 * 1000; // 5 minutes warning
+const REMEMBER_ME_ADMIN_SESSION_DURATION = 4 * 60 * 60 * 1000; // 4 hours for admin users
+const REMEMBER_ME_ADMIN_WARNING_TIME = 2 * 60 * 1000; // 2 minutes warning for admin users
+
 interface SessionTimeoutConfig {
   isAdmin?: boolean;
+  rememberMe?: boolean;
   customDuration?: number;
   customWarningTime?: number;
 }
@@ -16,10 +23,22 @@ export const useSessionTimeout = (
   onTimeout: () => void, 
   config: SessionTimeoutConfig = {}
 ) => {
-  const { isAdmin = false, customDuration, customWarningTime } = config;
+  const { isAdmin = false, rememberMe = false, customDuration, customWarningTime } = config;
   
-  const sessionDuration = customDuration || (isAdmin ? ADMIN_SESSION_DURATION : SESSION_DURATION);
-  const warningTime = customWarningTime || (isAdmin ? ADMIN_WARNING_TIME : WARNING_TIME);
+  // Determine session duration based on remember me preference
+  let sessionDuration: number;
+  let warningTime: number;
+  
+  if (customDuration && customWarningTime) {
+    sessionDuration = customDuration;
+    warningTime = customWarningTime;
+  } else if (rememberMe) {
+    sessionDuration = customDuration || (isAdmin ? REMEMBER_ME_ADMIN_SESSION_DURATION : REMEMBER_ME_SESSION_DURATION);
+    warningTime = customWarningTime || (isAdmin ? REMEMBER_ME_ADMIN_WARNING_TIME : REMEMBER_ME_WARNING_TIME);
+  } else {
+    sessionDuration = customDuration || (isAdmin ? ADMIN_SESSION_DURATION : SESSION_DURATION);
+    warningTime = customWarningTime || (isAdmin ? ADMIN_WARNING_TIME : WARNING_TIME);
+  }
   
   const [isWarningModalOpen, setWarningModalOpen] = useState(false);
   const [countdown, setCountdown] = useState(warningTime / 1000);

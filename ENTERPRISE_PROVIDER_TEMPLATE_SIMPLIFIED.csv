@@ -1,0 +1,4 @@
+Provider Name,Employee ID,Provider Type,Specialty,Organization Name,Organization ID,Compensation Year,Total FTE,Administrative Role
+Dr. Sarah Johnson,EMP001,Physician,Cardiology,Default Organization,default-org-id,2024,1.0,Medical Director
+Dr. Michael Chen,EMP002,Physician,Oncology,Default Organization,default-org-id,2024,1.0,Division Chief
+Dr. Emily Rodriguez,EMP003,Physician,Internal Medicine,Default Organization,default-org-id,2024,1.0,None 

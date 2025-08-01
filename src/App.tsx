@@ -69,7 +69,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const isWelcome = location.pathname === '/';
   
   const navigate = useNavigate();
-  const { isAuthenticated, signOut, isAdmin, isLoading } = useAuth();
+  const { isAuthenticated, signOut, isAdmin, isLoading, rememberMe } = useAuth();
 
   const handleSignOut = async () => {
     try {
@@ -84,7 +84,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
   const { isWarningModalOpen, countdown, handleStayLoggedIn } = useSessionTimeout(
     isAuthenticated ? handleSignOut : () => {},
-    { isAdmin: isAdmin }
+    { isAdmin: isAdmin, rememberMe: rememberMe }
   );
 
   // This check ensures TopNav does not appear on the welcome screen,
@@ -128,7 +128,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           className="w-full bg-yellow-50 border-b border-yellow-200 text-yellow-800 text-center py-2 text-sm font-medium z-20 transition-opacity duration-700 opacity-100"
           style={{ position: 'fixed', top: showNav ? 0 : undefined, left: 0 }}
         >
-          For your security, you will be logged out after 20 minutes of inactivity.
+          {rememberMe 
+            ? `For your security, you will be logged out after ${isAdmin ? '4 hours' : '8 hours'} of inactivity.`
+            : 'For your security, you will be logged out after 20 minutes of inactivity.'
+          }
         </div>
       )}
       <main className={`flex-1 max-w-7xl mx-auto px-4 py-8 w-full ${showNav ? 'pt-28' : ''}`}>
@@ -153,7 +156,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 function UserNav({ onSignOut }: { onSignOut: () => void }) {
-  const { user, isAdmin, attributes, isLoading } = useAuth();
+  const { user, isAdmin, attributes, isLoading, rememberMe } = useAuth();
   const navigate = useNavigate();
 
   // Don't render anything while loading
@@ -185,6 +188,11 @@ function UserNav({ onSignOut }: { onSignOut: () => void }) {
             <p className="text-xs leading-none text-muted-foreground">
               {attributes?.email || 'No email provided'}
             </p>
+            {rememberMe && (
+              <p className="text-xs leading-none text-blue-600 font-medium">
+                ✓ Extended session active
+              </p>
+            )}
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

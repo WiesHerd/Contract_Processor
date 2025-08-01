@@ -101,8 +101,6 @@ const SignIn: React.FC = () => {
           localStorage.removeItem('rememberMe');
         }
         
-        // Clear any stored authentication state
-        localStorage.removeItem('isAuthenticated');
         // Redirect to home page
         window.location.href = '/';
       } else if (nextStep?.signInStep === 'CONFIRM_SIGN_UP') {
