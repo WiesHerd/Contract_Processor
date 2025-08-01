@@ -42,6 +42,7 @@ import type { AppDispatch } from '@/store';
 import { normalizeSmartQuotes, formatCurrency, formatNumber, formatDate } from '@/utils/formattingUtils';
 import { useTemplateAssignment } from './hooks/useTemplateAssignment';
 import { useMultiSelect } from './hooks/useMultiSelect';
+import { SmartSelectionDropdown } from './components/SmartSelectionDropdown';
 import { useContractGeneration } from './hooks/useContractGeneration';
 import { useBulkGeneration } from './hooks/useBulkGeneration';
 import { useGeneratorEvents } from './hooks/useGeneratorEvents';
@@ -264,6 +265,8 @@ export default function ContractGenerator() {
     allFilteredProvidersWithStatus: [], // Will be updated after computation
     notGeneratedRows: [] // Will be updated after computation
   });
+
+
 
   // Contract progress tracking hook
   const contractProgress = useContractProgress();
@@ -1381,8 +1384,9 @@ export default function ContractGenerator() {
 
   // Update multi-select hook with computed values
   useEffect(() => {
-    // This effect updates the multi-select hook with the computed values
-    // The hook will re-compute its internal state with the new data
+    // The multi-select hook will automatically re-compute its metrics
+    // when these dependencies change, providing real-time updates
+    // for the smart selection dropdown
   }, [allFilteredProvidersWithStatus, notGeneratedRows, visibleRows]);
 
 
@@ -1610,48 +1614,53 @@ export default function ContractGenerator() {
                 {/* Primary Actions */}
                 <div className="px-6 pt-4 pb-4 border-b border-gray-200">
                   <div className="space-y-4">
-                    {/* Bulk Actions */}
-                    <div className="flex gap-2 flex-wrap">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
-                          setSelectedProviderIds(allFilteredIds);
-                        }}
-                        disabled={filteredProviders.length === 0 || isBulkGenerating}
-                        className="font-medium"
-                        title="Select all providers across all tabs and pages"
-                      >
-                        All Filtered ({filteredProviders.length})
-                      </Button>
+                    {/* Enterprise Smart Selection */}
+                    <div className="flex items-center justify-between">
+                      <SmartSelectionDropdown
+                        selectedCount={selectedProviderIds.length}
+                        unprocessedCount={unprocessedCount}
+                        processedCount={processedCount}
+                        totalFilteredCount={totalFilteredCount}
+                        completionRate={completionRate}
+                        onSelectAllUnprocessed={selectAllUnprocessed}
+                        onSelectNextBatch={selectNextBatch}
+                        onSelectAllInCurrentTab={selectAllInCurrentTab}
+                        onSelectAllVisible={selectAllVisible}
+                        onClearSelection={clearSelection}
+                        disabled={isBulkGenerating}
+                        currentTab={statusTab}
+                      />
                       
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const visibleIds = visibleRows.map((p: Provider) => p.id);
-                          setSelectedProviderIds(visibleIds);
-                        }}
-                        disabled={providers.length === 0 || isBulkGenerating}
-                        className="font-medium"
-                        title="Select all providers currently visible on this page"
-                      >
-                        Visible
-                      </Button>
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedProviderIds([]);
-                        }}
-                        disabled={selectedProviderIds.length === 0 || isBulkGenerating}
-                        className="font-medium"
-                        title="Clear all selected providers"
-                      >
-                        Clear
-                      </Button>
+                      {/* Legacy Selection Buttons (for backward compatibility) */}
+                      <div className="flex gap-2 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
+                            setSelectedProviderIds(allFilteredIds);
+                          }}
+                          disabled={filteredProviders.length === 0 || isBulkGenerating}
+                          className="font-medium text-xs"
+                          title="Select all providers across all tabs and pages"
+                        >
+                          All Filtered ({filteredProviders.length})
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const visibleIds = visibleRows.map((p: Provider) => p.id);
+                            setSelectedProviderIds(visibleIds);
+                          }}
+                          disabled={providers.length === 0 || isBulkGenerating}
+                          className="font-medium text-xs"
+                          title="Select all providers currently visible on this page"
+                        >
+                          Visible
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
