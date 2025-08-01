@@ -239,7 +239,6 @@ export default function ContractGenerator() {
   // Create a temporary gridRef that will be updated by useGeneratorGrid
   const tempGridRef = useRef<any>(null);
 
-
   // Multi-select hook - must be called early to provide selectedProviderIds to other hooks
   const {
     selectedProviderIds,
@@ -265,8 +264,6 @@ export default function ContractGenerator() {
     allFilteredProvidersWithStatus: [], // Will be updated after computation
     notGeneratedRows: [] // Will be updated after computation
   });
-
-
 
   // Contract progress tracking hook
   const contractProgress = useContractProgress();
@@ -1382,12 +1379,7 @@ export default function ContractGenerator() {
   const tabFilteredRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
   const visibleRows = tabFilteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 
-  // Update multi-select hook with computed values
-  useEffect(() => {
-    // The multi-select hook will automatically re-compute its metrics
-    // when these dependencies change, providing real-time updates
-    // for the smart selection dropdown
-  }, [allFilteredProvidersWithStatus, notGeneratedRows, visibleRows]);
+
 
 
 
