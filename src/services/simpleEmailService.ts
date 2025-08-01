@@ -162,7 +162,7 @@ export async function sendWelcomeEmailDirect(
           .cta-button { 
             display: inline-block; 
             background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); 
-            color: white; 
+            color: white !important; 
             padding: 15px 40px; 
             text-decoration: none; 
             border-radius: 8px; 
