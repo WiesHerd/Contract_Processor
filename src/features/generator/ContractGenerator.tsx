@@ -42,7 +42,6 @@ import type { AppDispatch } from '@/store';
 import { normalizeSmartQuotes, formatCurrency, formatNumber, formatDate } from '@/utils/formattingUtils';
 import { useTemplateAssignment } from './hooks/useTemplateAssignment';
 import { useMultiSelect } from './hooks/useMultiSelect';
-import { SmartSelectionDropdown } from './components/SmartSelectionDropdown';
 import { useContractGeneration } from './hooks/useContractGeneration';
 import { useBulkGeneration } from './hooks/useBulkGeneration';
 import { useGeneratorEvents } from './hooks/useGeneratorEvents';
@@ -1606,60 +1605,69 @@ export default function ContractGenerator() {
                 {/* Primary Actions */}
                 <div className="px-6 pt-4 pb-4 border-b border-gray-200">
                   <div className="space-y-4">
-                    {/* Enterprise Smart Selection */}
-                    <div className="flex items-center justify-between">
-                      <SmartSelectionDropdown
-                        selectedCount={selectedProviderIds.length}
-                        unprocessedCount={unprocessedCount}
-                        processedCount={processedCount}
-                        totalFilteredCount={totalFilteredCount}
-                        completionRate={completionRate}
-                        onSelectAllUnprocessed={selectAllUnprocessed}
-                        onSelectNextBatch={selectNextBatch}
-                        onSelectAllInCurrentTab={selectAllInCurrentTab}
-                        onSelectAllVisible={selectAllVisible}
-                        onClearSelection={clearSelection}
-                        disabled={isBulkGenerating}
-                        currentTab={statusTab}
-                      />
-                      
-                      {/* Legacy Selection Buttons (for backward compatibility) */}
-                      <div className="flex gap-2 flex-wrap">
+                    {/* Quick Selection Actions */}
+                    <div className="flex items-center gap-2">
+                      {unprocessedCount > 0 && (
                         <Button
-                          variant="outline"
+                          onClick={selectAllUnprocessed}
+                          disabled={isBulkGenerating}
                           size="sm"
-                          onClick={() => {
-                            const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
-                            setSelectedProviderIds(allFilteredIds);
-                          }}
-                          disabled={filteredProviders.length === 0 || isBulkGenerating}
-                          className="font-medium text-xs"
-                          title="Select all providers across all tabs and pages"
+                          variant="outline"
+                          className="h-9 text-sm font-medium border-gray-300 hover:border-gray-400 hover:bg-gray-50"
                         >
-                          All Filtered ({filteredProviders.length})
+                          Select All Unprocessed ({unprocessedCount})
                         </Button>
-                        
+                      )}
+
+                      {selectedProviderIds.length > 0 && (
                         <Button
-                          variant="outline"
+                          onClick={clearSelection}
+                          disabled={isBulkGenerating}
                           size="sm"
-                          onClick={() => {
-                            const visibleIds = visibleRows.map((p: Provider) => p.id);
-                            setSelectedProviderIds(visibleIds);
-                          }}
-                          disabled={providers.length === 0 || isBulkGenerating}
-                          className="font-medium text-xs"
-                          title="Select all providers currently visible on this page"
+                          variant="ghost"
+                          className="h-9 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100"
                         >
-                          Visible
+                          Clear Selection
                         </Button>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Advanced Options */}
-                <div className="px-6 pt-4">
-                  <div className="text-sm font-semibold text-gray-700 mb-3">Filters & Advanced Options</div>
+                                  {/* Advanced Options */}
+                  <div className="px-6 pt-4">
+                    <div className="text-sm font-semibold text-gray-700 mb-3">Filters & Advanced Options</div>
+                    
+                    {/* Selection Actions */}
+                    <div className="flex gap-2 flex-wrap mb-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
+                          setSelectedProviderIds(allFilteredIds);
+                        }}
+                        disabled={filteredProviders.length === 0 || isBulkGenerating}
+                        className="font-medium text-xs"
+                        title="Select all providers across all tabs and pages"
+                      >
+                        All Filtered ({filteredProviders.length})
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const visibleIds = visibleRows.map((p: Provider) => p.id);
+                          setSelectedProviderIds(visibleIds);
+                        }}
+                        disabled={providers.length === 0 || isBulkGenerating}
+                        className="font-medium text-xs"
+                        title="Select all providers currently visible on this page"
+                      >
+                        Visible
+                      </Button>
+                    </div>
                   
                   {/* Filters Row */}
                   <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 gap-2 mb-4 justify-between">
