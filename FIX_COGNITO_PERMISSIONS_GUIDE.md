@@ -42,7 +42,7 @@ $policyJson = @"
         "cognito-idp:DeleteGroup"
       ],
       "Resource": [
-        "arn:aws:cognito-idp:us-east-2:430118851518:userpool/us-east-2_IdPO5ZKCR"
+        "arn:aws:cognito-idp:us-east-2:430118851518:userpool/us-east-2_ldPO5ZKCR"
       ]
     }
   ]
@@ -102,7 +102,7 @@ Write-Host "🔄 Refresh your app and try the User Management page again." -Fore
         "cognito-idp:DeleteGroup"
       ],
       "Resource": [
-        "arn:aws:cognito-idp:us-east-2:430118851518:userpool/us-east-2_IdPO5ZKCR"
+        "arn:aws:cognito-idp:us-east-2:430118851518:userpool/us-east-2_ldPO5ZKCR"
       ]
     }
   ]
@@ -137,7 +137,7 @@ Write-Host "🔄 Refresh your app and try the User Management page again." -Fore
 
 ## 🚨 **If Still Not Working**
 1. Check that you're using the correct role name
-2. Verify the User Pool ID matches exactly: `us-east-2_IdPO5ZKCR`
+2. Verify the User Pool ID matches exactly: `us-east-2_ldPO5ZKCR`
 3. Ensure you're logged in as an authenticated user
 4. Check CloudWatch logs for additional errors
 5. Verify the policy was attached successfully in IAM console
@@ -151,12 +151,12 @@ aws iam list-attached-role-policies --role-name amplify-contractgenerator-produc
 
 ### **Verify User Pool ID**
 The User Pool ID in the error message should match your actual Cognito User Pool:
-- Error shows: `us-east-2_IdPO5ZKCR`
+- Error shows: `us-east-2_ldPO5ZKCR`
 - Verify this matches your User Pool ID in AWS Console
 
 ### **Test Permissions**
 ```bash
-aws cognito-idp list-users --user-pool-id us-east-2_IdPO5ZKCR
+aws cognito-idp list-users --user-pool-id us-east-2_ldPO5ZKCR
 ```
 
 ## 📋 **Required Permissions Summary**

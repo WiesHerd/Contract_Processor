@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Users, Activity, UserPlus, Info } from 'lucide-react';
+import { Loader2, Users, Activity, UserPlus, Info, CheckCircle, Clock, Shield } from 'lucide-react';
 import UserManagement from './UserManagement';
 import { listCognitoUsers } from '@/services/cognitoAdminService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -25,19 +25,38 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [section, setSection] = useState<'users' | 'activity'>('users');
+  const [users, setUsers] = useState<User[]>([]);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
   const handleRefresh = () => {
     // UserManagement now handles its own data fetching
     console.log('Refresh requested');
   };
 
+  // Fetch users for statistics
+  const fetchUsers = async () => {
+    try {
+      const usersData = await listCognitoUsers();
+      setUsers(usersData);
+    } catch (error) {
+      console.error('Error fetching users for statistics:', error);
+    }
+  };
+
   useEffect(() => {
+    fetchUsers();
     // Simulate loading for the dashboard
     const timer = setTimeout(() => {
       setLoading(false);
     }, 500);
     return () => clearTimeout(timer);
   }, []);
+
+  // Calculate user statistics
+  const totalUsers = users.length;
+  const confirmedUsers = users.filter(u => u.UserStatus === 'CONFIRMED').length;
+  const pendingUsers = users.filter(u => u.UserStatus === 'FORCE_CHANGE_PASSWORD').length;
+  const adminUsers = users.filter(u => u.groups?.includes('Admin')).length;
 
   if (loading) {
     return (
@@ -80,9 +99,57 @@ const AdminDashboard: React.FC = () => {
                   <SelectItem value="activity">Activity Log</SelectItem>
                 </SelectContent>
               </Select>
+              {section === 'users' && (
+                <Button onClick={() => setShowCreateUserModal(true)} className="bg-blue-600 hover:bg-blue-700">
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Create User
+                </Button>
+              )}
             </div>
           </div>
           <hr className="my-3 border-gray-100" />
+          
+          {/* User Statistics Cards - Only show when User Management is selected */}
+          {section === 'users' && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <Card>
+                <CardContent className="flex items-center space-x-2 p-4">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Total Users</p>
+                    <p className="text-2xl font-bold">{totalUsers}</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="flex items-center space-x-2 p-4">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <div>
+                    <p className="text-sm font-medium">Confirmed</p>
+                    <p className="text-2xl font-bold">{confirmedUsers}</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="flex items-center space-x-2 p-4">
+                  <Clock className="h-4 w-4 text-yellow-600" />
+                  <div>
+                    <p className="text-sm font-medium">Pending</p>
+                    <p className="text-2xl font-bold">{pendingUsers}</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="flex items-center space-x-2 p-4">
+                  <Shield className="h-4 w-4 text-purple-600" />
+                  <div>
+                    <p className="text-sm font-medium">Admin Users</p>
+                    <p className="text-2xl font-bold">{adminUsers}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -92,7 +159,7 @@ const AdminDashboard: React.FC = () => {
         )}
 
         {section === 'users' && (
-          <UserManagement onRefresh={handleRefresh} />
+          <UserManagement onRefresh={handleRefresh} showCreateUserModal={showCreateUserModal} setShowCreateUserModal={setShowCreateUserModal} />
         )}
 
         {section === 'activity' && (

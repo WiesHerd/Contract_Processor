@@ -30,6 +30,9 @@ exports.handler = async (event) => {
         } else if (pathSegments.includes('groups')) {
           const groupData = JSON.parse(body);
           return await handleCreateGroup(userPoolId, groupData);
+        } else if (pathSegments.includes('email')) {
+          const emailData = JSON.parse(body);
+          return await handleSendEmail(emailData);
         }
         break;
         
@@ -459,4 +462,136 @@ function createResponse(statusCode, body) {
     },
     body: JSON.stringify(body)
   };
+}
+
+// Handle email sending via SES
+async function handleSendEmail(emailData) {
+  try {
+    const { toEmail, subject, htmlBody, textBody, emailType } = emailData;
+    
+    // Initialize SES
+    const ses = new AWS.SES({ region: 'us-east-2' });
+    
+    // Email configuration
+    const fromEmail = 'wherdzik@gmail.com';
+    const appName = 'Contract Engine';
+    const appUrl = 'https://your-app-domain.com'; // Update with your actual domain
+    
+    let finalSubject = subject;
+    let finalHtmlBody = htmlBody;
+    let finalTextBody = textBody;
+    
+    // If it's a welcome email, use our template
+    if (emailType === 'welcome') {
+      const { username, tempPassword, firstName } = emailData;
+      
+      finalSubject = `Welcome to ${appName} - Your Account is Ready`;
+      finalHtmlBody = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Welcome to ${appName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+            .credentials { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 20px 0; }
+            .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Welcome to ${appName}</h1>
+            </div>
+            
+            <h2>Hello ${firstName || username.split('.')[0] || 'there'},</h2>
+            <p>Welcome to ${appName}! Your account has been successfully created.</p>
+            
+            <div class="credentials">
+              <h3>Your Login Credentials</h3>
+              <p><strong>Username:</strong> ${username}</p>
+              <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+              <p><strong>Login URL:</strong> ${appUrl}</p>
+            </div>
+            
+            <div class="warning">
+              <p><strong>Important:</strong> You must change your password on your first login for security.</p>
+            </div>
+            
+            <div style="text-align: center;">
+              <a href="${appUrl}" class="button">Sign In Now</a>
+            </div>
+            
+            <p style="margin-top: 30px; color: #666; font-size: 14px;">
+              This is an automated message from ${appName}. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      finalTextBody = `
+        Welcome to ${appName}!
+        
+        Hello ${firstName || username.split('.')[0] || 'there'},
+        
+        Welcome to ${appName}! Your account has been successfully created.
+        
+        YOUR LOGIN CREDENTIALS:
+        Username: ${username}
+        Temporary Password: ${tempPassword}
+        Login URL: ${appUrl}
+        
+        IMPORTANT: You must change your password on your first login for security.
+        
+        This is an automated message from ${appName}. Please do not reply to this email.
+      `;
+    }
+    
+    // Send email via SES
+    const params = {
+      Source: fromEmail,
+      Destination: {
+        ToAddresses: [toEmail]
+      },
+      Message: {
+        Subject: {
+          Data: finalSubject,
+          Charset: 'UTF-8'
+        },
+        Body: {
+          Html: {
+            Data: finalHtmlBody,
+            Charset: 'UTF-8'
+          },
+          Text: {
+            Data: finalTextBody,
+            Charset: 'UTF-8'
+          }
+        }
+      }
+    };
+    
+    const result = await ses.sendEmail(params).promise();
+    
+    console.log('Email sent successfully:', result.MessageId);
+    
+    return createResponse(200, {
+      success: true,
+      messageId: result.MessageId,
+      message: 'Email sent successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error sending email:', error);
+    
+    return createResponse(500, {
+      success: false,
+      error: error.message,
+      message: 'Failed to send email'
+    });
+  }
 } 

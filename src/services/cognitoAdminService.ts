@@ -1,5 +1,6 @@
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand, AdminCreateUserCommand, ListGroupsCommand, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminSetUserPasswordCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import config from '../amplifyconfiguration.json';
+import { sendWelcomeEmailViaLambda, sendPasswordResetEmailViaLambda } from './lambdaEmailService';
 
 // Get AWS configuration from Amplify config with fallbacks
 const getAWSConfig = () => {
@@ -28,7 +29,6 @@ export async function listCognitoUsers() {
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, ListUsersCommand, AdminListGroupsForUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -36,14 +36,46 @@ export async function listCognitoUsers() {
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito access');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('🔐 Using authenticated credentials for Cognito access');
+    // Debug: Log the session credentials details
+    console.log('🔍 Browser Session Credentials Debug:');
+    console.log(`  - Access Key ID: ${session.credentials.accessKeyId.substring(0, 10)}...`);
+    console.log(`  - Session Token: ${session.credentials.sessionToken ? 'Present' : 'Missing'}`);
+    console.log(`  - Identity ID: ${session.identityId || 'Not available'}`);
     
-    // Create authenticated Cognito client
+    // Debug: Check what role these credentials represent
+    try {
+      const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
+      const stsClient = new STSClient({
+        region: REGION,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+      });
+      
+      const identityCommand = new GetCallerIdentityCommand({});
+      const identity = await stsClient.send(identityCommand);
+      
+      console.log('🔍 Session Credentials Identity:');
+      console.log(`  - Account: ${identity.Account}`);
+      console.log(`  - User ID: ${identity.UserId}`);
+      console.log(`  - ARN: ${identity.Arn}`);
+    } catch (error) {
+      console.log('❌ Error checking session identity:', error.message);
+    }
+    
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -135,27 +167,16 @@ export async function listCognitoUsers() {
 export async function createCognitoUser(username: string, email: string, firstName: string, lastName: string, groups: string[] = []) {
   try {
     console.log(`👤 Creating new Cognito user: ${username} (${email})`);
-    console.log('🔍 Debug Info:');
-    console.log('  - USER_POOL_ID:', USER_POOL_ID);
-    console.log('  - REGION:', REGION);
-    console.log('  - Config aws_user_pools_id:', config.aws_user_pools_id);
-    console.log('  - Config aws_project_region:', config.aws_project_region);
     
     // Validate input parameters
-    if (!username || username.trim() === '') {
-      throw new Error('Username cannot be empty');
+    if (!username || !email || !firstName || !lastName) {
+      throw new Error('All user fields are required: username, email, firstName, lastName');
     }
     
-    if (!email || email.trim() === '') {
-      throw new Error('Email cannot be empty');
-    }
-    
-    if (!firstName || firstName.trim() === '') {
-      throw new Error('First name cannot be empty');
-    }
-    
-    if (!lastName || lastName.trim() === '') {
-      throw new Error('Last name cannot be empty');
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new Error('Invalid email format');
     }
     
     // Validate username format (Cognito requirements)
@@ -164,12 +185,9 @@ export async function createCognitoUser(username: string, email: string, firstNa
       throw new Error('Username contains invalid characters. Only letters, numbers, and common punctuation are allowed.');
     }
     
-    console.log('🔐 Using authenticated credentials for Cognito create operation');
-    
     // Use AWS SDK directly for admin user creation (better control)
     const { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminGetUserCommand, AdminSetUserPasswordCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -177,18 +195,46 @@ export async function createCognitoUser(username: string, email: string, firstNa
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito create operation');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('📋 Session credentials:', {
-      accessKeyId: session.credentials.accessKeyId ? 'present' : 'missing',
-      secretAccessKey: session.credentials.secretAccessKey ? 'present' : 'missing',
-      sessionToken: session.credentials.sessionToken ? 'present' : 'missing'
-    });
+    // Debug: Log the session credentials details
+    console.log('🔍 Browser Session Credentials Debug:');
+    console.log(`  - Access Key ID: ${session.credentials.accessKeyId.substring(0, 10)}...`);
+    console.log(`  - Session Token: ${session.credentials.sessionToken ? 'Present' : 'Missing'}`);
+    console.log(`  - Identity ID: ${session.identityId || 'Not available'}`);
     
-    // Create authenticated Cognito client
+    // Debug: Check what role these credentials represent
+    try {
+      const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
+      const stsClient = new STSClient({
+        region: REGION,
+        credentials: {
+          accessKeyId: session.credentials.accessKeyId,
+          secretAccessKey: session.credentials.secretAccessKey,
+          sessionToken: session.credentials.sessionToken,
+        },
+      });
+      
+      const identityCommand = new GetCallerIdentityCommand({});
+      const identity = await stsClient.send(identityCommand);
+      
+      console.log('🔍 Session Credentials Identity:');
+      console.log(`  - Account: ${identity.Account}`);
+      console.log(`  - User ID: ${identity.UserId}`);
+      console.log(`  - ARN: ${identity.Arn}`);
+    } catch (error) {
+      console.log('❌ Error checking session identity:', error.message);
+    }
+    
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -237,9 +283,9 @@ export async function createCognitoUser(username: string, email: string, firstNa
     
     let createResult;
     
-    // Always try to create the user with RESEND to send welcome email
-    // If user exists, we'll catch the exception and handle it
-    console.log(`📤 Creating/updating user ${username} with MessageAction: RESEND (to ensure welcome email)`);
+    // Create the user with SUPPRESS to avoid sending default Cognito email
+    // We'll send our custom welcome email via SES
+    console.log(`📤 Creating user ${username} with MessageAction: SUPPRESS (we'll send custom email via SES)`);
     
     const createUserCommand = new AdminCreateUserCommand({
       UserPoolId: USER_POOL_ID,
@@ -263,7 +309,7 @@ export async function createCognitoUser(username: string, email: string, firstNa
           Value: 'false'
         }
       ],
-      MessageAction: 'RESEND' // Always try to send welcome email
+      MessageAction: 'SUPPRESS' // Don't send default Cognito email
     });
     
     console.log('📤 Sending AdminCreateUserCommand with data:', {
@@ -276,58 +322,49 @@ export async function createCognitoUser(username: string, email: string, firstNa
         { Name: 'family_name', Value: lastName },
         { Name: 'email_verified', Value: 'false' }
       ],
-      MessageAction: 'RESEND'
+      MessageAction: 'SUPPRESS'
     });
     
     try {
       createResult = await client.send(createUserCommand);
-      console.log(`✅ Successfully created new user ${username} in Cognito`);
-      console.log(`📧 Welcome email sent automatically to ${email} with temporary password`);
+      console.log(`✅ Successfully created user ${username}`);
+      console.log(`📝 User status: ${createResult.User?.UserStatus}`);
+      
     } catch (error: any) {
-      if (error.name === 'UsernameExistsException') {
-        console.log(`⚠️ User ${username} already exists, updating password and sending welcome email`);
-        
-        // User exists - update their password and trigger welcome email
-        const setPasswordCommand = new AdminSetUserPasswordCommand({
-          Username: username,
-          Password: tempPassword,
-          Permanent: false, // This makes it temporary, forcing password change on first login
-          UserPoolId: USER_POOL_ID
-        });
-        
-        await client.send(setPasswordCommand);
-        console.log(`✅ Successfully updated password for existing user ${username}`);
-        
-        // Use existing user data
-        createResult = { User: existingUser.User };
-        console.log(`📧 Welcome email will be sent to ${email} with temporary password`);
-        
-      } else if (error.message.includes('Resend not possible')) {
-        // Handle the case where user exists but can't receive resend
-        console.log(`⚠️ User ${username} exists but can't receive resend, updating password only`);
-        
-        const setPasswordCommand = new AdminSetUserPasswordCommand({
-          Username: username,
-          Password: tempPassword,
-          Permanent: false,
-          UserPoolId: USER_POOL_ID
-        });
-        
-        await client.send(setPasswordCommand);
-        console.log(`✅ Successfully updated password for existing user ${username}`);
-        
-        // Use existing user data
-        createResult = { User: existingUser.User };
-        console.log(`📧 Manual welcome email needed for ${email} with temporary password`);
-        
-      } else {
-        throw error;
+      console.error(`❌ Error creating Cognito user ${username}:`, error);
+      console.log('📋 Full error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.$metadata?.httpStatusCode,
+        requestId: error.$metadata?.requestId
+      });
+      
+      // Enhanced error handling for common issues
+      if (error.$metadata?.httpStatusCode === 400) {
+        console.log('🚨 Detected 400 Bad Request error. This suggests:');
+        console.log('   - Invalid User Pool ID');
+        console.log('   - Invalid region');
+        console.log('   - Missing required attributes');
+        console.log('   - Authentication issues');
+        throw new Error('Failed to create user: Configuration issue detected. The User Pool ID or region may be incorrect. Please check AWS Amplify configuration. ' + error.message);
       }
+      
+      if (error.name === 'UsernameExistsException') {
+        throw new Error(`User '${username}' already exists. Please choose a different username.`);
+      }
+      
+      if (error.name === 'InvalidPasswordException') {
+        throw new Error('The temporary password does not meet Cognito requirements. Please try again.');
+      }
+      
+      if (error.name === 'NotAuthorizedException') {
+        throw new Error('You do not have permission to create users. Please contact your administrator.');
+      }
+      
+      throw new Error(`Failed to create user: ${error.message}`);
     }
     
-    console.log('📋 Create/Update result:', createResult);
-    
-    // Add user to groups if specified
+    // Add user to selected groups
     if (groups.length > 0) {
       console.log(`👥 Adding user ${username} to groups:`, groups);
       
@@ -341,95 +378,61 @@ export async function createCognitoUser(username: string, email: string, firstNa
           
           await client.send(addToGroupCommand);
           console.log(`✅ Added user ${username} to group ${groupName}`);
-        } catch (error) {
+          
+        } catch (error: any) {
           console.warn(`⚠️ Failed to add user ${username} to group ${groupName}:`, error);
+          // Don't fail the entire operation if group assignment fails
         }
       }
     }
     
-    // Now send a proper welcome email with login instructions
-    console.log(`📧 User ${username} ${userExists ? 'updated' : 'created'} successfully!`);
-    console.log(`📧 Temporary password: ${tempPassword}`);
+    // Enhanced email handling via Lambda function
+    let emailResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: 'No email sent' };
     
-    if (userExists) {
-      console.log(`📧 Email suppressed (user already existed). Admin should manually send credentials.`);
-    } else {
-      console.log(`📧 Welcome email sent automatically to ${email} with login instructions`);
+    // Send welcome email via Lambda function
+    try {
+      console.log(`📧 Attempting to send welcome email via Lambda to ${email}`);
+      emailResult = await sendWelcomeEmailViaLambda(email, username, tempPassword, firstName);
+      
+      if (emailResult.success) {
+        console.log(`✅ Welcome email sent successfully via Lambda. Message ID: ${emailResult.messageId}`);
+      } else {
+        console.warn(`⚠️ Lambda welcome email failed: ${emailResult.error}`);
+      }
+    } catch (error: any) {
+      console.error('❌ Error sending welcome email via Lambda:', error);
+      emailResult.error = `Lambda email error: ${error.message}`;
     }
     
-    console.log(`📧 User should sign in with username: ${username} and temporary password`);
-    console.log(`📧 User will be forced to change password on first login`);
+    // If Lambda email failed, log the issue but don't fail user creation
+    if (!emailResult.success) {
+      console.log(`📧 Lambda email failed, but user creation was successful. User will need to check their email or contact admin for credentials.`);
+      console.log(`📧 Email error details: ${emailResult.error}`);
+    }
     
     return {
-      ...createResult.User,
-      tempPassword: tempPassword,
-      loginInstructions: `User can sign in with username: ${username} and temporary password: ${tempPassword}`,
-      emailSent: !userExists,
-      userExisted: userExists
+      success: true,
+      message: `User ${username} created successfully. User will receive an email with temporary password and must change it on first login.`,
+      username: username,
+      email: email,
+      tempPassword: tempPassword, // For admin reference only
+      groups: groups,
+      emailResult: emailResult
     };
     
-  } catch (error: any) {
-    console.error(`❌ Error creating Cognito user ${username}:`, error);
-    console.error('📋 Full error details:', {
-      name: error.name,
-      message: error.message,
-      code: error.code,
-      statusCode: error.statusCode,
-      requestId: error.requestId,
-      $metadata: error.$metadata
-    });
-    
-    // Check if this is a 400 error
-    if (error.$metadata?.httpStatusCode === 400) {
-      console.error('🚨 Detected 400 Bad Request error. This suggests:');
-      console.error('   - Invalid User Pool ID');
-      console.error('   - Invalid region');
-      console.error('   - Missing required attributes');
-      console.error('   - Authentication issues');
-      
-      // Provide more specific guidance based on error message
-      if (error.message.includes('User does not exist')) {
-        throw new Error(`Failed to create user: Configuration issue detected. The User Pool ID or region may be incorrect. Please check AWS Amplify configuration. Error: ${error.message}`);
-      } else if (error.message.includes('Resend not possible')) {
-        throw new Error(`Failed to create user: User '${username}' already exists but is not in the correct state for email resend. Please choose a different username. Error: ${error.message}`);
-      } else {
-        throw new Error(`Failed to create user: Bad request (400). Please check User Pool configuration and permissions. Error: ${error.message}`);
-      }
-    }
-    
-    // Provide more specific error messages
-    if (error instanceof Error) {
-      if (error.message.includes('UsernameExistsException')) {
-        throw new Error(`Failed to create user: Username '${username}' already exists. Please choose a different username.`);
-      } else if (error.message.includes('InvalidParameterException')) {
-        throw new Error(`Failed to create user: Invalid parameters. Please check username format and email address.`);
-      } else if (error.message.includes('InvalidPasswordException')) {
-        throw new Error(`Failed to create user: Password does not meet requirements.`);
-      } else if (error.message.includes('LimitExceededException')) {
-        throw new Error(`Failed to create user: User pool limit exceeded. Please contact administrator.`);
-      } else if (error.message.includes('NotAuthorizedException')) {
-        throw new Error(`Failed to create user: Not authorized to perform this action.`);
-      } else if (error.message.includes('UserNotFoundException')) {
-        throw new Error(`Failed to create user: Configuration issue detected. Please check AWS Amplify setup.`);
-      } else if (error.message.includes('UnsupportedUserStateException')) {
-        throw new Error(`Failed to create user: User '${username}' exists but is in an unsupported state. Please choose a different username.`);
-      } else {
-        throw new Error(`Failed to create user: ${error.message}`);
-      }
-    } else {
-      throw new Error(`Failed to create user: ${String(error)}`);
-    }
+  } catch (error) {
+    console.error(`❌ Error creating user ${username}:`, error);
+    throw new Error(`Failed to create user: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 export async function deleteCognitoUser(username: string) {
   try {
-    console.log(`🗑️ Deleting user from Cognito: ${username}`);
+    console.log(`🗑️ Deleting Cognito user: ${username}`);
     
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, AdminDeleteUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -437,14 +440,17 @@ export async function deleteCognitoUser(username: string) {
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito delete operation');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('🔐 Using authenticated credentials for Cognito delete operation');
-    
-    // Create authenticated Cognito client
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -454,7 +460,6 @@ export async function deleteCognitoUser(username: string) {
       },
     });
     
-    // Delete the user from Cognito
     const deleteUserCommand = new AdminDeleteUserCommand({
       Username: username,
       UserPoolId: USER_POOL_ID
@@ -462,11 +467,14 @@ export async function deleteCognitoUser(username: string) {
     
     await client.send(deleteUserCommand);
     
-    console.log(`✅ Successfully deleted user ${username} from Cognito`);
-    return true;
+    console.log(`✅ Successfully deleted user ${username}`);
+    return {
+      success: true,
+      message: `User ${username} deleted successfully`
+    };
     
   } catch (error) {
-    console.error(`❌ Error deleting Cognito user ${username}:`, error);
+    console.error(`❌ Error deleting user ${username}:`, error);
     throw new Error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -478,7 +486,6 @@ export async function listCognitoGroups() {
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, ListGroupsCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -486,14 +493,17 @@ export async function listCognitoGroups() {
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito groups access');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('🔐 Using authenticated credentials for Cognito groups access');
-    
-    // Create authenticated Cognito client
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -503,7 +513,6 @@ export async function listCognitoGroups() {
       },
     });
     
-    // List all groups from the User Pool
     const listGroupsCommand = new ListGroupsCommand({
       UserPoolId: USER_POOL_ID,
       Limit: 60
@@ -516,19 +525,18 @@ export async function listCognitoGroups() {
       return [];
     }
     
-    console.log(`📝 Found ${result.Groups.length} groups in Cognito User Pool:`, result.Groups.map(g => g.GroupName));
+    console.log(`📝 Found ${result.Groups.length} groups in Cognito User Pool:`, result.Groups);
     
-    // Transform the groups to match our interface
-    const groups = result.Groups.map(group => ({
-      GroupName: group.GroupName || '',
-      Description: group.Description || '',
-      Precedence: group.Precedence || 0
+    return result.Groups.map(group => ({
+      GroupName: group.GroupName,
+      Description: group.Description,
+      Precedence: group.Precedence,
+      LastModifiedDate: group.LastModifiedDate,
+      CreationDate: group.CreationDate
     }));
     
-    return groups;
-    
   } catch (error) {
-    console.error(`❌ Error fetching Cognito groups:`, error);
+    console.error('❌ Error fetching Cognito groups:', error);
     throw new Error(`Failed to fetch groups: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -540,7 +548,6 @@ export async function updateUserRoles(username: string, newGroups: string[]) {
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -548,14 +555,17 @@ export async function updateUserRoles(username: string, newGroups: string[]) {
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito role management');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('🔐 Using authenticated credentials for Cognito role management');
-    
-    // Create authenticated Cognito client
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -629,7 +639,6 @@ export async function resendInvitation(username: string) {
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, AdminGetUserCommand, AdminSetUserPasswordCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -637,14 +646,17 @@ export async function resendInvitation(username: string) {
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito invitation resend');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('🔐 Using authenticated credentials for Cognito invitation resend');
-    
-    // Create authenticated Cognito client
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -705,7 +717,6 @@ export async function resetUserPassword(username: string) {
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, AdminGetUserCommand, AdminSetUserPasswordCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -713,14 +724,17 @@ export async function resetUserPassword(username: string) {
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito password reset');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('🔐 Using authenticated credentials for Cognito password reset');
-    
-    // Create authenticated Cognito client
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -755,12 +769,43 @@ export async function resetUserPassword(username: string) {
     await client.send(setPasswordCommand);
     
     console.log(`✅ Successfully reset password for ${username}`);
-    console.log(`📧 Cognito will automatically send a password reset email`);
+    
+    // Enhanced email handling with SES fallback
+    let emailResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: 'No email sent' };
+    let sesConfig: any = null;
+    
+    // Get user's email from attributes
+    const emailAttribute = userResult.UserAttributes?.find(attr => attr.Name === 'email');
+    const email = emailAttribute?.Value;
+    
+    if (email) {
+      // Send password reset email via Lambda function
+      try {
+        console.log(`📧 Attempting to send password reset email via Lambda to ${email}`);
+        emailResult = await sendPasswordResetEmailViaLambda(email, username, tempPassword);
+        
+        if (emailResult.success) {
+          console.log(`✅ Password reset email sent successfully via Lambda. Message ID: ${emailResult.messageId}`);
+        } else {
+          console.warn(`⚠️ Lambda password reset email failed: ${emailResult.error}`);
+        }
+      } catch (error: any) {
+        console.error('❌ Error sending password reset email via Lambda:', error);
+        emailResult.error = `Lambda email error: ${error.message}`;
+      }
+    }
+    
+    // If Lambda email failed, log the issue but don't fail password reset
+    if (!emailResult.success) {
+      console.log(`📧 Lambda email failed, but password reset was successful. User will need to check their email or contact admin for credentials.`);
+      console.log(`📧 Email error details: ${emailResult.error}`);
+    }
     
     return {
       success: true,
       message: `Password reset for ${username}. User will receive an email with temporary password and must change it on next login.`,
-      tempPassword: tempPassword // For admin reference only
+      tempPassword: tempPassword, // For admin reference only
+      emailResult: emailResult
     };
     
   } catch (error) {
@@ -775,40 +820,50 @@ function generateTemporaryPassword(): string {
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
   let password = '';
   
-  // Ensure at least one of each required character type
-  password += 'A'; // uppercase
-  password += 'a'; // lowercase  
-  password += '1'; // number
-  password += '!'; // special char
+  // Ensure at least one character from each required category
+  password += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 26)]; // Uppercase
+  password += 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]; // Lowercase
+  password += '0123456789'[Math.floor(Math.random() * 10)]; // Number
+  password += '!@#$%^&*'[Math.floor(Math.random() * 8)]; // Special character
   
-  // Fill the rest randomly
+  // Fill the rest with random characters
   for (let i = 4; i < length; i++) {
-    password += charset.charAt(Math.floor(Math.random() * charset.length));
+    password += charset[Math.floor(Math.random() * charset.length)];
   }
   
   // Shuffle the password
   return password.split('').sort(() => Math.random() - 0.5).join('');
 }
 
-/**
- * Get user details including groups
- */
 export const getUserDetails = async (username: string): Promise<any> => {
   try {
-    console.log(`🔍 Fetching details for user ${username}...`);
+    const { CognitoIdentityProviderClient, AdminGetUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     
-    const client = new CognitoIdentityProviderClient({ region: 'us-east-2' });
-    const command = new AdminGetUserCommand({
-      UserPoolId: 'us-east-2_ldPO5ZKCR',
-      Username: username
+    const session = await fetchAuthSession();
+    if (!session.credentials) {
+      throw new Error('No credentials available in session');
+    }
+    
+    const client = new CognitoIdentityProviderClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
     });
     
-    const response = await client.send(command);
+    const command = new AdminGetUserCommand({
+      Username: username,
+      UserPoolId: USER_POOL_ID
+    });
     
-    return response;
+    const result = await client.send(command);
+    return result;
   } catch (error) {
-    console.error(`❌ Error fetching user details:`, error);
-    throw new Error(`Failed to fetch user details: ${error}`);
+    console.error(`❌ Error getting user details for ${username}:`, error);
+    throw error;
   }
 };
 
@@ -816,11 +871,6 @@ export const getUserDetails = async (username: string): Promise<any> => {
 export async function testUserPoolConfiguration() {
   try {
     console.log('🧪 Testing User Pool Configuration...');
-    console.log('📋 Configuration:');
-    console.log('  - USER_POOL_ID:', USER_POOL_ID);
-    console.log('  - REGION:', REGION);
-    console.log('  - Config aws_user_pools_id:', config.aws_user_pools_id);
-    console.log('  - Config aws_project_region:', config.aws_project_region);
     
     // Test if we can list users (this will verify permissions)
     const users = await listCognitoUsers();
@@ -852,7 +902,6 @@ export async function testCognitoPermissions() {
     // Use AWS SDK directly with authenticated user credentials
     const { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
     const { getCurrentUser } = await import('aws-amplify/auth');
-    const { fetchAuthSession } = await import('aws-amplify/auth');
     
     // Get authenticated user credentials
     const user = await getCurrentUser();
@@ -860,18 +909,17 @@ export async function testCognitoPermissions() {
       throw new Error('No authenticated user found');
     }
     
+    console.log('🔐 Using session credentials for Cognito permissions test');
+    
+    // Get session credentials for browser environment
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
+    
     if (!session.credentials) {
       throw new Error('No credentials available in session');
     }
     
-    console.log('📋 Session credentials:', {
-      accessKeyId: session.credentials.accessKeyId ? 'present' : 'missing',
-      secretAccessKey: session.credentials.secretAccessKey ? 'present' : 'missing',
-      sessionToken: session.credentials.sessionToken ? 'present' : 'missing'
-    });
-    
-    // Create authenticated Cognito client
+    // Create authenticated Cognito client with session credentials
     const client = new CognitoIdentityProviderClient({
       region: REGION,
       credentials: {
@@ -924,8 +972,9 @@ export async function testCognitoPermissions() {
         Username: 'test-user-permission-check',
         UserPoolId: USER_POOL_ID
       });
+      
       await client.send(deleteCommand);
-      console.log('✅ Test user cleaned up');
+      console.log('✅ Test user cleaned up successfully');
       
     } catch (error: any) {
       console.error('❌ AdminCreateUser permission: FAILED');
@@ -978,7 +1027,6 @@ export async function testUserPoolIds() {
       
       const { CognitoIdentityProviderClient, ListUsersCommand } = await import('@aws-sdk/client-cognito-identity-provider');
       const { getCurrentUser } = await import('aws-amplify/auth');
-      const { fetchAuthSession } = await import('aws-amplify/auth');
       
       // Get authenticated user credentials
       const user = await getCurrentUser();
@@ -986,12 +1034,15 @@ export async function testUserPoolIds() {
         throw new Error('No authenticated user found');
       }
       
+      // Get session credentials for browser environment
+      const { fetchAuthSession } = await import('aws-amplify/auth');
       const session = await fetchAuthSession();
+      
       if (!session.credentials) {
         throw new Error('No credentials available in session');
       }
       
-      // Create authenticated Cognito client
+      // Create authenticated Cognito client with session credentials
       const client = new CognitoIdentityProviderClient({
         region: 'us-east-2',
         credentials: {

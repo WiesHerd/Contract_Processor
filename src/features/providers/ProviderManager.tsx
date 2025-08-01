@@ -1082,7 +1082,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                 <SelectTrigger id="credential-select" className="w-full font-normal">
                   <SelectValue placeholder="All Credentials" className="font-normal" />
                 </SelectTrigger>
-                <SelectContent modal={false}>
+                <SelectContent modal={false} className="max-h-[300px] overflow-y-auto">
                   <SelectItem value="__all__" className="font-normal">All Credentials</SelectItem>
                   {credentialOptions.map(opt => (
                     <SelectItem key={opt} value={opt} className="font-normal">{opt}</SelectItem>
@@ -1096,7 +1096,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                 <SelectTrigger id="specialty-select" className="w-full font-normal">
                   <SelectValue placeholder="All Specialties" className="font-normal" />
                 </SelectTrigger>
-                <SelectContent modal={false}>
+                <SelectContent modal={false} className="max-h-[300px] overflow-y-auto">
                   <SelectItem value="__all__" className="font-normal">All Specialties</SelectItem>
                   {specialtyOptions.map(opt => (
                     <SelectItem key={opt} value={opt} className="font-normal">{opt}</SelectItem>
@@ -1111,7 +1111,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                 <SelectTrigger id="subspecialty-select" className="w-full font-normal">
                   <SelectValue placeholder="All Subspecialties" className="font-normal" />
                 </SelectTrigger>
-                <SelectContent modal={false}>
+                <SelectContent modal={false} className="max-h-[300px] overflow-y-auto">
                   <SelectItem value="__all__" className="font-normal">All Subspecialties</SelectItem>
                   {subspecialtyOptions.map(opt => (
                     <SelectItem key={opt} value={opt} className="font-normal">{opt}</SelectItem>
@@ -1125,7 +1125,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                 <SelectTrigger id="providertype-select" className="w-full font-normal">
                   <SelectValue placeholder="All Provider Types" className="font-normal" />
                 </SelectTrigger>
-                <SelectContent modal={false}>
+                <SelectContent modal={false} className="max-h-[300px] overflow-y-auto">
                   <SelectItem value="__all__" className="font-normal">All Provider Types</SelectItem>
                   {providerTypeOptions.map(opt => (
                     <SelectItem key={opt} value={opt} className="font-normal">{opt}</SelectItem>

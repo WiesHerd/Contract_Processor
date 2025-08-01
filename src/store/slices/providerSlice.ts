@@ -20,25 +20,35 @@ export const fetchProviders = createAsyncThunk(
   }
 );
 
-// Add a new thunk for conditional fetching with caching
+// Enhanced caching thunk for conditional fetching
 export const fetchProvidersIfNeeded = createAsyncThunk(
   'providers/fetchIfNeeded',
   async (_, { getState, dispatch }) => {
     const state = getState() as any;
     const { providers, lastSync, loading } = state.provider;
     
-    const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+    const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes - longer cache for better UX
     const now = new Date().getTime();
     const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
+    
+    console.log('🔍 Cache check:', {
+      providersCount: providers.length,
+      lastSync: lastSync,
+      cacheAge: now - lastSyncTime,
+      cacheValid: now - lastSyncTime < CACHE_DURATION_MS,
+      loading
+    });
     
     // Fetch if:
     // 1. Currently loading (let it finish)
     // 2. There are no providers loaded
-    // 3. The data is stale (older than 5 minutes)
+    // 3. The data is stale (older than 30 minutes)
     if (!loading && (providers.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS))) {
+      console.log('📥 Fetching providers from API (cache miss or stale)');
       return dispatch(fetchProviders(undefined));
     }
     
+    console.log('✅ Using cached providers (cache hit)');
     // Return existing data if cache is still valid
     return { payload: providers };
   }
@@ -52,6 +62,41 @@ export const fetchProvidersByYear = createAsyncThunk(
     const response = await awsProviders.list(year);
     console.log('providerSlice: awsProviders.list returned:', response);
     return response;
+  }
+);
+
+// Cached version for fetching providers by year
+export const fetchProvidersByYearIfNeeded = createAsyncThunk(
+  'providers/fetchByYearIfNeeded',
+  async (year: number, { getState, dispatch }) => {
+    const state = getState() as any;
+    const { providers, lastSync, loading } = state.provider;
+    
+    const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+    const now = new Date().getTime();
+    const lastSyncTime = lastSync ? new Date(lastSync).getTime() : 0;
+    
+    console.log('🔍 Year cache check:', {
+      year,
+      providersCount: providers.length,
+      lastSync: lastSync,
+      cacheAge: now - lastSyncTime,
+      cacheValid: now - lastSyncTime < CACHE_DURATION_MS,
+      loading
+    });
+    
+    // Fetch if:
+    // 1. Currently loading (let it finish)
+    // 2. There are no providers loaded
+    // 3. The data is stale (older than 30 minutes)
+    if (!loading && (providers.length === 0 || (now - lastSyncTime > CACHE_DURATION_MS))) {
+      console.log('📥 Fetching providers by year from API (cache miss or stale)');
+      return dispatch(fetchProvidersByYear(year));
+    }
+    
+    console.log('✅ Using cached providers by year (cache hit)');
+    // Return existing data if cache is still valid
+    return { payload: providers };
   }
 );
 
@@ -165,6 +210,11 @@ const providerSlice = createSlice({
     setUploadProgress: (state, action: PayloadAction<{ progress: number; total: number }>) => {
       state.uploadProgress = action.payload.progress;
       state.uploadTotal = action.payload.total;
+    },
+    // Force refresh by clearing cache
+    forceRefresh: (state) => {
+      state.lastSync = null;
+      console.log('🔄 Force refresh: Cache cleared');
     },
   },
   extraReducers: (builder) => {
@@ -307,6 +357,7 @@ export const {
   clearProviders,
   setClearProgress,
   setUploadProgress,
+  forceRefresh,
 } = providerSlice.actions;
 
 export default providerSlice.reducer; 

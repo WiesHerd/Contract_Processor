@@ -22,7 +22,7 @@ $policyJson = @"
         "cognito-idp:DeleteGroup"
       ],
       "Resource": [
-        "arn:aws:cognito-idp:us-east-2:430118851518:userpool/us-east-2_IdPO5ZKCR"
+        "arn:aws:cognito-idp:us-east-2:430118851518:userpool/us-east-2_ldPO5ZKCR"
       ]
     }
   ]

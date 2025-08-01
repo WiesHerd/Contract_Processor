@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
-import { Trash2, Upload, Maximize2, Minimize2, Download, AlertCircle, CheckCircle, Info } from 'lucide-react';
-import { clearProviders, fetchProvidersByYear, uploadProviders, clearAllProviders, setProviders } from '@/store/slices/providerSlice';
+import { Trash2, Upload, Maximize2, Minimize2, Download, AlertCircle, CheckCircle, Info, RefreshCw } from 'lucide-react';
+import { clearProviders, fetchProvidersByYearIfNeeded, uploadProviders, clearAllProviders, setProviders, forceRefresh } from '@/store/slices/providerSlice';
 import { selectProviders, selectProvidersLoading, selectProvidersError } from '@/store/slices/providerSlice';
 import { useYear } from '@/contexts/YearContext';
 import ProviderManager from './ProviderManager';
@@ -29,6 +29,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import type { LoadingAction } from '@/types/provider';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
+// Remove the complex caching for now and use simple Redux state
 
 // Enterprise-grade field mapping configuration
 const REQUIRED_FIELDS = [
@@ -251,15 +252,15 @@ export default function ProviderDataManager() {
   const [isSticky, setIsSticky] = useState(true);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [showValidationModal, setShowValidationModal] = useState(false);
-  // Remove upload summary modal state
   const [csvRowCount, setCsvRowCount] = useState<number | null>(null);
   
-  const providers = useSelector(selectProviders);
+  // Simple Redux state management
+  const providers = useSelector(selectProviders) || [];
   const loading = useSelector(selectProvidersLoading);
   const error = useSelector(selectProvidersError);
   const lastSync = useSelector((state: RootState) => state.provider.lastSync);
   
-  console.log('ProviderDataManager: Current state - providers:', providers.length, 'loading:', loading, 'error:', error);
+  console.log('ProviderDataManager: Redux state - providers:', providers?.length || 0, 'loading:', loading, 'error:', error);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { 
@@ -299,8 +300,8 @@ export default function ProviderDataManager() {
     console.log('ProviderDataManager: Authentication status - isAuthenticated:', isAuthenticated, 'user:', user?.username);
     
     if (selectedYear && isAuthenticated) {
-      console.log('ProviderDataManager: Dispatching fetchProvidersByYear with year:', selectedYear);
-      dispatch(fetchProvidersByYear(selectedYear));
+      console.log('ProviderDataManager: Dispatching fetchProvidersByYearIfNeeded with year:', selectedYear);
+      dispatch(fetchProvidersByYearIfNeeded(selectedYear));
     } else if (!isAuthenticated) {
       console.log('ProviderDataManager: User not authenticated, skipping fetch');
       // Clear any existing providers if user is not authenticated
@@ -420,7 +421,7 @@ export default function ProviderDataManager() {
           }
           
           // Force refresh the data to ensure UI updates
-          await dispatch(fetchProvidersByYear(selectedYear)).unwrap();
+          await dispatch(fetchProvidersByYearIfNeeded(selectedYear)).unwrap();
           
         } catch (error: unknown) {
           console.error('Provider upload error:', error);
@@ -490,7 +491,7 @@ export default function ProviderDataManager() {
   };
 
   const downloadFullCSV = () => {
-    if (providers.length === 0) {
+    if (!providers || providers.length === 0) {
       toast.error('No provider data to export');
       return;
     }
@@ -530,7 +531,7 @@ export default function ProviderDataManager() {
     });
 
     // Filter out fields that have data in less than 1% of providers (to remove truly orphaned fields)
-    const minDataThreshold = Math.max(1, Math.floor(providers.length * 0.01));
+    const minDataThreshold = Math.max(1, Math.floor((providers?.length || 0) * 0.01));
     const fieldsWithSufficientData = Array.from(allFieldNames).filter(field => {
       const dataCount = fieldDataCount.get(field) || 0;
       return dataCount >= minDataThreshold;
@@ -586,7 +587,7 @@ export default function ProviderDataManager() {
       link.click();
       document.body.removeChild(link);
       
-      toast.success(`Exported ${providers.length} providers to CSV`);
+      toast.success(`Exported ${providers?.length || 0} providers to CSV`);
     }
   };
 
@@ -609,6 +610,21 @@ export default function ProviderDataManager() {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+            </div>
+            {/* Simple provider count and cache status */}
+            <div className="flex items-center gap-2">
+              {providers && providers.length > 0 && (
+                <>
+                  <Badge variant="outline" className="text-xs">
+                    {providers?.length || 0} providers loaded
+                  </Badge>
+                  {lastSync && (
+                    <Badge variant="secondary" className="text-xs">
+                      {new Date(lastSync).toLocaleTimeString()} cached
+                    </Badge>
+                  )}
+                </>
+              )}
             </div>
           </div>
           <hr className="my-3 border-gray-100" />
@@ -643,7 +659,7 @@ export default function ProviderDataManager() {
                 variant="outline"
                 className="bg-white"
                 onClick={downloadFullCSV}
-                disabled={loading || providers.length === 0}
+                disabled={loading || !providers || providers.length === 0}
               >
                 Export All Data
               </Button>
@@ -651,9 +667,23 @@ export default function ProviderDataManager() {
             {/* Right group: Clear Table */}
             <div className="flex items-center gap-3">
               <Button
+                variant="outline"
+                className="bg-white"
+                onClick={() => {
+                  dispatch(forceRefresh());
+                  if (selectedYear && isAuthenticated) {
+                    dispatch(fetchProvidersByYearIfNeeded(selectedYear));
+                  }
+                }}
+                disabled={loading}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Data
+              </Button>
+              <Button
                 variant="destructive"
                 onClick={() => setShowConfirm(true)}
-                disabled={loading || providers.length === 0}
+                disabled={loading || !providers || providers.length === 0}
               >
                 Clear Table
               </Button>
