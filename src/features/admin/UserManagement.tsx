@@ -307,11 +307,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh, showCreateUs
         }
       }
       
-      if (result.sesConfig) {
-        successMessage += `\nSES Status:\n`;
-        successMessage += `- Configured: ${result.sesConfig.isConfigured ? '✅' : '❌'}\n`;
-        successMessage += `- Verified: ${result.sesConfig.isVerified ? '✅' : '❌'}\n`;
-        successMessage += `- Quota: ${result.sesConfig.sentToday}/${result.sesConfig.maxPerDay} emails today\n`;
+      if (result.emailResult && !result.emailResult.success) {
+        successMessage += `\nEmail Status:\n`;
+        successMessage += `- Email sent: ${result.emailResult.success ? '✅' : '❌'}\n`;
+        successMessage += `- Error: ${result.emailResult.error || 'None'}\n`;
       }
       
       console.log('📋 Success Details:', successMessage);
