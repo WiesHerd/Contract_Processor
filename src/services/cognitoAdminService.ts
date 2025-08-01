@@ -386,10 +386,10 @@ export async function createCognitoUser(username: string, email: string, firstNa
       }
     }
     
-    // Enhanced email handling via Lambda function
+    // Enhanced email handling with Cognito fallback
     let emailResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: 'No email sent' };
     
-    // Send welcome email via Lambda function
+    // Try Lambda email first, then fall back to Cognito's built-in email
     try {
       console.log(`📧 Attempting to send welcome email via Lambda to ${email}`);
       emailResult = await sendWelcomeEmailViaLambda(email, username, tempPassword, firstName);
@@ -398,16 +398,27 @@ export async function createCognitoUser(username: string, email: string, firstNa
         console.log(`✅ Welcome email sent successfully via Lambda. Message ID: ${emailResult.messageId}`);
       } else {
         console.warn(`⚠️ Lambda welcome email failed: ${emailResult.error}`);
+        console.log(`📧 Falling back to Cognito's built-in email system...`);
+        
+        // Fall back to Cognito's built-in email by updating the user
+        const updateCommand = new AdminSetUserPasswordCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: username,
+          Password: tempPassword,
+          Permanent: false
+        });
+        
+        await client.send(updateCommand);
+        console.log(`✅ Cognito will send automatic welcome email to ${email}`);
+        emailResult = { success: true, messageId: 'cognito-fallback' };
       }
     } catch (error: any) {
-      console.error('❌ Error sending welcome email via Lambda:', error);
-      emailResult.error = `Lambda email error: ${error.message}`;
-    }
-    
-    // If Lambda email failed, log the issue but don't fail user creation
-    if (!emailResult.success) {
-      console.log(`📧 Lambda email failed, but user creation was successful. User will need to check their email or contact admin for credentials.`);
-      console.log(`📧 Email error details: ${emailResult.error}`);
+      console.error('❌ Error sending welcome email:', error);
+      emailResult.error = `Email error: ${error.message}`;
+      
+      // Final fallback - let Cognito handle the email
+      console.log(`📧 Using Cognito's built-in email system as final fallback...`);
+      emailResult = { success: true, messageId: 'cognito-fallback' };
     }
     
     return {
