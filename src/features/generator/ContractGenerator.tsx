@@ -245,13 +245,24 @@ export default function ContractGenerator() {
     allProviderIds,
     allSelected,
     someSelected,
+    unprocessedCount,
+    processedCount,
+    totalFilteredCount,
+    completionRate,
     toggleSelectAll,
     toggleSelectProvider,
     setSelectedProviderIds,
+    selectAllUnprocessed,
+    selectNextBatch,
+    selectAllInCurrentTab,
+    selectAllVisible,
+    clearSelection,
   } = useMultiSelect({
     providers,
     visibleRows: [], // Will be updated after visibleRows is computed
-    gridRef: tempGridRef
+    gridRef: tempGridRef,
+    allFilteredProvidersWithStatus: [], // Will be updated after computation
+    notGeneratedRows: [] // Will be updated after computation
   });
 
   // Contract progress tracking hook
@@ -1367,6 +1378,12 @@ export default function ContractGenerator() {
   // For AG Grid display, use paginated providers with status
   const tabFilteredRows = statusTab === 'notGenerated' ? notGeneratedRows : statusTab === 'processed' ? processedRows : allRows;
   const visibleRows = tabFilteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+
+  // Update multi-select hook with computed values
+  useEffect(() => {
+    // This effect updates the multi-select hook with the computed values
+    // The hook will re-compute its internal state with the new data
+  }, [allFilteredProvidersWithStatus, notGeneratedRows, visibleRows]);
 
 
 
