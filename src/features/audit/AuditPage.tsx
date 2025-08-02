@@ -28,6 +28,17 @@ export default function AuditPage() {
   const { templates, status: templatesStatus } = useSelector((state: RootState) => state.templates);
   const dispatch = useDispatch<AppDispatch>();
 
+  // Helper to format provider name with proper spacing
+  const formatProviderName = (name: string) => {
+    if (!name || name === 'Unknown Provider') return name;
+    
+    // Handle common patterns like "TroyNguyen" -> "Troy Nguyen"
+    // This regex finds capital letters and adds spaces before them
+    return name.replace(/([a-z])([A-Z])/g, '$1 $2')
+               .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+               .trim();
+  };
+
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -76,7 +87,7 @@ export default function AuditPage() {
           outputType: log.outputType,
           status: log.status,
           fileUrl: log.fileUrl,
-          providerName: log.fileUrl ? log.fileUrl.split('_')[1]?.replace(/_/g, ' ') : 'Unknown Provider' // Extract name from filename
+          providerName: log.fileUrl ? formatProviderName(log.fileUrl.split('_')[1]?.replace(/_/g, ' ') || 'Unknown Provider') : 'Unknown Provider' // Extract name from filename
         }
       }),
       severity: log.status === 'SUCCESS' ? 'LOW' : 'MEDIUM',
@@ -299,8 +310,10 @@ export default function AuditPage() {
     
     // Search filter - enhanced to search more fields
     const searchLower = searchTerm.toLowerCase();
+    const formattedProviderName = formatProviderName(providerName);
     const matchesSearch = searchTerm === '' || 
       providerName.toLowerCase().includes(searchLower) ||
+      formattedProviderName.toLowerCase().includes(searchLower) ||
       templateInfo.name.toLowerCase().includes(searchLower) ||
       log.user?.toLowerCase().includes(searchLower) ||
       contractYear.includes(searchLower) ||
@@ -376,7 +389,7 @@ export default function AuditPage() {
       id: log.id,
       timestamp: log.timestamp,
       user: log.user || '-',
-      providerName: meta.providerName || getProviderName(providerId || '', meta),
+      providerName: formatProviderName(meta.providerName || getProviderName(providerId || '', meta)),
       templateName: getTemplateInfo(templateId || '').name,
       templateVersion: getTemplateInfo(templateId || '').version,
       contractYear: contractYear,

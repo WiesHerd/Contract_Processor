@@ -30,6 +30,8 @@ interface UseBulkGenerationProps {
   updateProgress: (progress: any) => void;
   progressData: any;
   hydrateGeneratedContracts: () => Promise<void>;
+  // Filter clearing functions
+  clearFilters: () => void;
 }
 
 interface GeneratedFile {
@@ -72,6 +74,7 @@ export const useBulkGeneration = ({
   updateProgress,
   progressData,
   hydrateGeneratedContracts,
+  clearFilters,
 }: UseBulkGenerationProps) => {
   const dispatch = useDispatch();
 
@@ -461,6 +464,9 @@ b, strong { font-weight: bold !important; }
     // Clear selected providers to hide the bottom menu
     setSelectedProviderIds([]);
     
+    // Clear filters to start fresh for next generation
+    clearFilters();
+    
     // Quick refresh - no need for long delays
     console.log('🔍 Bulk generation completed successfully');
     
@@ -534,6 +540,7 @@ b, strong { font-weight: bold !important; }
     hydrateGeneratedContracts,
     generatedContracts,
     generateContractForProvider,
+    clearFilters,
     dispatch
   ]);
 
@@ -708,6 +715,10 @@ b, strong { font-weight: bold !important; }
     setProgressModalOpen(false);
     // Clear selected providers to hide the bottom menu
     setSelectedProviderIds([]);
+    
+    // Clear filters to start fresh for next generation
+    clearFilters();
+    
     // NOTE: Removed hydration call here because it was overwriting the Redux state
     // with empty database results, causing contracts to disappear from the UI
     // The contracts are already in Redux state from the generation process
@@ -733,6 +744,7 @@ b, strong { font-weight: bold !important; }
     hydrateGeneratedContracts,
     generatedContracts,
     generateContractForProvider,
+    clearFilters,
     dispatch
   ]);
 

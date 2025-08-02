@@ -219,6 +219,8 @@ export default function ContractGenerator() {
   const [modalSelectedAdminRole, setModalSelectedAdminRole] = useState("__ALL__");
   const [modalSelectedCompModel, setModalSelectedCompModel] = useState("__ALL__");
   const [selectedTemplateForFiltered, setSelectedTemplateForFiltered] = useState<string>("");
+  const [modalSelectedProviders, setModalSelectedProviders] = useState<string[]>([]);
+  const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [bulkOpen, setBulkOpen] = useState(true);
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
   const [showAssignedProviders, setShowAssignedProviders] = useState(true);
@@ -973,6 +975,18 @@ export default function ContractGenerator() {
     });
       }, [providers, search, selectedSpecialty, selectedSubspecialty, selectedProviderType, selectedFTE, selectedProviderTypeFilter]);
 
+  // Clear filters function - resets all filter states to default
+  const clearFilters = useCallback(() => {
+    setSelectedSpecialty("__ALL__");
+    setSelectedSubspecialty("__ALL__");
+    setSelectedProviderType("__ALL__");
+    setSelectedFTE([0, 2]);
+    setSelectedProviderTypeFilter("__ALL__");
+    setSearch('');
+    setPageIndex(0);
+    console.log('🧹 Filters cleared for fresh start');
+  }, []);
+
   // Bulk generation hook - replaces all bulk generation logic
   const {
     handleBulkGenerate: handleBulkGenerateHook,
@@ -996,6 +1010,7 @@ export default function ContractGenerator() {
     updateProgress,
     progressData,
     hydrateGeneratedContracts,
+    clearFilters,
   });
 
   // Wrapper functions to maintain existing interface
@@ -1260,41 +1275,148 @@ export default function ContractGenerator() {
 
 
   // Add state and memo for filter values and unique lists at the top of the component
-  // Compute unique options for cascading filters
+  // Compute unique options for cascading filters - context-aware based on active tab
   const specialtyOptions = useMemo(() => {
     const set = new Set<string>();
-    providers.forEach(p => { if (p.specialty) set.add(p.specialty); });
+    
+    // Get the providers that should be considered for this tab
+    let relevantProviders = providers;
+    
+    if (statusTab === 'notGenerated') {
+      // For "Not Generated" tab, only consider providers that haven't been generated
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return !latestProcessedContract || latestProcessedContract.status === 'FAILED';
+      });
+    } else if (statusTab === 'processed') {
+      // For "Processed" tab, only consider providers that have been successfully generated
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return latestProcessedContract && (latestProcessedContract.status === 'SUCCESS' || latestProcessedContract.status === 'PARTIAL_SUCCESS');
+      });
+    }
+    // For "All" tab, consider all providers
+    
+    relevantProviders.forEach(p => { if (p.specialty) set.add(p.specialty); });
     return Array.from(set).sort();
-  }, [providers]);
+  }, [providers, statusTab, generatedContracts]);
 
   const subspecialtyOptions = useMemo(() => {
-    return providers
+    // Get the providers that should be considered for this tab
+    let relevantProviders = providers;
+    
+    if (statusTab === 'notGenerated') {
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return !latestProcessedContract || latestProcessedContract.status === 'FAILED';
+      });
+    } else if (statusTab === 'processed') {
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return latestProcessedContract && (latestProcessedContract.status === 'SUCCESS' || latestProcessedContract.status === 'PARTIAL_SUCCESS');
+      });
+    }
+    
+    return relevantProviders
       .filter(p => selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty)
       .map(p => p.subspecialty)
       .filter((s): s is string => !!s)
       .filter((v, i, arr) => arr.indexOf(v) === i)
       .sort();
-  }, [providers, selectedSpecialty]);
+  }, [providers, selectedSpecialty, statusTab, generatedContracts]);
 
   const providerTypeOptions = useMemo(() => {
-    return providers
+    // Get the providers that should be considered for this tab
+    let relevantProviders = providers;
+    
+    if (statusTab === 'notGenerated') {
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return !latestProcessedContract || latestProcessedContract.status === 'FAILED';
+      });
+    } else if (statusTab === 'processed') {
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return latestProcessedContract && (latestProcessedContract.status === 'SUCCESS' || latestProcessedContract.status === 'PARTIAL_SUCCESS');
+      });
+    }
+    
+    return relevantProviders
       .filter(p => (selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty) &&
                    (selectedSubspecialty === "__ALL__" || p.subspecialty === selectedSubspecialty))
       .map(p => p.providerType)
       .filter((s): s is string => !!s)
       .filter((v, i, arr) => arr.indexOf(v) === i)
       .sort();
-  }, [providers, selectedSpecialty, selectedSubspecialty]);
+  }, [providers, selectedSpecialty, selectedSubspecialty, statusTab, generatedContracts]);
 
   const providerTypeFilterOptions = useMemo(() => {
-    return providers
+    // Get the providers that should be considered for this tab
+    let relevantProviders = providers;
+    
+    if (statusTab === 'notGenerated') {
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return !latestProcessedContract || latestProcessedContract.status === 'FAILED';
+      });
+    } else if (statusTab === 'processed') {
+      relevantProviders = providers.filter(provider => {
+        const latestProcessedContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        return latestProcessedContract && (latestProcessedContract.status === 'SUCCESS' || latestProcessedContract.status === 'PARTIAL_SUCCESS');
+      });
+    }
+    
+    return relevantProviders
       .filter(p => (selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty) &&
                    (selectedSubspecialty === "__ALL__" || p.subspecialty === selectedSubspecialty))
       .map(p => p.providerType)
       .filter((s): s is string => !!s)
       .filter((v, i, arr) => arr.indexOf(v) === i)
       .sort();
-  }, [providers, selectedSpecialty, selectedSubspecialty]);
+  }, [providers, selectedSpecialty, selectedSubspecialty, statusTab, generatedContracts]);
+
+  // Simple, fast filtered providers for modal
+  const modalFilteredProviders = selectedProviderIds.filter(providerId => {
+    const provider = providers.find(p => p.id === providerId);
+    if (!provider) return false;
+    
+    // Filter by search term
+    if (modalSearchTerm.trim()) {
+      const searchLower = modalSearchTerm.toLowerCase();
+      const nameMatch = provider.name?.toLowerCase().includes(searchLower);
+      const specialtyMatch = provider.specialty?.toLowerCase().includes(searchLower);
+      const providerTypeMatch = provider.providerType?.toLowerCase().includes(searchLower);
+      return nameMatch || specialtyMatch || providerTypeMatch;
+    }
+    
+    return true;
+  });
+
+
 
   // Reset lower-level filters if their value is no longer valid
   useEffect(() => {
@@ -2764,228 +2886,151 @@ export default function ContractGenerator() {
 
 
 
-        {/* Professional Bulk Template Assignment Modal */}
+        {/* Bulk Assignment Modal with Checkboxes */}
         {bulkAssignmentModalOpen && (
           <Dialog open={bulkAssignmentModalOpen} onOpenChange={(open) => {
             setBulkAssignmentModalOpen(open);
-            // Reset modal filters when modal closes to prevent affecting main page
+            // Reset modal state when modal closes
             if (!open) {
-              setModalSelectedSpecialty("__ALL__");
-              setModalSelectedSubspecialty("__ALL__");
-              setModalSelectedProviderType("__ALL__");
-              setModalSelectedAdminRole("__ALL__");
-              setModalSelectedCompModel("__ALL__");
               setSelectedTemplateForFiltered("");
+              setModalSelectedProviders([]);
+              setModalSearchTerm("");
             }
           }}>
-            <DialogContent className="max-w-7xl w-[95vw] max-h-[90vh] flex flex-col bg-gray-50">
-              <DialogHeader className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-2">
+            <DialogContent className="max-w-4xl w-[80vw] max-h-[75vh] flex flex-col bg-white">
+              <DialogHeader className="flex-shrink-0 border-b border-gray-200 px-6 py-4">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <DialogTitle className="text-base font-semibold text-gray-900">
-                      Bulk Template Assignment
+                  <div className="flex-1">
+                    <DialogTitle className="text-lg font-semibold text-gray-900">
+                      Assign Templates
                     </DialogTitle>
-                    <DialogDescription className="text-sm text-gray-600 mt-0.5">
-                      {selectedProviderIds.length} providers selected
-                    </DialogDescription>
-                    {/* Cumulative Progress Bar - Same as main screen */}
-                    <div className="mt-2">
-                      <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                        <span>Template Assignment Progress</span>
-                        <span>{selectedProviderIds.filter(id => templateAssignments[id]).length}/{selectedProviderIds.length}</span>
-                      </div>
-                      <Progress 
-                        value={(selectedProviderIds.filter(id => templateAssignments[id]).length / selectedProviderIds.length) * 100} 
-                        className="h-2"
-                      />
+                  </div>
+                  {selectedProviderIds.length > 0 && (
+                    <div className="flex flex-col items-end gap-2">
+                      <span className="text-sm font-medium text-gray-700">Bulk Processing</span>
+                      <Select value={selectedTemplateForFiltered} onValueChange={setSelectedTemplateForFiltered}>
+                        <SelectTrigger className="w-96 h-9">
+                          <SelectValue placeholder="Assign template to selected providers..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map(template => (
+                            <SelectItem key={template.id} value={template.id}>
+                              <div className="flex items-center gap-2 py-1">
+                                <span className="text-sm font-medium truncate max-w-[300px]" title={template.name}>
+                                  {template.name}
+                                </span>
+                                <span className="text-xs text-gray-500 flex-shrink-0">
+                                  ({template.compensationModel})
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(modalSelectedSpecialty !== "__ALL__" || modalSelectedSubspecialty !== "__ALL__" || modalSelectedProviderType !== "__ALL__" || modalSelectedAdminRole !== "__ALL__" || modalSelectedCompModel !== "__ALL__") && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setModalSelectedSpecialty("__ALL__");
-                          setModalSelectedSubspecialty("__ALL__");
-                          setModalSelectedProviderType("__ALL__");
-                          setModalSelectedAdminRole("__ALL__");
-                          setModalSelectedCompModel("__ALL__");
-                          setSelectedTemplateForFiltered("");
-                        }}
-                        className="text-gray-600 hover:text-gray-700 hover:bg-gray-50 border-gray-200 h-7 px-3"
-                      >
-                        Reset Filters
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        selectedProviderIds.forEach(providerId => {
-                          updateProviderTemplate(providerId, null);
-                        });
-                      }}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 h-7 px-3"
-                    >
-                      Clear All
-                    </Button>
-                  </div>
+                  )}
                 </div>
               </DialogHeader>
               
-              <div className="flex flex-1 min-h-0 gap-2 p-2">
-                {/* Left Panel - Filters and Assignment */}
-                <div className="w-2/5 bg-white rounded border border-gray-200 flex flex-col">
-                  <div className="flex-shrink-0 p-3 border-b border-gray-200">
-                    <h3 className="text-sm font-semibold text-gray-900">
-                      Filters & Assignment
-                    </h3>
+              <div className="flex-1 overflow-y-auto p-6">
+                {/* Sticky search field that stays at top when scrolling */}
+                <div className="sticky top-0 z-10 bg-white border-b border-gray-200 pb-4 mb-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search providers by name..."
+                      value={modalSearchTerm}
+                      onChange={(e) => setModalSearchTerm(e.target.value)}
+                      className="pl-10 pr-4 py-2 w-full"
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
                   </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                    {/* Filters Section */}
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-900 mb-2 uppercase tracking-wide">Filter Providers</h4>
-                      <div className="space-y-2">
-                        <div className="space-y-2">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Specialty</label>
-                            <Select value={modalSelectedSpecialty} onValueChange={(value) => {
-                              setModalSelectedSpecialty(value);
-                              // Reset subspecialty when specialty changes
-                              setModalSelectedSubspecialty("__ALL__");
-                            }}>
-                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
-                                <SelectValue placeholder="All Specialties" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__ALL__">All Specialties</SelectItem>
-                                {[...new Set(providers.filter(p => selectedProviderIds.includes(p.id)).map(p => p.specialty))].sort().map(specialty => (
-                                  <SelectItem key={specialty} value={specialty}>
-                                    {specialty}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Subspecialty</label>
-                            <Select value={modalSelectedSubspecialty} onValueChange={setModalSelectedSubspecialty}>
-                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
-                                <SelectValue placeholder="All Subspecialties" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__ALL__">All Subspecialties</SelectItem>
-                                {modalSelectedSpecialty !== "__ALL__" 
-                                  ? [...new Set(providers
-                                      .filter(p => selectedProviderIds.includes(p.id) && p.specialty === modalSelectedSpecialty)
-                                      .map(p => p.subspecialty)
-                                      .filter(Boolean))].sort().map(subspecialty => (
-                                    <SelectItem key={subspecialty} value={subspecialty}>
-                                      {subspecialty}
-                                    </SelectItem>
-                                  ))
-                                  : [...new Set(providers
-                                      .filter(p => selectedProviderIds.includes(p.id))
-                                      .map(p => p.subspecialty)
-                                      .filter(Boolean))].sort().map(subspecialty => (
-                                    <SelectItem key={subspecialty} value={subspecialty}>
-                                      {subspecialty}
-                                    </SelectItem>
-                                  ))
-                                }
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Provider Type</label>
-                            <Select value={modalSelectedProviderType} onValueChange={setModalSelectedProviderType}>
-                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
-                                <SelectValue placeholder="All Types" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__ALL__">All Types</SelectItem>
-                                {[...new Set(providers.filter(p => selectedProviderIds.includes(p.id)).map(p => p.providerType))].sort().map(providerType => (
-                                  <SelectItem key={providerType} value={providerType}>
-                                    {providerType}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-0.5">Admin Role</label>
-                            <Select value={modalSelectedAdminRole} onValueChange={setModalSelectedAdminRole}>
-                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
-                                <SelectValue placeholder="All Roles" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__ALL__">All Roles</SelectItem>
-                                <SelectItem value="Department Chair">Department Chair</SelectItem>
-                                <SelectItem value="Division Chief">Division Chief</SelectItem>
-                                <SelectItem value="Medical Director">Medical Director</SelectItem>
-                                <SelectItem value="None">None</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Compensation Model</label>
-                          <Select value={modalSelectedCompModel} onValueChange={setModalSelectedCompModel}>
-                            <SelectTrigger className="w-full h-7 text-xs border-gray-300">
-                              <SelectValue placeholder="All Models" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__ALL__">All Models</SelectItem>
-                              <SelectItem value="Base">Base</SelectItem>
-                              <SelectItem value="Productivity">Productivity</SelectItem>
-                              <SelectItem value="Hybrid">Hybrid</SelectItem>
-                              <SelectItem value="Hospitalist">Hospitalist</SelectItem>
-                              <SelectItem value="Leadership">Leadership</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
+                </div>
+                
+                {/* Smooth scrolling provider list */}
+                <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ 
+                  maxHeight: '350px',
+                  scrollBehavior: 'smooth',
+                  WebkitOverflowScrolling: 'touch',
+                  msOverflowStyle: 'none',
+                  scrollbarWidth: 'thin'
+                }}>
+                  {modalFilteredProviders.map(providerId => {
+                    const provider = providers.find(p => p.id === providerId);
+                    const currentTemplate = templates.find(t => t.id === templateAssignments[providerId]);
+                    const isSelected = modalSelectedProviders.includes(providerId);
                     
-                    {/* Template Assignment Section */}
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-900 mb-2 uppercase tracking-wide">Assign Template</h4>
-                      <div className="space-y-2">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Template to Assign</label>
-                          <Select value={selectedTemplateForFiltered} onValueChange={setSelectedTemplateForFiltered}>
-                            <SelectTrigger className="w-full h-7 text-xs border-gray-300">
+                    if (!provider) return null;
+                    
+                    return (
+                      <div key={providerId} className={`flex items-center justify-between p-4 border rounded-md transition-colors ${
+                        isSelected ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
+                      }`}>
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setModalSelectedProviders(prev => [...prev, providerId]);
+                              } else {
+                                setModalSelectedProviders(prev => prev.filter(id => id !== providerId));
+                              }
+                            }}
+                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-sm text-gray-900">
+                              {provider.name}
+                            </h4>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {provider.specialty} • {provider.providerType}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex-shrink-0 ml-4">
+                          <Select
+                            value={templateAssignments[providerId] || 'no-template'}
+                            onValueChange={(templateId) => {
+                              if (templateId && templateId !== 'no-template') {
+                                updateProviderTemplate(providerId, templateId);
+                              } else {
+                                updateProviderTemplate(providerId, null);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-[28rem] h-9 border-gray-200">
                               <SelectValue>
-                                {selectedTemplateForFiltered ? (
-                                  <div className="flex items-center gap-1 min-w-0">
-                                    <span className="truncate text-xs" title={templates.find(t => t.id === selectedTemplateForFiltered)?.name}>
-                                      {templates.find(t => t.id === selectedTemplateForFiltered)?.name}
+                                {currentTemplate ? (
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="truncate text-sm" title={currentTemplate.name}>
+                                      {currentTemplate.name}
                                     </span>
                                     <span className="text-xs text-gray-500 flex-shrink-0">
-                                      ({templates.find(t => t.id === selectedTemplateForFiltered)?.compensationModel})
+                                      ({currentTemplate.compensationModel})
                                     </span>
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-gray-500">Select template...</span>
+                                  <span className="text-gray-500">Select template...</span>
                                 )}
                               </SelectValue>
                             </SelectTrigger>
                             <SelectContent className="max-w-md">
+                              <SelectItem value="no-template">
+                                <span className="text-sm text-gray-500">No template</span>
+                              </SelectItem>
                               {templates.map(template => (
                                 <SelectItem key={template.id} value={template.id}>
-                                  <div className="flex items-center gap-2 py-0.5 min-w-0">
-                                    <span className="text-sm font-medium truncate" title={template.name}>
+                                  <div className="flex items-center gap-2 py-1 min-w-0">
+                                    <span className="text-sm font-medium truncate max-w-[300px]" title={template.name}>
                                       {template.name}
                                     </span>
-                                    <span className="text-xs text-gray-500 flex-shrink-0">({template.compensationModel})</span>
+                                    <span className="text-xs text-gray-500 flex-shrink-0">
+                                      ({template.compensationModel})
+                                    </span>
                                   </div>
                                 </SelectItem>
                               ))}
@@ -2993,322 +3038,112 @@ export default function ContractGenerator() {
                           </Select>
                         </div>
                       </div>
+                    );
+                  })}
+                  {modalFilteredProviders.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      {modalSearchTerm.trim() ? 'No providers match your search' : 'No providers available'}
                     </div>
-                  </div>
-                  
-                  {/* Action Buttons - Outside scrollable container */}
-                  <div className="flex-shrink-0 p-3 border-t border-gray-200">
-                    {/* Progress indicator */}
-                    {bulkAssignmentLoading && bulkAssignmentProgress && (
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                          <span>Processing assignments...</span>
-                          <span>{bulkAssignmentProgress.completed}/{bulkAssignmentProgress.total}</span>
-                        </div>
-                        <Progress 
-                          value={(bulkAssignmentProgress.completed / bulkAssignmentProgress.total) * 100} 
-                          className="h-2"
-                        />
-                      </div>
-                    )}
-                    
-                    <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        className="flex-1 h-7 text-xs"
-                        onClick={clearFilteredAssignments}
-                        disabled={filteredProvidersCount === 0 || bulkAssignmentLoading}
-                      >
-                        {bulkAssignmentLoading ? (
-                          <div className="flex items-center gap-1">
-                            <LoadingSpinner size="sm" color="gray" inline />
-                            <span>Clearing...</span>
-                          </div>
-                        ) : (
-                          'Clear Filtered'
-                        )}
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        className="flex-1 h-7 text-xs text-green-600 border-green-200 hover:bg-green-50"
-                        onClick={async () => {
-                          const unassignedCount = selectedProviderIds.filter(id => !templateAssignments[id]).length;
-                          if (unassignedCount > 0 && selectedTemplateForFiltered) {
-                            // Assign to ALL remaining unassigned providers
-                            const unassignedIds = selectedProviderIds.filter(id => !templateAssignments[id]);
-                            for (const providerId of unassignedIds) {
-                              updateProviderTemplate(providerId, selectedTemplateForFiltered);
-                            }
-                            showSuccess(`Assigned template to all ${unassignedCount} remaining providers`);
-                          }
-                        }}
-                        disabled={selectedProviderIds.filter(id => !templateAssignments[id]).length === 0 || !selectedTemplateForFiltered || bulkAssignmentLoading}
-                      >
-                        Assign All Remaining
-                      </Button>
-                      <Button 
-                        className="flex-1 h-7 text-xs bg-blue-600 hover:bg-blue-700"
-                        onClick={async () => {
-                          await assignTemplateToFiltered(selectedTemplateForFiltered);
-                          // After assignment, auto-filter to show remaining unassigned
-                          if (showAssignedProviders) {
-                            setShowAssignedProviders(false);
-                          }
-                          // Clear template selection for next assignment
-                          setSelectedTemplateForFiltered("");
-                        }}
-                        disabled={filteredProvidersCount === 0 || !selectedTemplateForFiltered || bulkAssignmentLoading}
-                      >
-                        {bulkAssignmentLoading ? (
-                          <div className="flex items-center gap-1">
-                            <LoadingSpinner size="sm" color="white" inline />
-                            <span>Assigning...</span>
-                          </div>
-                        ) : (
-                          'Assign Template'
-                        )}
-                      </Button>
-                    </div>
-                    
-                    {/* Quick Actions */}
-                    <div className="mt-2 pt-2 border-t border-gray-200">
-                      <div className="flex gap-1">
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          className="flex-1 h-6 text-xs text-gray-600 hover:text-blue-600"
-                          onClick={() => setShowAssignedProviders(!showAssignedProviders)}
-                        >
-                          {showAssignedProviders ? 'Hide Assigned' : 'Show All'}
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          className="flex-1 h-6 text-xs text-gray-600 hover:text-orange-600"
-                          onClick={() => {
-                            const unassignedCount = getFilteredProviderIds.filter(id => !templateAssignments[id]).length;
-                            showInfo(`${unassignedCount} providers still need template assignment`);
-                          }}
-                        >
-                          Show Pending
-                        </Button>
-                      </div>
-                    </div>
-                    
-
-                  </div>
-                </div>
-                
-                {/* Right Panel - Provider List */}
-                <div className="w-3/5 bg-white rounded border border-gray-200 flex flex-col">
-                  <div className="flex-shrink-0 p-3 border-b border-gray-200">
-                                      <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Provider List
-                      </h3>
-                      <div className="flex items-center gap-4 mt-0.5">
-                        <p className="text-xs text-gray-600">
-                          {getFilteredProviderIds.length} providers match filters
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-green-600 font-medium">
-                            ✓ {getFilteredProviderIds.filter(id => templateAssignments[id]).length} assigned
-                          </span>
-                          <span className="text-xs text-orange-600 font-medium">
-                            ⏳ {getFilteredProviderIds.filter(id => !templateAssignments[id]).length} pending
-                          </span>
-                        </div>
-                      </div>
-
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={showAssignedProviders ? "show-all" : "hide-assigned"}
-                        onValueChange={(value) => setShowAssignedProviders(value === "show-all")}
-                      >
-                        <SelectTrigger className="w-32 h-7 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="show-all">Show All</SelectItem>
-                          <SelectItem value="hide-assigned">Hide Assigned</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input 
-                        placeholder="Search providers..." 
-                        className="w-48 h-7 text-xs"
-                        onChange={(e) => {
-                          // Add search functionality here
-                        }}
-                      />
-                      {/* Quick Next Group Button */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs text-blue-600 hover:text-blue-700 border-blue-200"
-                        onClick={() => {
-                          // Find next largest unassigned specialty
-                          const unassignedProviders = selectedProviderIds
-                            .map(id => providers.find(p => p.id === id))
-                            .filter(provider => provider && !templateAssignments[provider.id]);
-                          
-                          const specialtyCounts = unassignedProviders.reduce((acc, provider) => {
-                            if (provider) {
-                              acc[provider.specialty] = (acc[provider.specialty] || 0) + 1;
-                            }
-                            return acc;
-                          }, {} as Record<string, number>);
-                          
-                          const nextSpecialty = Object.entries(specialtyCounts)
-                            .sort(([,a], [,b]) => b - a)[0]?.[0];
-                          
-                          if (nextSpecialty) {
-                            setModalSelectedSpecialty(nextSpecialty);
-                            setModalSelectedSubspecialty("__ALL__");
-                            setModalSelectedProviderType("__ALL__");
-                            setModalSelectedAdminRole("__ALL__");
-                            setModalSelectedCompModel("__ALL__");
-                            showInfo(`Filtered to ${nextSpecialty} (${specialtyCounts[nextSpecialty]} unassigned providers)`);
-                          }
-                        }}
-                      >
-                        Next Group
-                      </Button>
-                    </div>
-                  </div>
-                  </div>
-                  
-                  {/* Provider List */}
-                  <div className="flex-1 overflow-y-auto">
-                    <div className="p-2 space-y-1">
-                      {/* Filter providers based on showAssignedProviders setting */}
-                      {getFilteredProviderIds
-                        .filter(providerId => {
-                          if (showAssignedProviders) return true;
-                          return !templateAssignments[providerId]; // Hide assigned providers
-                        })
-                        .slice(0, 100)
-                        .map(providerId => {
-                        const provider = providers.find(p => p.id === providerId);
-                        const currentTemplate = templates.find(t => t.id === templateAssignments[providerId]);
-                        
-                        if (!provider) return null;
-                        
-                        return (
-                          <div key={providerId} className={`flex items-center justify-between p-2 border rounded transition-colors ${
-                            templateAssignments[providerId] 
-                              ? 'bg-green-50 border-green-200 hover:bg-green-100' 
-                              : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                          }`}>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                {templateAssignments[providerId] && (
-                                  <div className="flex-shrink-0 w-2 h-2 bg-green-500 rounded-full" title="Template assigned" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <h4 className={`font-medium truncate text-sm ${
-                                    templateAssignments[providerId] ? 'text-green-800' : 'text-gray-900'
-                                  }`}>
-                                    {provider.name}
-                                  </h4>
-                                  <p className="text-xs text-gray-500 truncate">
-                                    {provider.specialty} • {provider.providerType}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="flex-1 min-w-0 ml-3">
-                              <Select
-                                value={templateAssignments[providerId] || 'no-template'}
-                                onValueChange={(templateId) => {
-                                  if (templateId && templateId !== 'no-template') {
-                                    updateProviderTemplate(providerId, templateId);
-                                  } else {
-                                    updateProviderTemplate(providerId, null);
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="w-full min-w-0 h-7 text-xs">
-                                  <SelectValue>
-                                    {currentTemplate ? (
-                                      <div className="flex items-center gap-1 min-w-0">
-                                        <span className="truncate text-xs" title={currentTemplate.name}>
-                                          {currentTemplate.name}
-                                        </span>
-                                        <span className="text-xs text-gray-500 flex-shrink-0">({currentTemplate.compensationModel})</span>
-                                      </div>
-                                    ) : (
-                                      <span className="text-xs text-gray-500">No template</span>
-                                    )}
-                                  </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent className="max-w-md">
-                                  <SelectItem value="no-template">
-                                    <span className="text-sm text-gray-500">No template</span>
-                                  </SelectItem>
-                                  {templates.map(template => (
-                                    <SelectItem key={template.id} value={template.id}>
-                                      <div className="flex items-center gap-2 py-0.5 min-w-0">
-                                        <span className="text-sm font-medium truncate" title={template.name}>
-                                          {template.name}
-                                        </span>
-                                        <span className="text-xs text-gray-500 flex-shrink-0">({template.compensationModel})</span>
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      
-                      {/* Show message when no providers match filters */}
-                      {getFilteredProviderIds.length === 0 && (
-                        <div className="text-center py-8 text-gray-500">
-                          <p className="text-sm font-medium">No providers match the current filters</p>
-                          <p className="text-xs">Try adjusting your filter criteria</p>
-                        </div>
-                      )}
-                      
-                      {/* Show pagination message */}
-                      {getFilteredProviderIds.length > 100 && (
-                        <div className="text-center py-2 text-xs text-gray-500">
-                          Showing first 100 of {getFilteredProviderIds.length} providers
-                          {filteredProvidersCount !== selectedProviderIds.length && (
-                            <span className="ml-2 text-blue-600">
-                              (filtered from {selectedProviderIds.length} total)
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      
-
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
               
-              <DialogFooter className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-2">
+              <DialogFooter className="flex-shrink-0 border-t border-gray-200 px-6 py-4">
                 <div className="flex items-center justify-between w-full">
-                  <div className="text-xs text-gray-600">
+                  <div className="text-sm text-gray-600">
                     {selectedProviderIds.filter(id => templateAssignments[id]).length} of {selectedProviderIds.length} providers assigned
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setBulkAssignmentModalOpen(false)} className="h-7 text-xs">
+                    <Button variant="outline" onClick={() => setBulkAssignmentModalOpen(false)} className="h-9">
                       Cancel
                     </Button>
-                    <Button onClick={() => setBulkAssignmentModalOpen(false)} className="bg-blue-600 hover:bg-blue-700 h-7 text-xs">
-                      Apply Assignments
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        console.log('Clearing all template assignments');
+                        // Clear all template assignments completely
+                        clearTemplateAssignments();
+                        // Clear modal-specific state
+                        setModalSelectedProviders([]);
+                        setSelectedTemplateForFiltered("");
+                        setModalSearchTerm("");
+                        showSuccess('All template assignments cleared');
+                      }}
+                      className="h-9 bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      Clear All
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        if (selectedTemplateForFiltered) {
+                          // Apply bulk template to CHECKED providers only
+                          const providersToUpdate = modalSelectedProviders.length > 0 ? modalSelectedProviders : selectedProviderIds;
+                          console.log('Applying template to checked providers:', providersToUpdate);
+                          console.log('Selected template:', selectedTemplateForFiltered);
+                          console.log('Current templateAssignments before:', templateAssignments);
+                          
+                          // Create a new assignments object with checked providers updated
+                          const newAssignments = { ...templateAssignments };
+                          providersToUpdate.forEach(providerId => {
+                            console.log(`Assigning template ${selectedTemplateForFiltered} to provider ${providerId}`);
+                            newAssignments[providerId] = selectedTemplateForFiltered;
+                          });
+                          
+                          // Update the template assignments state directly
+                          setTemplateAssignments(newAssignments);
+                          
+                          // Also update session storage
+                          setSessionTemplateAssignments(newAssignments);
+                          
+                          console.log('New templateAssignments after update:', newAssignments);
+                          
+                          showSuccess(`Assigned template to ${providersToUpdate.length} providers`);
+                          setSelectedTemplateForFiltered("");
+                        } else if (modalSelectedProviders.length > 0) {
+                          // If no bulk template selected but providers are checked, 
+                          // find the first assigned template and apply it to checked providers
+                          const assignedProviders = selectedProviderIds.filter(id => {
+                            return templateAssignments[id];
+                          });
+                          
+                          if (assignedProviders.length > 0) {
+                            const templateToApply = templateAssignments[assignedProviders[0]];
+                            
+                            if (templateToApply) {
+                              console.log('Applying first assigned template to checked providers');
+                              console.log('Template to apply:', templateToApply);
+                              console.log('Checked provider IDs:', modalSelectedProviders);
+                              
+                              // Create a new assignments object with checked providers updated
+                              const newAssignments = { ...templateAssignments };
+                              modalSelectedProviders.forEach(providerId => {
+                                console.log(`Applying template ${templateToApply} to provider ${providerId}`);
+                                newAssignments[providerId] = templateToApply;
+                              });
+                              
+                              // Update the template assignments state directly
+                              setTemplateAssignments(newAssignments);
+                              
+                              // Also update session storage
+                              setSessionTemplateAssignments(newAssignments);
+                              
+                              showSuccess(`Template applied to ${modalSelectedProviders.length} providers`);
+                            }
+                          }
+                        }
+                        // Don't close the modal - let user see the assignments and then press Generate Contracts
+                      }} 
+                      className="h-9 bg-blue-600 hover:bg-blue-700"
+                      disabled={selectedProviderIds.length === 0}
+                    >
+                      {selectedTemplateForFiltered ? 'Apply to Selected' : modalSelectedProviders.length > 0 ? 'Apply to Checked' : 'Apply'}
                     </Button>
                     <Button 
                       onClick={async () => {
                         // Check if all selected providers have templates assigned
                         const providersWithoutTemplates = selectedProviderIds
-                          .map(id => providers.find(p => p.id === id))
-                          .filter(provider => provider && !getAssignedTemplate(provider));
+                          .filter(id => !templateAssignments[id]);
                         
                         if (providersWithoutTemplates.length > 0) {
                           // Close the modal and show template error
@@ -3322,7 +3157,7 @@ export default function ContractGenerator() {
                         // Then trigger modal-specific bulk generation
                         await handleModalBulkGenerate();
                       }} 
-                      className="bg-green-600 hover:bg-green-700 h-7 text-xs"
+                      className="bg-green-600 hover:bg-green-700 h-9"
                       disabled={selectedProviderIds.length === 0}
                     >
                       Generate Contracts
@@ -3333,7 +3168,6 @@ export default function ContractGenerator() {
             </DialogContent>
           </Dialog>
         )}
-
 
         {/* Same Template Assignment Modal */}
         {sameTemplateModalOpen && (
