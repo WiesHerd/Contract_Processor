@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Users, UserPlus, Info, CheckCircle, Clock, Shield, User } from 'lucide-react';
 import UserManagement from './UserManagement';
 import { listCognitoUsers } from '@/services/cognitoAdminService';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 import {
   Tooltip,
   TooltipContent,
@@ -24,7 +24,7 @@ interface User {
 const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<'admin'>('admin');
+
   const [users, setUsers] = useState<User[]>([]);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
@@ -73,84 +73,70 @@ const AdminDashboard: React.FC = () => {
     <div className="min-h-screen bg-gray-50/50">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-gray-800">
-                Admin
-              </h1>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="cursor-pointer">
-                      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Info" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" align="start">
-                    Manage users, monitor system activity, and control application settings.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                      <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-bold text-gray-800">
+                  Admin
+                </h1>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-pointer">
+                        <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Info" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" align="start">
+                      Manage users, monitor system activity, and control application settings.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Button onClick={() => setShowCreateUserModal(true)} className="bg-blue-600 hover:bg-blue-700">
+                <UserPlus className="w-4 h-4 mr-2" />
+                Create User
+              </Button>
             </div>
-            <div className="flex items-center gap-2">
-              <Select value={section} onValueChange={val => setSection(val as 'admin')}>
-                <SelectTrigger id="section-select" className="w-44">
-                  <SelectValue placeholder="Admin" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-              {section === 'admin' && (
-                <Button onClick={() => setShowCreateUserModal(true)} className="bg-blue-600 hover:bg-blue-700">
-                  <UserPlus className="w-4 h-4 mr-2" />
-                  Create User
-                </Button>
-              )}
-            </div>
-          </div>
           <hr className="my-3 border-gray-100" />
           
-          {/* User Statistics Cards - Only show when Admin is selected */}
-          {section === 'admin' && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <Card>
-                <CardContent className="flex items-center space-x-2 p-4">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Total Users</p>
-                    <p className="text-2xl font-bold">{totalUsers}</p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center space-x-2 p-4">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <div>
-                    <p className="text-sm font-medium">Confirmed</p>
-                    <p className="text-2xl font-bold">{confirmedUsers}</p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center space-x-2 p-4">
-                  <Clock className="h-4 w-4 text-yellow-600" />
-                  <div>
-                    <p className="text-sm font-medium">Pending</p>
-                    <p className="text-2xl font-bold">{pendingUsers}</p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center space-x-2 p-4">
-                  <Shield className="h-4 w-4 text-purple-600" />
-                  <div>
-                    <p className="text-sm font-medium">Admin Users</p>
-                    <p className="text-2xl font-bold">{adminUsers}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+          {/* User Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <Card>
+              <CardContent className="flex items-center space-x-2 p-4">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Total Users</p>
+                  <p className="text-2xl font-bold">{totalUsers}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center space-x-2 p-4">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <div>
+                  <p className="text-sm font-medium">Confirmed</p>
+                  <p className="text-2xl font-bold">{confirmedUsers}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center space-x-2 p-4">
+                <Clock className="h-4 w-4 text-yellow-600" />
+                <div>
+                  <p className="text-sm font-medium">Pending</p>
+                  <p className="text-2xl font-bold">{pendingUsers}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center space-x-2 p-4">
+                <Shield className="h-4 w-4 text-purple-600" />
+                <div>
+                  <p className="text-sm font-medium">Admin Users</p>
+                  <p className="text-2xl font-bold">{adminUsers}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {error && (
@@ -159,9 +145,7 @@ const AdminDashboard: React.FC = () => {
           </Alert>
         )}
 
-        {section === 'admin' && (
-          <UserManagement onRefresh={handleRefresh} showCreateUserModal={showCreateUserModal} setShowCreateUserModal={setShowCreateUserModal} />
-        )}
+        <UserManagement onRefresh={handleRefresh} showCreateUserModal={showCreateUserModal} setShowCreateUserModal={setShowCreateUserModal} />
 
 
       </div>
