@@ -207,10 +207,6 @@ function UserNav({ onSignOut }: { onSignOut: () => void }) {
             <User className="mr-2 h-4 w-4" />
             <span>Profile</span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => navigate('/audit')}>
-            <BarChart3 className="mr-2 h-4 w-4" />
-            <span>Activity Log</span>
-          </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onSignOut}>
@@ -262,20 +258,15 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
       group: 'setup'
     },
     {
+      title: 'Activity Log',
+      path: '/audit',
+      group: 'setup'
+    },
+    {
       title: 'Generate',
       path: '/generate',
       group: 'action',
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="url(#orangeGradient)" viewBox="0 0 24 24">
-          <defs>
-            <linearGradient id="orangeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#fb923c" />
-              <stop offset="100%" stopColor="#ef4444" />
-            </linearGradient>
-          </defs>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      )
+      icon: <Zap className="w-4 h-4" />
     }
   ];
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Users, Activity, UserPlus, Info, CheckCircle, Clock, Shield } from 'lucide-react';
+import { Loader2, Users, UserPlus, Info, CheckCircle, Clock, Shield, User } from 'lucide-react';
 import UserManagement from './UserManagement';
 import { listCognitoUsers } from '@/services/cognitoAdminService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,7 +24,7 @@ interface User {
 const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<'users' | 'activity'>('users');
+  const [section, setSection] = useState<'admin'>('admin');
   const [users, setUsers] = useState<User[]>([]);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
@@ -75,7 +75,9 @@ const AdminDashboard: React.FC = () => {
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-gray-800">Admin Dashboard</h1>
+              <h1 className="text-lg font-bold text-gray-800">
+                Admin
+              </h1>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -90,16 +92,15 @@ const AdminDashboard: React.FC = () => {
               </TooltipProvider>
             </div>
             <div className="flex items-center gap-2">
-              <Select value={section} onValueChange={val => setSection(val as 'users' | 'activity')}>
+              <Select value={section} onValueChange={val => setSection(val as 'admin')}>
                 <SelectTrigger id="section-select" className="w-44">
-                  <SelectValue />
+                  <SelectValue placeholder="Admin" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="users">User Management</SelectItem>
-                  <SelectItem value="activity">Activity Log</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
-              {section === 'users' && (
+              {section === 'admin' && (
                 <Button onClick={() => setShowCreateUserModal(true)} className="bg-blue-600 hover:bg-blue-700">
                   <UserPlus className="w-4 h-4 mr-2" />
                   Create User
@@ -109,8 +110,8 @@ const AdminDashboard: React.FC = () => {
           </div>
           <hr className="my-3 border-gray-100" />
           
-          {/* User Statistics Cards - Only show when User Management is selected */}
-          {section === 'users' && (
+          {/* User Statistics Cards - Only show when Admin is selected */}
+          {section === 'admin' && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <Card>
                 <CardContent className="flex items-center space-x-2 p-4">
@@ -158,25 +159,11 @@ const AdminDashboard: React.FC = () => {
           </Alert>
         )}
 
-        {section === 'users' && (
+        {section === 'admin' && (
           <UserManagement onRefresh={handleRefresh} showCreateUserModal={showCreateUserModal} setShowCreateUserModal={setShowCreateUserModal} />
         )}
 
-        {section === 'activity' && (
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                Activity Log
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-gray-500">
-                Activity log functionality coming soon...
-              </div>
-            </CardContent>
-          </Card>
-        )}
+
       </div>
     </div>
   );

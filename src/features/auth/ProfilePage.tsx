@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { User, Shield, Bell, Activity, KeyRound, Save } from 'lucide-react';
+import { User, Shield, Bell, KeyRound, Save } from 'lucide-react';
 import { updateUserAttributes, updatePassword } from 'aws-amplify/auth';
 
 export default function ProfilePage() {
@@ -67,12 +67,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto pt-0 pb-4 px-2 sm:px-4 space-y-6">
-      <header>
-        <h1 className="text-3xl font-bold tracking-tight">Profile Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your account settings and preferences.</p>
-      </header>
-      
+    <div className="space-y-6">
       <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
         {/* Left Column */}
         <div className="md:col-span-2 space-y-8">
@@ -151,29 +146,7 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Recent Activity Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Activity size={20}/> Recent Activity</CardTitle>
-              <CardDescription>A log of your recent actions.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3 text-sm">
-                <li className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-green-100 text-green-700"><User size={14}/></div>
-                  <span>Updated profile information</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-blue-100 text-blue-700"><Save size={14}/></div>
-                  <span>Generated contract for "Dr. Smith"</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-purple-100 text-purple-700"><Bell size={14}/></div>
-                  <span>Uploaded new provider data</span>
-                </li>
-              </ul>
-            </CardContent>
-          </Card>
+
         </div>
       </div>
     </div>
