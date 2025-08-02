@@ -228,99 +228,174 @@ export const useGeneratorDataManagement = ({
     }
   }, [setIsClearing, setClearingProgress, showInfo, dispatch, setSelectedProviderIds, showSuccess, setShowClearConfirm, setContractsToClear, hydrateGeneratedContracts, showError]);
 
-  // Function to export CSV
+    // Function to export CSV - Exports ALL providers with complete data regardless of current tab filter
   const handleExportCSV = useCallback(async () => {
     try {
-      // Use all filtered providers, not just paginated
-      const allRows = await Promise.all(filteredProviders.map(async (provider: Provider) => {
-        // Find the latest generated contract for this provider (prioritize SUCCESS over PARTIAL_SUCCESS)
-        const latestContract = generatedContracts
-          .filter(c => c.providerId === provider.id && (c.status === 'SUCCESS' || c.status === 'PARTIAL_SUCCESS'))
-          .sort((a, b) => {
-            // First sort by status (SUCCESS first, then PARTIAL_SUCCESS)
-            if (a.status === 'SUCCESS' && b.status !== 'SUCCESS') return -1;
-            if (a.status !== 'SUCCESS' && b.status === 'SUCCESS') return 1;
-            // Then sort by date (newest first)
-            return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
-          })[0];
+      // Use AG Grid's native export to get ALL columns exactly as they appear
+      const gridElement = document.querySelector('.ag-root-wrapper');
+      if (gridElement && (gridElement as any).gridApi) {
+        const api = (gridElement as any).gridApi;
         
-        // Find assigned template
-        const assignedTemplateId = templateAssignments[provider.id];
-        const assignedTemplate = assignedTemplateId
-          ? templates.find(t => t.id === assignedTemplateId)
-          : null;
+        // Get ALL column definitions including hidden ones to ensure we export everything
+        const allColumns = agGridColumnDefs.filter(col => 
+          col.field && 
+          col.field !== 'checkbox' && 
+          col.field !== 'selected'
+        );
         
-        let generationStatus = 'Outstanding';
-        let generationDate = '';
-        let downloadLink = '';
-        if (latestContract && assignedTemplate) {
-          if (latestContract.status === 'SUCCESS') {
-            generationStatus = 'Generated';
-          } else if (latestContract.status === 'PARTIAL_SUCCESS') {
-            generationStatus = 'Generated (S3 Failed)';
-          } else {
-            generationStatus = 'Failed';
-          }
-          generationDate = latestContract.generatedAt;
-          // Try to use fileUrl if present and looks like a URL
-          if (latestContract.fileUrl && latestContract.fileUrl.startsWith('http')) {
-            downloadLink = latestContract.fileUrl;
-          } else {
-            // Reconstruct contractId and fileName
-            const contractYear = assignedTemplate.contractYear || new Date().getFullYear().toString();
-            const contractId = provider.id + '-' + assignedTemplate.id + '-' + contractYear;
-            const fileName = getContractFileName(contractYear, provider.name, generationDate ? generationDate.split('T')[0] : new Date().toISOString().split('T')[0]);
-            try {
-              const result = await getContractFile(contractId, fileName);
-              downloadLink = result.url;
-            } catch (e) {
-              downloadLink = '';
+        // Create enhanced data with processing status
+        const enhancedData = filteredProviders.map(provider => {
+          // Find latest contract for this provider
+          const latestContract = generatedContracts
+            .filter(c => c.providerId === provider.id)
+            .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+          
+          // Get assigned template
+          const assignedTemplate = getAssignedTemplate(provider);
+          
+          // Determine processing status (no emojis to avoid encoding issues)
+          let processingStatus = 'Not Generated';
+          let processingDate = '';
+          
+          if (latestContract) {
+            switch (latestContract.status) {
+              case 'SUCCESS':
+                processingStatus = 'Generated';
+                processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
+                break;
+              case 'PARTIAL_SUCCESS':
+                processingStatus = 'Partial Success';
+                processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
+                break;
+              case 'FAILED':
+                processingStatus = 'Failed';
+                processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
+                break;
+              default:
+                processingStatus = 'Pending';
+                processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
             }
+          }
+          
+          // Create enhanced provider object with all original fields plus processing info
+          const enhancedProvider = {
+            ...provider,
+            // Add processing columns
+            assignedTemplate: assignedTemplate ? assignedTemplate.name : 'Unassigned',
+            processingStatus,
+            processingDate,
+          };
+          
+          return enhancedProvider;
+        });
+        
+        // Temporarily set the grid data to our enhanced data
+        const originalData = api.getRenderedNodes().map((node: any) => node.data);
+        api.setRowData(enhancedData);
+        
+        // Export with all columns including processing status
+        api.exportDataAsCsv({
+          fileName: `contract-generation-data-${new Date().toISOString().split('T')[0]}.csv`,
+          onlySelected: false,
+          suppressQuotes: false,
+          columnSeparator: ',',
+          // Include all visible columns plus our processing columns
+          columnKeys: [
+            ...allColumns.map(col => col.field),
+            'assignedTemplate',
+            'processingStatus', 
+            'processingDate'
+          ].filter(Boolean)
+        });
+        
+        // Restore original data
+        api.setRowData(originalData);
+        
+        showSuccess(`Exported ${enhancedData.length} providers with complete data`);
+        return;
+      }
+      
+      // Fallback: Manual CSV generation if grid API not available
+      const allProvidersWithStatus = filteredProviders.map(provider => {
+        const latestContract = generatedContracts
+          .filter(c => c.providerId === provider.id)
+          .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())[0];
+        
+        const assignedTemplate = getAssignedTemplate(provider);
+        
+        let processingStatus = 'Not Generated';
+        let processingDate = '';
+        
+        if (latestContract) {
+          switch (latestContract.status) {
+            case 'SUCCESS':
+              processingStatus = 'Generated';
+              processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
+              break;
+            case 'PARTIAL_SUCCESS':
+              processingStatus = 'Partial Success';
+              processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
+              break;
+            case 'FAILED':
+              processingStatus = 'Failed';
+              processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
+              break;
+            default:
+              processingStatus = 'Pending';
+              processingDate = new Date(latestContract.generatedAt).toLocaleDateString();
           }
         }
         
         return {
           ...provider,
           assignedTemplate: assignedTemplate ? assignedTemplate.name : 'Unassigned',
-          generationStatus,
-          generationDate,
-          downloadLink,
+          processingStatus,
+          processingDate,
         };
-      }));
+      });
       
-      // Build headers based on visible columns + extra fields
-      const visibleFields = agGridColumnDefs
-        .filter(col => col.field && col.field !== 'checkbox' && !hiddenColumns.has(col.field))
-        .map(col => col.field);
-      const headers = [
-        ...visibleFields.map(field => {
-          const col = agGridColumnDefs.find(c => c.field === field);
-          return col?.headerName || field;
-        }),
-        'Assigned Template',
-        'Generation Status',
-        'Generation Date',
-        'Download Link',
-      ];
+      // Get ALL column headers from the grid (including hidden ones)
+      const columnHeaders = agGridColumnDefs
+        .filter(col => col.field && col.field !== 'checkbox' && col.field !== 'selected')
+        .map(col => col.headerName || col.field);
       
-      // Build rows
-      const rows = allRows.map(row => [
-        ...visibleFields.map(field => (row as any)[field] ?? ''),
-        row.assignedTemplate,
-        row.generationStatus,
-        row.generationDate,
-        row.downloadLink,
-      ]);
+      // Add processing columns
+      const allHeaders = [...columnHeaders, 'Assigned Template', 'Processing Status', 'Processing Date'];
       
-      // CSV encode
-      const csv = [headers, ...rows].map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\n');
+      // Build rows with all data
+      const rows = allProvidersWithStatus.map(provider => {
+        const row = [];
+        
+        // Add ALL column data (including hidden ones)
+        for (const col of agGridColumnDefs) {
+          if (col.field && col.field !== 'checkbox' && col.field !== 'selected') {
+            row.push(provider[col.field] || '');
+          }
+        }
+        
+        // Add processing columns
+        row.push(provider.assignedTemplate || '');
+        row.push(provider.processingStatus || '');
+        row.push(provider.processingDate || '');
+        
+        return row;
+      });
+      
+      // Generate CSV with proper encoding
+      const csv = [allHeaders, ...rows]
+        .map(row => row.map(val => `"${String(val || '').replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      saveAs(blob, 'contract-generation-providers.csv');
+      saveAs(blob, `contract-generation-data-${new Date().toISOString().split('T')[0]}.csv`);
+      
+      showSuccess(`Exported ${allProvidersWithStatus.length} providers with complete data`);
+      
     } catch (err) {
       setUserError('Failed to export CSV. Please try again.');
       console.error('CSV Export Error:', err);
     }
-  }, [filteredProviders, generatedContracts, templateAssignments, templates, agGridColumnDefs, hiddenColumns, setUserError]);
+  }, [filteredProviders, generatedContracts, agGridColumnDefs, hiddenColumns, getAssignedTemplate, setUserError, showSuccess]);
 
   // Function to get real tab counts from database contracts
   const getRealTabCounts = useCallback(() => {

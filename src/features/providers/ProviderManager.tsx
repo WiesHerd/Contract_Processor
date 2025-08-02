@@ -113,13 +113,13 @@ const providerFieldMap: Record<string, string[]> = {
   subspecialty: ['subspecialty'],
   // positionTitle: ['positiontitle', 'position title', 'Position Title'], // Temporarily disabled
   fte: ['fte', 'total fte', 'totalfte', 'Total FTE', 'TotalFTE'],
+  administrativeFte: ['administrativefte', 'administrative fte', 'Administrative FTE'],
   // clinicalFTE: ['clinicalfte', 'clinical fte', 'Clinical FTE', 'ClinicalFTE'], // Temporarily disabled
   // medicalDirectorFTE: ['medicaldirectorfte', 'medical director fte', 'Medical Director FTE', 'MedicalDirectorFTE'], // Temporarily disabled
   // divisionChiefFTE: ['divisionchieffte', 'division chief fte', 'Division Chief FTE', 'DivisionChiefFTE'], // Temporarily disabled
   // researchFTE: ['researchfte', 'research fte', 'Research FTE', 'ResearchFTE'], // Temporarily disabled
   // teachingFTE: ['teachingfte', 'teaching fte', 'Teaching FTE', 'TeachingFTE'], // Temporarily disabled
   // totalFTE: ['totalfte', 'total fte', 'Total FTE', 'TotalFTE'], // Temporarily disabled
-  // REMOVED: administrativeFte: ['administrativefte', 'administrative fte'],
   // administrativeRole: [
   //   'administrativerole', 'administrative role', 'positiontitle', 'position title'
   // ], // Temporarily disabled
@@ -328,6 +328,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [gridClientWidth, setGridClientWidth] = useState(0);
   const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
+  const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
 
   // Get preferences (non-filter data)
   const hiddenColumns = new Set(Object.entries(preferences?.columnVisibility || {})
@@ -423,7 +424,17 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
         const mappedData = results.data.map(mapCsvRowToProviderFields);
         // Store original CSV headers (fields) for mapping UI
         const cols = results.meta.fields || [];
-        dispatch(setUploadedColumns(cols));
+        
+        // Normalize column names to prevent duplicates
+        const normalizedCols = cols.map(col => {
+          // Normalize "Administrative FTE" to "administrativeFte"
+          if (col.toLowerCase().includes('administrative') && col.toLowerCase().includes('fte')) {
+            return 'administrativeFte';
+          }
+          return col;
+        });
+        
+        dispatch(setUploadedColumns(normalizedCols));
         dispatch(addProvidersFromCSV(mappedData as any[]));
 
         // Save each provider to AppSync (DynamoDB)
@@ -732,8 +743,21 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
 
   // Initialize column order from ALL available data (provider fields + uploaded columns)
   useEffect(() => {
-    if (providers.length > 0 && (columnOrder.length === 0 || (uploadedColumns && uploadedColumns.length > 0 && !columnOrder.some(col => uploadedColumns.includes(col))))) {
+    console.log('🔍 [DEBUG] Column order generation triggered:', {
+      providersLength: providers.length,
+      columnOrderLength: columnOrder.length,
+      uploadedColumns: uploadedColumns
+    });
+    
+    // Check for duplicate Administrative FTE columns
+    const administrativeFteColumns = columnOrder.filter(field => 
+      field.toLowerCase().includes('administrative') && field.toLowerCase().includes('fte')
+    );
+    const hasDuplicateAdminFte = administrativeFteColumns.length > 1;
+    
+    if (providers.length > 0 && (columnOrder.length === 0 || (uploadedColumns && uploadedColumns.length > 0 && !columnOrder.some(col => uploadedColumns.includes(col))) || hasDuplicateAdminFte)) {
       // Generate unified column order from all available data
+      console.log('🔍 [DEBUG] Starting column order generation');
       const allFields = new Set<string>();
       const fieldDataCount = new Map<string, number>();
       
@@ -742,6 +766,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
       if (uploadedColumns && uploadedColumns.length > 0) {
         // Start with uploaded columns in their original order
         finalColumnOrder = [...uploadedColumns];
+        console.log('🔍 [DEBUG] uploadedColumns:', uploadedColumns);
         uploadedColumns.forEach(col => {
           allFields.add(col);
           fieldDataCount.set(col, providers.length); // Assume all providers have uploaded column data
@@ -758,8 +783,18 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
               allFields.add(key);
               fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
               
+              // Debug Administrative FTE fields
+              if (key.toLowerCase().includes('administrative') && key.toLowerCase().includes('fte')) {
+                console.log('🔍 [DEBUG] Found Administrative FTE in provider data:', { key, value, providerName: provider.name });
+              }
+              
+              // Prevent duplicate Administrative FTE columns
+              const isAdministrativeFte = key === 'administrativeFte';
+              const hasAdministrativeFteInUploaded = uploadedColumns && uploadedColumns.includes('administrativeFte');
+              
               // Add to final order if not already included from uploadedColumns
-              if (!finalColumnOrder.includes(key)) {
+              // Skip administrativeFte if we already have an administrativeFte column from CSV
+              if (!finalColumnOrder.includes(key) && !(isAdministrativeFte && hasAdministrativeFteInUploaded)) {
                 finalColumnOrder.push(key);
               }
             }
@@ -778,8 +813,16 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
                 allFields.add(key);
                 fieldDataCount.set(key, (fieldDataCount.get(key) || 0) + 1);
                 
-                // Add to final order if not already included
-                if (!finalColumnOrder.includes(key)) {
+                // Debug Administrative FTE fields in dynamicFields
+                if (key.toLowerCase().includes('administrative') && key.toLowerCase().includes('fte')) {
+                  console.log('🔍 [DEBUG] Found Administrative FTE in dynamicFields:', { key, value, providerName: provider.name });
+                }
+                
+                // COMPLETELY BLOCK any Administrative FTE variations from dynamicFields
+                const isAdministrativeFteFromDynamic = key.toLowerCase().includes('administrative') && key.toLowerCase().includes('fte');
+                
+                // Only add non-Administrative FTE fields to prevent duplicates
+                if (!finalColumnOrder.includes(key) && !isAdministrativeFteFromDynamic) {
                   finalColumnOrder.push(key);
                 }
               }
@@ -816,20 +859,38 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
         });
       }
       
-      if (preferences && JSON.stringify(finalColumnOrder) !== JSON.stringify(preferences.columnOrder)) {
-        updateColumnOrder(finalColumnOrder);
+      // Final cleanup: Remove any duplicate Administrative FTE columns
+      const cleanedColumnOrder = finalColumnOrder.filter((field, index) => {
+        const isAdministrativeFte = field.toLowerCase().includes('administrative') && field.toLowerCase().includes('fte');
+        if (isAdministrativeFte) {
+          // Keep only the first occurrence of Administrative FTE
+          const firstIndex = finalColumnOrder.findIndex(f => 
+            f.toLowerCase().includes('administrative') && f.toLowerCase().includes('fte')
+          );
+          return index === firstIndex;
+        }
+        return true;
+      });
+      
+      console.log('🔍 [DEBUG] Final column order before cleanup:', finalColumnOrder);
+      console.log('🔍 [DEBUG] Cleaned column order:', cleanedColumnOrder);
+      
+      if (preferences && JSON.stringify(cleanedColumnOrder) !== JSON.stringify(preferences.columnOrder)) {
+        updateColumnOrder(cleanedColumnOrder);
       }
     }
-  }, [providers, uploadedColumns, columnOrder.length, preferences, updateColumnOrder]);
+  }, [providers, uploadedColumns, preferences, updateColumnOrder]);
 
   // AG Grid column definitions (unified system using columnOrder)
   const agGridColumnDefs = React.useMemo(() => {
+    console.log('🔍 [DEBUG] AG Grid column definitions - current columnOrder:', columnOrder);
     const leftPinned = preferences?.columnPinning?.left || [];
     const rightPinned = preferences?.columnPinning?.right || [];
     
-    // Use columnOrder as the single source of truth for column definitions
-    // Additional safety filter to ensure compensationModel is never rendered
-    const filteredColumnOrder = columnOrder.filter(field => field !== 'compensationModel');
+              // Use columnOrder as the single source of truth for column definitions
+      // Additional safety filter to ensure compensationModel is never rendered
+      const filteredColumnOrder = columnOrder.filter(field => field !== 'compensationModel');
+    
     const baseCols = filteredColumnOrder.map((field, idx) => {
           let valueFormatter: ((params: any) => string) | undefined;
           let headerName = field;
@@ -842,6 +903,7 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           else if (field === 'startDate') headerName = 'Start Date';
           else if (field === 'originalAgreementDate') headerName = 'Orig Agreement';
           else if (field === 'administrativeRole') headerName = 'Admin Role';
+          else if (field === 'administrativeFte') headerName = 'Administrative FTE';
           else if (field === 'yearsExperience') headerName = 'Years Exp';
           else if (field === 'hourlyWage') headerName = 'Hourly Wage';
           else if (field === 'contractTerm') headerName = 'Contract Term';
@@ -866,7 +928,9 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
             valueFormatter = (params: any) => formatCurrency(params.value);
           } else if (String(field).toLowerCase().includes('date')) {
             valueFormatter = (params: any) => formatDate(params.value);
-          } else if (field.toLowerCase().includes('fte') || field === 'fte' || field === 'totalFTE') {
+          } else if (field === 'conversionFactor') {
+            valueFormatter = (params: any) => formatCurrency(params.value);
+          } else if (field.toLowerCase().includes('fte') || field === 'fte' || field === 'totalFTE' || field === 'administrativeFte') {
             valueFormatter = (params: any) => {
               const v = params.value;
               return typeof v === 'number' ? v.toFixed(2) : String(v ?? '');
@@ -1176,46 +1240,74 @@ const ProviderManager: React.FC<ProviderManagerProps> = ({
           </select>
         </div>
         
-        {/* View Indicator and Column Visibility Toggle */}
-        <div className="flex items-center gap-2 ml-4">
-          {/* Current View Indicator */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium cursor-help ${
-                  activeView && activeView !== 'default' 
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200' 
-                    : 'bg-gray-50 text-gray-600 border border-gray-200'
-                }`}>
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                  View: {activeView === 'default' ? 'Default' : activeView}
+        {/* Enterprise-style View and Column Management */}
+        <div className="flex items-center gap-3 ml-auto">
+          {/* View Dropdown (Google Sheets style) */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600 font-medium">View:</span>
+            <div className="relative">
+              <button
+                onClick={() => setViewDropdownOpen(!viewDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              >
+                <span className="text-gray-900">
+                  {activeView === 'default' ? 'Default View' : activeView}
+                </span>
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {/* View Dropdown Menu */}
+              {viewDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setActiveView('default');
+                        setViewDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
+                        activeView === 'default' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                      }`}
+                    >
+                      Default View
+                    </button>
+                    {/* Add saved views here when available */}
+                    {savedViews && Object.keys(savedViews).map(viewName => (
+                      <button
+                        key={viewName}
+                        onClick={() => {
+                          setActiveView(viewName);
+                          setViewDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
+                          activeView === viewName ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                        }`}
+                      >
+                        {viewName}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  {activeView === 'default' 
-                    ? 'Currently viewing default layout' 
-                    : `Currently viewing saved layout: "${activeView}"`
-                  }
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+              )}
+            </div>
+          </div>
           
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
-            className="flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-            Columns
-          </Button>
+            {/* Column Manager Button (Microsoft Excel style) */}
+  <Button
+    onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
+    variant="outline"
+    size="sm"
+    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-700 text-white border-gray-700 hover:bg-gray-800"
+    title="Customize columns and views"
+  >
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+    Customize
+  </Button>
         </div>
 
         {/* Year dropdown on the far right */}

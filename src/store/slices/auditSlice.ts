@@ -456,6 +456,9 @@ const auditSlice = createSlice({
     addLog: (state, action: PayloadAction<AuditLogEntry>) => {
       state.logs.unshift(action.payload);
     },
+    addLogs: (state, action: PayloadAction<AuditLogEntry[]>) => {
+      state.logs.unshift(...action.payload);
+    },
     clearLogs: (state) => {
       state.logs = [];
     },
@@ -502,5 +505,5 @@ const auditSlice = createSlice({
   },
 });
 
-export const { setFilters, clearFilters, addLog, clearLogs } = auditSlice.actions;
+export const { setFilters, clearFilters, addLog, addLogs, clearLogs } = auditSlice.actions;
 export default auditSlice.reducer; 

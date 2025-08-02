@@ -88,8 +88,8 @@ const FIELD_MAP: Record<string, string> = {
   
   // FTE and administrative
   'fte': 'fte',
-  // REMOVED: 'administrative fte': 'administrativeFte',
-  // REMOVED: 'administrativefte': 'administrativeFte',
+  'administrative fte': 'administrativeFte',
+  'administrativefte': 'administrativeFte',
   'administrative role': 'administrativeRole',
   'administrativerole': 'administrativeRole',
   'years of experience': 'yearsExperience',
@@ -166,7 +166,7 @@ const FIELD_MAP: Record<string, string> = {
 
 const ALLOWED_FIELDS = [
   'id', 'employeeId', 'name', 'providerType', 'specialty', 'subspecialty',
-  'fte', 'administrativeRole', 'yearsExperience', 'hourlyWage',
+  'fte', 'administrativeFte', 'administrativeRole', 'yearsExperience', 'hourlyWage',
   'baseSalary', 'originalAgreementDate', 'organizationName', 'startDate', 'contractTerm',
   'ptoDays', 'holidayDays', 'cmeDays', 'cmeAmount', 'signingBonus', 'educationBonus',
   'qualityBonus', 'compensationType', 'conversionFactor', 'wRVUTarget', 'compensationYear',
@@ -218,7 +218,7 @@ function parseValue(field: string, value: any) {
   
   // Handle numeric fields
   if ([
-    'fte', 'hourlyWage', 'baseSalary', 'cmeAmount', 
+    'fte', 'administrativeFte', 'hourlyWage', 'baseSalary', 'cmeAmount', 
     'signingBonus', 'qualityBonus', 'conversionFactor', 'wRVUTarget', 'educationBonus',
     'relocationBonus'
   ].includes(field)) {

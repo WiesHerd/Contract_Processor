@@ -260,10 +260,37 @@ class UserPreferencesService {
   async setActiveView(viewName: string): Promise<void> {
     const currentPreferences = await this.getProviderPreferences();
     if (currentPreferences) {
-      const updatedPreferences: ProviderScreenPreferences = {
-        ...currentPreferences,
-        activeView: viewName
-      };
+      let updatedPreferences: ProviderScreenPreferences;
+      
+      if (viewName === 'default') {
+        // Reset to default view - use default column configuration
+        updatedPreferences = {
+          ...currentPreferences,
+          activeView: 'default',
+          columnVisibility: {}, // Show all columns
+          columnOrder: ['name', 'employeeId', 'providerType', 'specialty', 'subspecialty', 'administrativeRole', 'baseSalary', 'fte', 'startDate'], // Default order
+          columnPinning: { left: [], right: [] } // No pinned columns
+        };
+      } else {
+        // Apply saved view configuration
+        const savedView = currentPreferences.savedViews?.[viewName];
+        if (savedView) {
+          updatedPreferences = {
+            ...currentPreferences,
+            activeView: viewName,
+            columnVisibility: savedView.columnVisibility,
+            columnOrder: savedView.columnOrder,
+            columnPinning: savedView.columnPinning
+          };
+        } else {
+          // Fallback if saved view doesn't exist
+          updatedPreferences = {
+            ...currentPreferences,
+            activeView: viewName
+          };
+        }
+      }
+      
       await this.saveProviderPreferences(updatedPreferences);
     }
   }

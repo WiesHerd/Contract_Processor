@@ -23,7 +23,6 @@ const COLUMN_CONFIG = [
   { key: 'employeeId', label: 'Employee ID' },
   { key: 'startDate', label: 'Start Date' },
   { key: 'fte', label: 'FTE' },
-  { key: 'administrativeFte', label: 'Administrative FTE' },
   { key: 'baseSalary', label: 'Base Salary' },
   { key: 'hourlyWage', label: 'Hourly Wage' },
   { key: 'providerType', label: 'Provider Type' },
@@ -123,7 +122,7 @@ export const ProviderList: React.FC = () => {
     }
 
     // Format percentages and ratios
-    if (key.includes('Factor') || key === 'fte' || key === 'administrativeFte') {
+    if (key.includes('Factor') || key === 'fte' || key === 'administrativeFte' || key === 'Administrative FTE') {
       const num = parseFloat(value);
       if (!isNaN(num)) {
         return num.toFixed(2);
@@ -238,7 +237,7 @@ export const ProviderList: React.FC = () => {
                 </TableCell>
                 {finalColumnConfig.map((column, colIdx) => {
                   const isNumeric = [
-                    'fte', 'administrativeFte', 'baseSalary', 'hourlyWage', 'yearsExperience',
+                    'fte', 'administrativeFte', 'Administrative FTE', 'baseSalary', 'hourlyWage', 'yearsExperience',
                     'cmeAmount', 'cmeDays', 'ptoDays', 'holidayDays', 'signingBonus', 'qualityBonus',
                     'educationBonus', 'contractTerm', 'conversionFactor', 'wRVUTarget'
                   ].includes(column.key);

@@ -21,9 +21,9 @@ const mainFeatures = [
   {
     title: 'Dynamic Blocks',
     description: 'Create intelligent conditional content with advanced logic',
-    icon: <Zap className="w-6 h-6" />,
+    icon: <Sparkles className="w-6 h-6" />,
     path: '/dynamic-blocks',
-    gradient: 'from-amber-600 via-amber-500 to-yellow-500',
+    gradient: 'from-purple-600 via-purple-500 to-indigo-500',
     stats: '8 blocks',
     badge: 'New'
   },
@@ -39,9 +39,9 @@ const mainFeatures = [
   {
     title: 'Generate',
     description: 'Automated contract generation with enterprise-grade processing',
-    icon: <FilePlus2 className="w-6 h-6" />,
+    icon: <Zap className="w-6 h-6" />,
     path: '/generate',
-    gradient: 'from-purple-600 via-purple-500 to-indigo-500',
+    gradient: 'from-orange-600 via-orange-500 to-red-500',
     stats: '3,456 generated',
     badge: 'Core'
   }

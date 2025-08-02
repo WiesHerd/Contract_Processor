@@ -68,27 +68,27 @@ export const SmartSelectionDropdown: React.FC<SmartSelectionDropdownProps> = ({
   return (
     <TooltipProvider>
       <div className="flex items-center gap-3">
-        {/* Smart Selection Dropdown */}
+        {/* Smart Selection Dropdown - Enhanced with prominent styling */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Select onValueChange={handleSelectionChange} disabled={disabled}>
-              <SelectTrigger className="w-56 h-9 text-sm border-gray-300 hover:border-gray-400 focus:border-blue-500 focus:ring-blue-500">
+              <SelectTrigger className="w-56 h-9 text-sm border-blue-300 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 focus:border-blue-500 focus:ring-blue-500 focus:ring-2 transition-all duration-200 shadow-sm">
                 <SelectValue placeholder="Select options..." />
               </SelectTrigger>
-              <SelectContent className="min-w-56">
-                <SelectItem value="unprocessed" className="text-sm py-2">
+              <SelectContent className="min-w-56 bg-white border border-gray-200 shadow-lg rounded-lg">
+                <SelectItem value="unprocessed" className="text-sm py-2 hover:bg-blue-50">
                   Select All Unprocessed ({unprocessedCount})
                 </SelectItem>
-                <SelectItem value="next-batch" className="text-sm py-2">
+                <SelectItem value="next-batch" className="text-sm py-2 hover:bg-blue-50">
                   Select Next 50 Unprocessed
                 </SelectItem>
-                <SelectItem value="current-tab" className="text-sm py-2">
+                <SelectItem value="current-tab" className="text-sm py-2 hover:bg-blue-50">
                   Select All in Current Tab
                 </SelectItem>
-                <SelectItem value="visible" className="text-sm py-2">
+                <SelectItem value="visible" className="text-sm py-2 hover:bg-blue-50">
                   Select All Visible
                 </SelectItem>
-                <SelectItem value="clear" className="text-sm py-2 text-red-600 hover:text-red-700">
+                <SelectItem value="clear" className="text-sm py-2 text-red-600 hover:text-red-700 hover:bg-red-50">
                   Clear Selection
                 </SelectItem>
               </SelectContent>
@@ -140,24 +140,7 @@ export const SmartSelectionDropdown: React.FC<SmartSelectionDropdownProps> = ({
           </Tooltip>
         )}
 
-        {selectedCount > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={onClearSelection}
-                disabled={disabled}
-                size="sm"
-                variant="ghost"
-                className="h-9 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-              >
-                Clear
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="text-xs">Clear all selected items ({selectedCount} currently selected)</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
+        {/* Removed redundant Clear button - functionality is now in the dropdown */}
       </div>
     </TooltipProvider>
   );

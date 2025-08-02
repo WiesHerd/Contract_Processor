@@ -225,6 +225,7 @@ export default function ContractGenerator() {
 
   const [statusTab, setStatusTab] = useState<'notGenerated' | 'processed' | 'all'>('notGenerated');
   const [isColumnSidebarOpen, setIsColumnSidebarOpen] = useState(false);
+  const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
   const [createViewModalOpen, setCreateViewModalOpen] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   
@@ -1108,7 +1109,6 @@ export default function ContractGenerator() {
     handleClearGenerated: handleClearGeneratedHook,
     handleClearAllProcessed: handleClearAllProcessedHook,
     confirmClearContracts: confirmClearContractsHook,
-    handleExportCSV: handleExportCSVHook,
     getRealTabCounts: getRealTabCountsHook,
   } = useGeneratorDataManagement({
     selectedProviderIds,
@@ -1147,7 +1147,7 @@ export default function ContractGenerator() {
   };
 
   const handleExportCSV = async () => {
-    return handleExportCSVHook();
+    return handleExportCSVWithGridHook();
   };
 
   const getRealTabCounts = () => {
@@ -1386,6 +1386,8 @@ export default function ContractGenerator() {
 
 
 
+
+
   // Generator grid hook - replaces all AG Grid configuration and column definitions
   const {
     agGridColumnDefs,
@@ -1436,6 +1438,32 @@ export default function ContractGenerator() {
       }));
       updateColumns(newColumns);
     },
+  });
+
+  // CSV Export hook with proper grid data - called after grid is configured
+  const {
+    handleExportCSV: handleExportCSVWithGridHook,
+  } = useGeneratorDataManagement({
+    selectedProviderIds,
+    setSelectedProviderIds,
+    generatedContracts,
+    filteredProviders: allFilteredProvidersWithStatus, // Use ALL providers for CSV export, not just tab-filtered
+    templates,
+    templateAssignments,
+    mappings,
+    agGridColumnDefs: agGridColumnDefs, // Now we have the actual column definitions
+    hiddenColumns: hiddenColumns, // Now we have the actual hidden columns
+    setUserError,
+    showSuccess,
+    showWarning,
+    showError,
+    showInfo,
+    setIsClearing,
+    setClearingProgress,
+    setShowClearConfirm,
+    setContractsToClear,
+    hydrateGeneratedContracts,
+    getAssignedTemplate,
   });
 
   // Component rendering hook - extracts all JSX rendering logic
@@ -1587,9 +1615,11 @@ export default function ContractGenerator() {
           {/* Bulk Processing Section */}
           <div className="flex flex-col gap-4 mb-6">
             <div className="rounded-xl border border-blue-100 bg-gray-50 shadow-sm p-0 transition-all duration-300 ${bulkOpen ? 'pb-6' : 'pb-0'} relative">
-              <div className="flex items-center gap-3 px-6 pt-6 pb-2 cursor-pointer select-none" onClick={() => setBulkOpen(v => !v)}>
-                <span className="text-blue-600 text-2xl">⚡</span>
-                <span className="font-bold text-lg text-blue-900 tracking-wide">Bulk Processing</span>
+              <div className="flex items-center justify-between px-6 pt-4 pb-2">
+                <div className="flex items-center gap-3 cursor-pointer select-none" onClick={() => setBulkOpen(v => !v)}>
+                  <span className="text-blue-600 text-2xl">⚡</span>
+                  <span className="font-bold text-lg text-blue-900 tracking-wide">Bulk Processing</span>
+                </div>
               </div>
               <button
                 className="absolute top-4 right-4 p-1 rounded hover:bg-blue-100 transition-colors"
@@ -1603,7 +1633,7 @@ export default function ContractGenerator() {
               <div className={`overflow-hidden transition-all duration-300 ${bulkOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}> 
                 
                 {/* Primary Actions */}
-                <div className="px-6 pt-4 pb-4 border-b border-gray-200">
+                <div className="px-6 pt-2 pb-3 border-b border-gray-200">
                   <div className="space-y-4">
                     {/* Quick Selection Actions */}
                     <div className="flex items-center gap-2">
@@ -1625,211 +1655,195 @@ export default function ContractGenerator() {
                 </div>
 
                                   {/* Advanced Options */}
-                  <div className="px-6 pt-4">
+                  <div className="px-6 pt-3">
                     <div className="text-sm font-semibold text-gray-700 mb-3">Filters & Advanced Options</div>
                     
-                    {/* Selection Actions */}
-                    <div className="flex gap-2 flex-wrap mb-4 items-center justify-between">
-                      <div className="flex gap-2 flex-wrap">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
-                            setSelectedProviderIds(allFilteredIds);
-                          }}
-                          disabled={filteredProviders.length === 0 || isBulkGenerating}
-                          className="font-medium text-xs"
-                          title="Select all providers across all tabs and pages"
-                        >
-                          All Filtered ({filteredProviders.length})
-                        </Button>
-                        
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const visibleIds = visibleRows.map((p: Provider) => p.id);
-                            setSelectedProviderIds(visibleIds);
-                          }}
-                          disabled={providers.length === 0 || isBulkGenerating}
-                          className="font-medium text-xs"
-                          title="Select all providers currently visible on this page"
-                        >
-                          Visible
-                        </Button>
-                      </div>
-                      
-                      {selectedProviderIds.length > 0 && (
-                        <Button
-                          onClick={clearSelection}
-                          disabled={isBulkGenerating}
-                          size="sm"
-                          variant="default"
-                          className="font-medium text-xs bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
-                        >
-                          Clear Selection ({selectedProviderIds.length})
-                        </Button>
-                      )}
-                    </div>
-                  
-                  {/* Filters Row */}
-                  <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 gap-2 mb-4 justify-between">
-                    {/* Filter Dropdowns - Left Side */}
-                    <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 gap-2">
-                      <div className="flex flex-col min-w-[160px]">
-                        <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Specialty</span>
-                        <Select
-                          value={selectedSpecialty}
-                          onValueChange={val => {
-                            setSelectedSpecialty(val);
-                            setPageIndex(0);
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="All Specialties" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__ALL__">All Specialties</SelectItem>
-                            {specialtyOptions.filter(s => s && s.trim() !== '').map(s => (
-                              <SelectItem key={s} value={s}>{s}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col min-w-[160px]">
-                        <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Subspecialty</span>
-                        <Select
-                          value={selectedSubspecialty}
-                          onValueChange={val => {
-                            setSelectedSubspecialty(val);
-                            setPageIndex(0);
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="All Subspecialties" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__ALL__">All Subspecialties</SelectItem>
-                            {subspecialtyOptions.filter(s => s && s.trim() !== '').map(s => (
-                              <SelectItem key={s} value={s}>{s}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col min-w-[160px]">
-                        <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Provider Type</span>
-                        <Select
-                          value={selectedProviderType}
-                          onValueChange={val => {
-                            setSelectedProviderType(val);
-                            setPageIndex(0);
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="All Types" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__ALL__">All Types</SelectItem>
-                            {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
-                              <SelectItem key={s} value={s}>{s}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    
-                    {/* Reset Actions - Right Side */}
-                    <div className="flex flex-col min-w-[400px] mt-4 sm:mt-0">
-                      <div className={`bg-gray-50 border border-gray-200 rounded-lg p-4 ${statusTab === 'processed' ? 'min-h-[120px]' : 'min-h-[80px]'}`}>
-                        <div className="flex justify-center mb-3">
-                          <span className="font-semibold text-blue-700 text-sm tracking-wide">
-                            {statusTab === 'processed' ? 'Reset Filters & Clear Processed' : 'Reset Filters'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {/* Microsoft/Google-style compact button group */}
-                          <div className="flex items-center border border-gray-300 rounded-md overflow-hidden">
-                            {/* Clear Filters - Primary Action */}
-                            <button
-                              onClick={() => {
-                                setSelectedSpecialty("__ALL__");
-                                setSelectedSubspecialty("__ALL__");
-                                setSelectedProviderType("__ALL__");
-                                setPageIndex(0);
-                              }}
-                              className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-r border-gray-300 flex items-center gap-1.5"
-                              title="Clear all filters"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              Clear
-                            </button>
-                            
-                            {/* Template Assignments - Secondary Action */}
-                            <button
-                              onClick={clearTemplateAssignments}
-                              disabled={isBulkGenerating || Object.keys(templateAssignments).length === 0}
-                              className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-r border-gray-300 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Clear template assignments"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              Templates
-                            </button>
-                            
-                            {/* Complete Reset - Tertiary Action */}
-                            <button
-                              onClick={() => {
-                                setTemplateAssignments({});
-                                setSessionTemplateAssignments({});
-                                sessionRestoredRef.current = false;
-                                setSelectedProviderIds([]);
-                                showSuccess('Complete reset: All assignments and selections cleared');
-                              }}
-                              disabled={isBulkGenerating}
-                              className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Complete system reset"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                              </svg>
-                              Reset
-                            </button>
-                          </div>
-                          
-                          {/* Destructive Action - Separated for safety (Epic EMR style) */}
-                          {statusTab === 'processed' && (
-                            <>
-                              <div className="w-px h-6 bg-gray-300 mx-2"></div>
-                              <button
-                                onClick={handleClearAllProcessed}
-                                disabled={isBulkGenerating}
-                                className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 border border-red-300 rounded-md flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Clear all processed contracts"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                Clear All
-                              </button>
-                            </>
-                          )}
-                        </div>
-                        
-                        {/* Status indicator for non-processed tabs */}
-                        {statusTab !== 'processed' && (
-                          <div className="mt-3 text-center">
-                            <span className="text-xs text-gray-500">
-                              {statusTab === 'notGenerated' ? 'Use "Clear All" on Processed tab to remove completed contracts' : 'Switch to Processed tab to manage completed contracts'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
+                                         {/* Filters Row with Selection Actions */}
+                     <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 gap-2 mb-4">
+                       {/* Filter Dropdowns - Left Side */}
+                       <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 gap-2">
+                         <div className="flex flex-col min-w-[160px]">
+                           <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Specialty</span>
+                           <Select
+                             value={selectedSpecialty}
+                             onValueChange={val => {
+                               if (val === "__CLEAR__") {
+                                 setSelectedSpecialty("__ALL__");
+                                 setSelectedProviderIds([]);
+                               } else {
+                                 setSelectedSpecialty(val);
+                                 // Auto-select filtered providers when filter changes
+                                 if (val !== "__ALL__") {
+                                   const filteredIds = providers
+                                     .filter(p => {
+                                       const specialtyMatch = val === "__ALL__" || p.specialty === val;
+                                       const subspecialtyMatch = selectedSubspecialty === "__ALL__" || p.subspecialty === selectedSubspecialty;
+                                       const providerTypeMatch = selectedProviderType === "__ALL__" || p.providerType === selectedProviderType;
+                                       return specialtyMatch && subspecialtyMatch && providerTypeMatch;
+                                     })
+                                     .map(p => p.id);
+                                   setSelectedProviderIds(filteredIds);
+                                 } else {
+                                   setSelectedProviderIds([]);
+                                 }
+                               }
+                               setPageIndex(0);
+                             }}
+                           >
+                             <SelectTrigger className="w-full">
+                               <SelectValue placeholder="All Specialties" />
+                             </SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="__ALL__">All Specialties</SelectItem>
+                               {specialtyOptions.filter(s => s && s.trim() !== '').map(s => (
+                                 <SelectItem key={s} value={s}>{s}</SelectItem>
+                               ))}
+                               {selectedSpecialty !== "__ALL__" && (
+                                 <SelectItem value="__CLEAR__" className="text-red-600 hover:text-red-700">
+                                   Clear Selection
+                                 </SelectItem>
+                               )}
+                             </SelectContent>
+                           </Select>
+                         </div>
+                         <div className="flex flex-col min-w-[160px]">
+                           <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Subspecialty</span>
+                           <Select
+                             value={selectedSubspecialty}
+                             onValueChange={val => {
+                               if (val === "__CLEAR__") {
+                                 setSelectedSubspecialty("__ALL__");
+                                 setSelectedProviderIds([]);
+                               } else {
+                                 setSelectedSubspecialty(val);
+                                 // Auto-select filtered providers when filter changes
+                                 if (val !== "__ALL__") {
+                                   const filteredIds = providers
+                                     .filter(p => {
+                                       const specialtyMatch = selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty;
+                                       const subspecialtyMatch = val === "__ALL__" || p.subspecialty === val;
+                                       const providerTypeMatch = selectedProviderType === "__ALL__" || p.providerType === selectedProviderType;
+                                       return specialtyMatch && subspecialtyMatch && providerTypeMatch;
+                                     })
+                                     .map(p => p.id);
+                                   setSelectedProviderIds(filteredIds);
+                                 } else {
+                                   setSelectedProviderIds([]);
+                                 }
+                               }
+                               setPageIndex(0);
+                             }}
+                           >
+                             <SelectTrigger className="w-full">
+                               <SelectValue placeholder="All Subspecialties" />
+                             </SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="__ALL__">All Subspecialties</SelectItem>
+                               {subspecialtyOptions.filter(s => s && s.trim() !== '').map(s => (
+                                 <SelectItem key={s} value={s}>{s}</SelectItem>
+                               ))}
+                               {selectedSubspecialty !== "__ALL__" && (
+                                 <SelectItem value="__CLEAR__" className="text-red-600 hover:text-red-700">
+                                   Clear Selection
+                                 </SelectItem>
+                               )}
+                             </SelectContent>
+                           </Select>
+                         </div>
+                         <div className="flex flex-col min-w-[160px]">
+                           <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide">Provider Type</span>
+                           <Select
+                             value={selectedProviderType}
+                             onValueChange={val => {
+                               if (val === "__CLEAR__") {
+                                 setSelectedProviderType("__ALL__");
+                                 setSelectedProviderIds([]);
+                               } else {
+                                 setSelectedProviderType(val);
+                                 // Auto-select filtered providers when filter changes
+                                 if (val !== "__ALL__") {
+                                   const filteredIds = providers
+                                     .filter(p => {
+                                       const specialtyMatch = selectedSpecialty === "__ALL__" || p.specialty === selectedSpecialty;
+                                       const subspecialtyMatch = selectedSubspecialty === "__ALL__" || p.subspecialty === selectedSubspecialty;
+                                       const providerTypeMatch = val === "__ALL__" || p.providerType === val;
+                                       return specialtyMatch && subspecialtyMatch && providerTypeMatch;
+                                     })
+                                     .map(p => p.id);
+                                   setSelectedProviderIds(filteredIds);
+                                 } else {
+                                   setSelectedProviderIds([]);
+                                 }
+                               }
+                               setPageIndex(0);
+                             }}
+                           >
+                             <SelectTrigger className="w-full">
+                               <SelectValue placeholder="All Types" />
+                             </SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="__ALL__">All Types</SelectItem>
+                               {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
+                                 <SelectItem key={s} value={s}>{s}</SelectItem>
+                               ))}
+                               {selectedProviderType !== "__ALL__" && (
+                                 <SelectItem value="__CLEAR__" className="text-red-600 hover:text-red-700">
+                                   Clear Selection
+                                 </SelectItem>
+                               )}
+                             </SelectContent>
+                           </Select>
+                         </div>
+                       </div>
+                       
+                       {/* Selection Actions - Right Side */}
+                       <div className="flex flex-col sm:flex-row sm:items-end ml-auto">
+                         <div className="flex flex-col min-w-[320px]">
+                           <span className="mb-1 font-semibold text-blue-700 text-sm tracking-wide text-center">Selection Mode</span>
+                           <div className="flex gap-2">
+                             <Button
+                               variant={selectedProviderIds.length === filteredProviders.length ? "default" : "outline"}
+                               size="sm"
+                               onClick={() => {
+                                 const allFilteredIds = filteredProviders.map((p: Provider) => p.id);
+                                 setSelectedProviderIds(allFilteredIds);
+                               }}
+                               disabled={filteredProviders.length === 0 || isBulkGenerating}
+                               className={`font-medium text-xs w-full ${
+                                 selectedProviderIds.length === filteredProviders.length 
+                                   ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700 shadow-sm' 
+                                   : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 bg-white'
+                               }`}
+                               title="Select all providers across all tabs and pages"
+                             >
+                               All Filtered ({filteredProviders.length})
+                             </Button>
+                             
+                             <Button
+                               variant={selectedProviderIds.length === visibleRows.length && selectedProviderIds.length > 0 ? "default" : "outline"}
+                               size="sm"
+                               onClick={() => {
+                                 const visibleIds = visibleRows.map((p: Provider) => p.id);
+                                 setSelectedProviderIds(visibleIds);
+                               }}
+                               disabled={providers.length === 0 || isBulkGenerating}
+                               className={`font-medium text-xs w-full ${
+                                 selectedProviderIds.length === visibleRows.length && selectedProviderIds.length > 0
+                                   ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700 shadow-sm' 
+                                   : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 bg-white'
+                               }`}
+                               title="Select all providers currently visible on this page"
+                             >
+                               Visible
+                             </Button>
+                           </div>
+                         </div>
+                       </div>
+                                          </div>
+                     
 
+                     
+  
                 </div>
               </div>
             </div>
@@ -1905,51 +1919,75 @@ export default function ContractGenerator() {
                     Export CSV
                   </Button>
 
-                  {/* Active View Indicator - Positioned next to Columns button */}
-                  {preferences?.[statusTab]?.activeView && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => setIsColumnSidebarOpen(true)}
-                            className="min-w-32 max-w-40 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 rounded-md shadow-sm transition-all duration-200 group justify-center whitespace-nowrap"
-                            title={`Active: ${preferences[statusTab].activeView === 'default' ? 'Default View' : preferences[statusTab].activeView} - Click to customize`}
-                          >
-                            <div className="w-2 h-2 bg-white rounded-full animate-pulse flex-shrink-0"></div>
-                            <span className="text-white group-hover:text-white truncate">
-                              {preferences[statusTab].activeView === 'default' ? 'Default' : preferences[statusTab].activeView}
-                            </span>
-                            <svg className="w-3 h-3 text-white group-hover:text-white transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          <div className="text-center">
-                            <div className="font-medium">Active View</div>
-                            <div className="text-sm text-gray-600">
-                              {preferences[statusTab].activeView === 'default' ? 'Default View' : preferences[statusTab].activeView}
+                  {/* Enterprise-style View and Column Management */}
+                  <div className="flex items-center gap-3">
+                    {/* View Dropdown (Google Sheets style) */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600 font-medium">View:</span>
+                      <div className="relative">
+                        <button
+                          onClick={() => setViewDropdownOpen(!viewDropdownOpen)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        >
+                          <span className="text-gray-900">
+                            {preferences[statusTab].activeView === 'default' ? 'Default View' : preferences[statusTab].activeView}
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        
+                        {/* View Dropdown Menu */}
+                        {viewDropdownOpen && (
+                          <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                            <div className="py-1">
+                              <button
+                                onClick={() => {
+                                  setActiveView('default');
+                                  setViewDropdownOpen(false);
+                                }}
+                                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
+                                  preferences[statusTab].activeView === 'default' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                                }`}
+                              >
+                                Default View
+                              </button>
+                              {/* Add saved views here when available */}
+                              {preferences?.[statusTab]?.savedViews && Object.keys(preferences[statusTab].savedViews).map(viewName => (
+                                <button
+                                  key={viewName}
+                                  onClick={() => {
+                                    setActiveView(viewName);
+                                    setViewDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
+                                    preferences[statusTab].activeView === viewName ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                                  }`}
+                                >
+                                  {viewName}
+                                </button>
+                              ))}
                             </div>
-                            <div className="text-xs text-gray-500 mt-1">Click to customize</div>
                           </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                  
-                  <Button
-                    onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
-                    variant="default"
-                    size="sm"
-                    className="w-32 px-3 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white border-blue-600 justify-center"
-                    title="Manage column visibility, order, and pinning"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                    </svg>
-                    Columns
-                  </Button>
+                        )}
+                      </div>
+                    </div>
+                    
+                      {/* Column Manager Button (Microsoft Excel style) */}
+  <Button
+    onClick={() => setIsColumnSidebarOpen(!isColumnSidebarOpen)}
+    variant="outline"
+    size="sm"
+    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-700 text-white border-gray-700 hover:bg-gray-800"
+    title="Customize columns and views"
+  >
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+    Customize
+  </Button>
+                  </div>
                   
                   
                 </div>
@@ -2750,6 +2788,17 @@ export default function ContractGenerator() {
                     <DialogDescription className="text-sm text-gray-600 mt-0.5">
                       {selectedProviderIds.length} providers selected
                     </DialogDescription>
+                    {/* Cumulative Progress Bar - Same as main screen */}
+                    <div className="mt-2">
+                      <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                        <span>Template Assignment Progress</span>
+                        <span>{selectedProviderIds.filter(id => templateAssignments[id]).length}/{selectedProviderIds.length}</span>
+                      </div>
+                      <Progress 
+                        value={(selectedProviderIds.filter(id => templateAssignments[id]).length / selectedProviderIds.length) * 100} 
+                        className="h-2"
+                      />
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {(modalSelectedSpecialty !== "__ALL__" || modalSelectedSubspecialty !== "__ALL__" || modalSelectedProviderType !== "__ALL__" || modalSelectedAdminRole !== "__ALL__" || modalSelectedCompModel !== "__ALL__") && (
@@ -2799,7 +2848,7 @@ export default function ContractGenerator() {
                     <div>
                       <h4 className="text-xs font-semibold text-gray-900 mb-2 uppercase tracking-wide">Filter Providers</h4>
                       <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-0.5">Specialty</label>
                             <Select value={modalSelectedSpecialty} onValueChange={(value) => {
@@ -2807,7 +2856,7 @@ export default function ContractGenerator() {
                               // Reset subspecialty when specialty changes
                               setModalSelectedSubspecialty("__ALL__");
                             }}>
-                              <SelectTrigger className="w-full h-7 text-xs">
+                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
                                 <SelectValue placeholder="All Specialties" />
                               </SelectTrigger>
                               <SelectContent>
@@ -2824,7 +2873,7 @@ export default function ContractGenerator() {
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-0.5">Subspecialty</label>
                             <Select value={modalSelectedSubspecialty} onValueChange={setModalSelectedSubspecialty}>
-                              <SelectTrigger className="w-full h-7 text-xs">
+                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
                                 <SelectValue placeholder="All Subspecialties" />
                               </SelectTrigger>
                               <SelectContent>
@@ -2852,11 +2901,11 @@ export default function ContractGenerator() {
                           </div>
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-0.5">Provider Type</label>
                             <Select value={modalSelectedProviderType} onValueChange={setModalSelectedProviderType}>
-                              <SelectTrigger className="w-full h-7 text-xs">
+                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
                                 <SelectValue placeholder="All Types" />
                               </SelectTrigger>
                               <SelectContent>
@@ -2873,7 +2922,7 @@ export default function ContractGenerator() {
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-0.5">Admin Role</label>
                             <Select value={modalSelectedAdminRole} onValueChange={setModalSelectedAdminRole}>
-                              <SelectTrigger className="w-full h-7 text-xs">
+                              <SelectTrigger className="w-full h-7 text-xs border-gray-300">
                                 <SelectValue placeholder="All Roles" />
                               </SelectTrigger>
                               <SelectContent>
@@ -2890,7 +2939,7 @@ export default function ContractGenerator() {
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-0.5">Compensation Model</label>
                           <Select value={modalSelectedCompModel} onValueChange={setModalSelectedCompModel}>
-                            <SelectTrigger className="w-full h-7 text-xs">
+                            <SelectTrigger className="w-full h-7 text-xs border-gray-300">
                               <SelectValue placeholder="All Models" />
                             </SelectTrigger>
                             <SelectContent>
@@ -2913,7 +2962,7 @@ export default function ContractGenerator() {
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-0.5">Template to Assign</label>
                           <Select value={selectedTemplateForFiltered} onValueChange={setSelectedTemplateForFiltered}>
-                            <SelectTrigger className="w-full h-7 text-xs">
+                            <SelectTrigger className="w-full h-7 text-xs border-gray-300">
                               <SelectValue>
                                 {selectedTemplateForFiltered ? (
                                   <div className="flex items-center gap-1 min-w-0">
@@ -2980,8 +3029,34 @@ export default function ContractGenerator() {
                         )}
                       </Button>
                       <Button 
+                        variant="outline" 
+                        className="flex-1 h-7 text-xs text-green-600 border-green-200 hover:bg-green-50"
+                        onClick={async () => {
+                          const unassignedCount = selectedProviderIds.filter(id => !templateAssignments[id]).length;
+                          if (unassignedCount > 0 && selectedTemplateForFiltered) {
+                            // Assign to ALL remaining unassigned providers
+                            const unassignedIds = selectedProviderIds.filter(id => !templateAssignments[id]);
+                            for (const providerId of unassignedIds) {
+                              updateProviderTemplate(providerId, selectedTemplateForFiltered);
+                            }
+                            showSuccess(`Assigned template to all ${unassignedCount} remaining providers`);
+                          }
+                        }}
+                        disabled={selectedProviderIds.filter(id => !templateAssignments[id]).length === 0 || !selectedTemplateForFiltered || bulkAssignmentLoading}
+                      >
+                        Assign All Remaining
+                      </Button>
+                      <Button 
                         className="flex-1 h-7 text-xs bg-blue-600 hover:bg-blue-700"
-                        onClick={() => assignTemplateToFiltered(selectedTemplateForFiltered)}
+                        onClick={async () => {
+                          await assignTemplateToFiltered(selectedTemplateForFiltered);
+                          // After assignment, auto-filter to show remaining unassigned
+                          if (showAssignedProviders) {
+                            setShowAssignedProviders(false);
+                          }
+                          // Clear template selection for next assignment
+                          setSelectedTemplateForFiltered("");
+                        }}
                         disabled={filteredProvidersCount === 0 || !selectedTemplateForFiltered || bulkAssignmentLoading}
                       >
                         {bulkAssignmentLoading ? (
@@ -3019,6 +3094,8 @@ export default function ContractGenerator() {
                         </Button>
                       </div>
                     </div>
+                    
+
                   </div>
                 </div>
                 
@@ -3043,6 +3120,7 @@ export default function ContractGenerator() {
                           </span>
                         </div>
                       </div>
+
                     </div>
                     <div className="flex items-center gap-2">
                       <Select
@@ -3064,6 +3142,39 @@ export default function ContractGenerator() {
                           // Add search functionality here
                         }}
                       />
+                      {/* Quick Next Group Button */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs text-blue-600 hover:text-blue-700 border-blue-200"
+                        onClick={() => {
+                          // Find next largest unassigned specialty
+                          const unassignedProviders = selectedProviderIds
+                            .map(id => providers.find(p => p.id === id))
+                            .filter(provider => provider && !templateAssignments[provider.id]);
+                          
+                          const specialtyCounts = unassignedProviders.reduce((acc, provider) => {
+                            if (provider) {
+                              acc[provider.specialty] = (acc[provider.specialty] || 0) + 1;
+                            }
+                            return acc;
+                          }, {} as Record<string, number>);
+                          
+                          const nextSpecialty = Object.entries(specialtyCounts)
+                            .sort(([,a], [,b]) => b - a)[0]?.[0];
+                          
+                          if (nextSpecialty) {
+                            setModalSelectedSpecialty(nextSpecialty);
+                            setModalSelectedSubspecialty("__ALL__");
+                            setModalSelectedProviderType("__ALL__");
+                            setModalSelectedAdminRole("__ALL__");
+                            setModalSelectedCompModel("__ALL__");
+                            showInfo(`Filtered to ${nextSpecialty} (${specialtyCounts[nextSpecialty]} unassigned providers)`);
+                          }
+                        }}
+                      >
+                        Next Group
+                      </Button>
                     </div>
                   </div>
                   </div>
@@ -3173,43 +3284,50 @@ export default function ContractGenerator() {
                           )}
                         </div>
                       )}
+                      
+
                     </div>
                   </div>
                 </div>
               </div>
               
               <DialogFooter className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-2">
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setBulkAssignmentModalOpen(false)} className="h-7 text-xs">
-                    Cancel
-                  </Button>
-                  <Button onClick={() => setBulkAssignmentModalOpen(false)} className="bg-blue-600 hover:bg-blue-700 h-7 text-xs">
-                    Apply Assignments
-                  </Button>
-                  <Button 
-                    onClick={async () => {
-                      // Check if all selected providers have templates assigned
-                      const providersWithoutTemplates = selectedProviderIds
-                        .map(id => providers.find(p => p.id === id))
-                        .filter(provider => provider && !getAssignedTemplate(provider));
-                      
-                      if (providersWithoutTemplates.length > 0) {
-                        // Close the modal and show template error
+                <div className="flex items-center justify-between w-full">
+                  <div className="text-xs text-gray-600">
+                    {selectedProviderIds.filter(id => templateAssignments[id]).length} of {selectedProviderIds.length} providers assigned
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setBulkAssignmentModalOpen(false)} className="h-7 text-xs">
+                      Cancel
+                    </Button>
+                    <Button onClick={() => setBulkAssignmentModalOpen(false)} className="bg-blue-600 hover:bg-blue-700 h-7 text-xs">
+                      Apply Assignments
+                    </Button>
+                    <Button 
+                      onClick={async () => {
+                        // Check if all selected providers have templates assigned
+                        const providersWithoutTemplates = selectedProviderIds
+                          .map(id => providers.find(p => p.id === id))
+                          .filter(provider => provider && !getAssignedTemplate(provider));
+                        
+                        if (providersWithoutTemplates.length > 0) {
+                          // Close the modal and show template error
+                          setBulkAssignmentModalOpen(false);
+                          setTemplateErrorModalOpen(true);
+                          return;
+                        }
+                        
+                        // Close the modal first
                         setBulkAssignmentModalOpen(false);
-                        setTemplateErrorModalOpen(true);
-                        return;
-                      }
-                      
-                      // Close the modal first
-                      setBulkAssignmentModalOpen(false);
-                      // Then trigger modal-specific bulk generation
-                      await handleModalBulkGenerate();
-                    }} 
-                    className="bg-green-600 hover:bg-green-700 h-7 text-xs"
-                    disabled={selectedProviderIds.length === 0}
-                  >
-                    Generate Contracts
-                  </Button>
+                        // Then trigger modal-specific bulk generation
+                        await handleModalBulkGenerate();
+                      }} 
+                      className="bg-green-600 hover:bg-green-700 h-7 text-xs"
+                      disabled={selectedProviderIds.length === 0}
+                    >
+                      Generate Contracts
+                    </Button>
+                  </div>
                 </div>
               </DialogFooter>
             </DialogContent>
@@ -3322,7 +3440,7 @@ export default function ContractGenerator() {
         {/* Bottom Action Banner */}
         {selectedProviderIds.length > 0 && (
           <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-2 duration-200">
-            <div className="bg-white border-t border-gray-200 shadow-lg">
+            <div className="bg-gray-100 border-t border-gray-300 shadow-lg">
               <div className="max-w-7xl mx-auto px-4 py-3">
                 <div className="flex items-center justify-between text-sm">
                   {/* Left side - Selection and Status */}
@@ -3381,33 +3499,33 @@ export default function ContractGenerator() {
                           }}
                         >
                           <SelectTrigger 
-                            className="h-7 px-2 text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded transition-colors"
+                            className="h-7 px-2 text-gray-900 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded transition-all duration-200 shadow-sm"
                             title="Session management options"
                           >
-                            <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="save-to-session">
+                          <SelectContent className="bg-white border border-gray-200 shadow-lg rounded-lg">
+                            <SelectItem value="save-to-session" className="hover:bg-blue-50">
                               <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                                 </svg>
                                 <span className="text-gray-900">Save to Session</span>
                               </div>
                             </SelectItem>
-                            <SelectItem value="clear-session">
+                            <SelectItem value="clear-session" className="hover:bg-blue-50">
                               <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                                 <span className="text-gray-900">Clear Session Only</span>
                               </div>
                             </SelectItem>
-                            <SelectItem value="clear-all">
+                            <SelectItem value="clear-all" className="hover:bg-blue-50">
                               <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                                 <span className="text-gray-900">Clear All Assignments</span>
@@ -3422,7 +3540,7 @@ export default function ContractGenerator() {
                   {/* Center - Quick Assign */}
                   {selectedProviderIds.length > 0 && (
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-600">Quick:</span>
+                      <span className="text-gray-600 font-medium">Next Step:</span>
                       <Select
                         value=""
                         onValueChange={(option) => {
@@ -3435,22 +3553,22 @@ export default function ContractGenerator() {
                         }}
                       >
                         <SelectTrigger 
-                          className={`w-48 h-7 text-gray-900 transition-all duration-300 ${
+                          className={`w-48 h-8 text-gray-900 border border-orange-100 bg-white hover:bg-orange-50 hover:border-orange-200 focus:border-orange-500 focus:ring-orange-500 focus:ring-2 transition-all duration-200 shadow-sm ${
                             showAssignmentHint && selectedProviderIds.length > 0 
-                              ? 'ring-2 ring-blue-500 ring-opacity-50 bg-blue-50 border-blue-300 shadow-sm' 
+                              ? 'ring-2 ring-orange-500 ring-opacity-50' 
                               : ''
                           }`}
                           title="Assignment Options:\nSame Template: Assign one template to all selected providers\nDifferent Templates: Choose different templates for each provider"
                         >
-                          <SelectValue placeholder="Choose assignment..." />
+                          <SelectValue placeholder="Choose template..." />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="same-template">
+                        <SelectContent className="bg-white border border-gray-200 shadow-lg rounded-lg">
+                          <SelectItem value="same-template" className="hover:bg-orange-50">
                             <div className="flex items-center gap-2">
                               <span className="text-gray-900">Same Template (All)</span>
                             </div>
                           </SelectItem>
-                          <SelectItem value="bulk-different">
+                          <SelectItem value="bulk-different" className="hover:bg-orange-50">
                             <div className="flex items-center gap-2">
                               <span className="text-gray-900">Different Templates</span>
                             </div>
@@ -3463,37 +3581,22 @@ export default function ContractGenerator() {
                   {/* Right side - Action Buttons */}
                   <div className="flex items-center gap-3">
                     <Button
-                      onClick={handleBulkGenerate}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                      size="sm"
-                    >
-                      <FileText className="w-4 h-4 mr-2" />
-                      ⚡ Generate Contracts
-                    </Button>
-                    
-                    {(() => {
-                      const assignedCount = selectedProviderIds.filter(id => {
-                        const provider = providers.find(p => p.id === id);
-                        return provider && getAssignedTemplate(provider);
-                      }).length;
-                      
-                      return assignedCount > 0 ? (
-                        <Button
-                          onClick={clearTemplateAssignments}
-                          variant="outline"
-                          className="text-gray-900 hover:text-gray-700 hover:bg-gray-50 border-gray-300"
-                          size="sm"
-                        >
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                          Clear ({assignedCount})
-                        </Button>
-                      ) : null;
-                    })()}
-                    
-                    <Button
-                      onClick={() => setSelectedProviderIds([])}
+                      onClick={() => {
+                        // Clear all selections, filters, and AG Grid selections
+                        setSelectedProviderIds([]);
+                        setSearch('');
+                        setSelectedSpecialty("__ALL__");
+                        setSelectedSubspecialty("__ALL__");
+                        setSelectedProviderType("__ALL__");
+                        setSelectedFTE([0, 2]);
+                        setSelectedProviderTypeFilter("__ALL__");
+                        // Clear template assignments
+                        clearTemplateAssignments();
+                        // Clear AG Grid selections if tempGridRef exists
+                        if (tempGridRef.current?.api) {
+                          tempGridRef.current.api.deselectAll();
+                        }
+                      }}
                       variant="outline"
                       className="text-gray-900 hover:text-gray-700 hover:bg-gray-50 border-gray-300"
                       size="sm"
@@ -3502,6 +3605,14 @@ export default function ContractGenerator() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                       Clear Selection
+                    </Button>
+                    
+                    <Button
+                      onClick={handleBulkGenerate}
+                      className="bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+                      size="sm"
+                    >
+                      ⚡ Generate Contracts
                     </Button>
                   </div>
                 </div>

@@ -1,4 +1,4 @@
-// AMPLIFY REDEPLOY TRIGGER: 2025-07-27T18:30:00.000Z
+                                                            // AMPLIFY REDEPLOY TRIGGER: 2025-07-27T18:30:00.000Z
 // Template loading fix deployment - 2025-07-27T16:02:48.482Z
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -265,7 +265,17 @@ function TopNav({ onSignOut }: { onSignOut: () => void }) {
       title: 'Generate',
       path: '/generate',
       group: 'action',
-      icon: <Zap className="w-4 h-4" />
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="url(#orangeGradient)" viewBox="0 0 24 24">
+          <defs>
+            <linearGradient id="orangeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#fb923c" />
+              <stop offset="100%" stopColor="#ef4444" />
+            </linearGradient>
+          </defs>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      )
     }
   ];
 

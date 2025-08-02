@@ -21,9 +21,9 @@ const workflowSteps = [
     step: '02',
     title: 'Dynamic Blocks',
     description: 'Create conditional logic blocks',
-    icon: <Zap className="w-5 h-5" />,
+    icon: <Sparkles className="w-5 h-5" />,
     path: '/dynamic-blocks',
-    color: 'from-amber-500 to-orange-500'
+    color: 'from-purple-500 to-indigo-500'
   },
   {
     step: '03',
@@ -37,9 +37,9 @@ const workflowSteps = [
     step: '04',
     title: 'Generate',
     description: 'Automated contract generation',
-    icon: <FilePlus2 className="w-5 h-5" />,
+    icon: <Zap className="w-5 h-5" />,
     path: '/generate',
-    color: 'from-purple-500 to-indigo-500'
+    color: 'from-orange-500 to-red-500'
   }
 ];
 

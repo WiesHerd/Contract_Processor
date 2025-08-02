@@ -17,6 +17,7 @@ import { mergeTemplateWithData } from '@/features/generator/mergeUtils';
 import { getContractFileName } from '@/utils/filename';
 import { saveDocxFile } from '@/utils/fileUtils';
 import { normalizeSmartQuotes } from '@/utils/formattingUtils';
+import { logSecurityEvent } from '@/features/audit/utils/logSecurityEvent';
 
 interface UseContractGenerationProps {
   templates: Template[];

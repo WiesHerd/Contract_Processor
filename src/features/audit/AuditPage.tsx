@@ -33,9 +33,6 @@ export default function AuditPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [templateFilter, setTemplateFilter] = useState<string>('all');
   const [yearFilter, setYearFilter] = useState<string>('all');
-  const [userFilter, setUserFilter] = useState<string>('all');
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [showConfirm, setShowConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -49,6 +46,55 @@ export default function AuditPage() {
   useEffect(() => {
     dispatch(fetchAuditLogs(undefined));
     dispatch(fetchTemplatesIfNeeded());
+    
+    // Also fetch contract generation logs
+    const fetchContractLogs = async () => {
+      try {
+        const { ContractGenerationLogService } = await import('@/services/contractGenerationLogService');
+        const result = await ContractGenerationLogService.listLogs();
+        console.log('📋 Contract generation logs found:', result.items?.length || 0);
+        
+        if (result.items && result.items.length > 0) {
+              // Transform contract logs to audit log format
+    const transformedLogs = result.items.map(log => ({
+      id: log.id,
+      action: 'CONTRACT_GENERATED',
+      user: log.generatedBy || 'System', // Use System if no user info
+      timestamp: log.generatedAt,
+      details: JSON.stringify({
+        providerId: log.providerId,
+        templateId: log.templateId,
+        contractYear: log.contractYear,
+        outputType: log.outputType,
+        status: log.status,
+        fileUrl: log.fileUrl,
+        notes: log.notes,
+        metadata: {
+          providerId: log.providerId,
+          templateId: log.templateId,
+          contractYear: log.contractYear,
+          outputType: log.outputType,
+          status: log.status,
+          fileUrl: log.fileUrl,
+          providerName: log.fileUrl ? log.fileUrl.split('_')[1]?.replace(/_/g, ' ') : 'Unknown Provider' // Extract name from filename
+        }
+      }),
+      severity: log.status === 'SUCCESS' ? 'LOW' : 'MEDIUM',
+      category: 'DATA',
+      resourceType: 'CONTRACT',
+      resourceId: log.id
+    }));
+          
+          // Add to logs state
+          dispatch({ type: 'audit/addLogs', payload: transformedLogs });
+          console.log('✅ Added contract logs to Activity Log');
+        }
+      } catch (error) {
+        console.error('❌ Failed to fetch contract generation logs:', error);
+      }
+    };
+    
+    fetchContractLogs();
   }, [dispatch]);
 
   // Helper to get template name and version by ID
@@ -271,15 +317,15 @@ export default function AuditPage() {
     const matchesYear = yearFilter === 'all' || contractYear === yearFilter;
     
     // User filter
-    const matchesUser = userFilter === 'all' || log.user === userFilter;
+    const matchesUser = uniqueUsers.includes(log.user); // Use uniqueUsers directly
     
     // Severity filter
     const severity = parsed.severity || meta.severity || 'LOW';
-    const matchesSeverity = severityFilter === 'all' || severity === severityFilter;
+    const matchesSeverity = uniqueSeverities.includes(severity); // Use uniqueSeverities directly
     
     // Category filter
     const category = parsed.category || meta.category || 'SYSTEM';
-    const matchesCategory = categoryFilter === 'all' || category === categoryFilter;
+    const matchesCategory = uniqueCategories.includes(category); // Use uniqueCategories directly
     
     return matchesSearch && matchesStatus && matchesTemplate && matchesYear && matchesUser && matchesSeverity && matchesCategory;
   });
@@ -311,8 +357,8 @@ export default function AuditPage() {
     // Extract enhanced audit fields
     const severity = parsed.severity || meta.severity || 'LOW';
     const category = parsed.category || meta.category || 'SYSTEM';
-    const resourceType = parsed.resourceType || meta.resourceType || '';
-    const resourceId = parsed.resourceId || meta.resourceId || '';
+    const resourceType = parsed.resourceType || meta.resourceType || (log.action.includes('CONTRACT') ? 'CONTRACT' : 'TEMPLATE');
+    const resourceId = parsed.resourceId || meta.resourceId || log.id;
     
     // Derive status from action type if not explicitly set
     let status = meta.status || parsed.status;
@@ -352,10 +398,10 @@ export default function AuditPage() {
   const showingStart = agGridRows.length === 0 ? 0 : pageIndex * pageSize + 1;
   const showingEnd = Math.min((pageIndex + 1) * pageSize, agGridRows.length);
 
-  // CSV export for current page
+  // CSV export for all filtered data
   const handleExportCSV = () => {
-    if (pagedRows.length === 0) return;
-    const csv = Papa.unparse(pagedRows.map(row => ({
+    if (agGridRows.length === 0) return;
+    const csv = Papa.unparse(agGridRows.map(row => ({
       Timestamp: row.timestamp,
       User: row.user,
       Provider: row.providerName,
@@ -375,7 +421,7 @@ export default function AuditPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `activity-log-page-${pageIndex + 1}.csv`;
+    a.download = `activity-log-${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -389,28 +435,17 @@ export default function AuditPage() {
     { headerName: 'Provider', field: 'providerName', minWidth: 180, sortable: true },
     { headerName: 'Template', field: 'templateName', minWidth: 220, cellRenderer: (params: any) => (
       <div>
-        <div className="font-medium text-gray-900">{params.value}</div>
-        <div className="text-xs text-gray-500">v{params.data.templateVersion}</div>
+        <div className="text-gray-900">{params.value}</div>
+        <div className="text-gray-500">v{params.data.templateVersion}</div>
       </div>
     ), sortable: true },
-    { headerName: 'Year', field: 'contractYear', minWidth: 100, cellRenderer: (params: any) => (
-      <span className="badge badge-outline text-xs">{params.value || '-'} </span>
-    ), sortable: true },
-    { headerName: 'Status', field: 'status', minWidth: 120, cellRenderer: (params: any) => {
+    { headerName: 'Year', field: 'contractYear', minWidth: 100, sortable: true },
+    { headerName: 'Status', field: 'status', minWidth: 120, valueFormatter: (params: any) => {
       const status = (params.value || '').toLowerCase();
-      return (
-        <div className="flex items-center gap-2">
-          {status === 'success' ? <CheckCircle className="w-4 h-4 text-green-600" /> : status === 'failed' ? <XCircle className="w-4 h-4 text-red-600" /> : <AlertCircle className="w-4 h-4 text-yellow-600" />}
-          <span className={
-            status === 'success' ? 'text-green-600 font-medium' : status === 'failed' ? 'text-red-600 font-medium' : 'text-yellow-600 font-medium'
-          }>{status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown'}</span>
-        </div>
-      );
+      return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
     }, sortable: true },
-    { headerName: 'Output', field: 'outputType', minWidth: 100, cellRenderer: (params: any) => (
-      <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-gray-400" /><span className="text-sm font-medium">{params.value}</span></div>
-    ), sortable: true },
-    { headerName: 'Action', field: 'action', minWidth: 160, cellRenderer: (params: any) => {
+    { headerName: 'Output', field: 'outputType', minWidth: 100, sortable: true },
+    { headerName: 'Action Type', field: 'action', minWidth: 160, valueFormatter: (params: any) => {
       const actionLabels: { [key: string]: string } = {
         'TEMPLATE_CREATED': 'Template Created',
         'CONTRACT_GENERATED': 'Contract Generated',
@@ -424,97 +459,93 @@ export default function AuditPage() {
         'DYNAMIC_BLOCK_DELETED': 'Dynamic Block Deleted',
         'BULK_DYNAMIC_BLOCKS_DELETED': 'Bulk Dynamic Blocks Deleted'
       };
-      const label = actionLabels[params.value] || params.value;
-      return (
-        <span className="text-xs font-semibold text-gray-700">{label}</span>
-      );
+      return actionLabels[params.value] || params.value;
     }, sortable: true },
-    { headerName: 'Severity', field: 'severity', minWidth: 100, cellRenderer: (params: any) => {
+    { headerName: 'Severity', field: 'severity', minWidth: 100, valueFormatter: (params: any) => {
       const severity = (params.value || '').toLowerCase();
-      const severityColors = {
-        'critical': 'text-red-700 bg-red-50 border-red-200',
-        'high': 'text-orange-700 bg-orange-50 border-orange-200',
-        'medium': 'text-yellow-700 bg-yellow-50 border-yellow-200',
-        'low': 'text-green-700 bg-green-50 border-green-200'
-      };
-      const colorClass = severityColors[severity as keyof typeof severityColors] || 'text-gray-700 bg-gray-50 border-gray-200';
-      return (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${colorClass}`}>
-          {severity.toUpperCase()}
-        </span>
-      );
+      return severity.charAt(0).toUpperCase() + severity.slice(1);
     }, sortable: true },
-    { headerName: 'Category', field: 'category', minWidth: 120, cellRenderer: (params: any) => {
+    { headerName: 'Category', field: 'category', minWidth: 120, valueFormatter: (params: any) => {
       const category = (params.value || '').toLowerCase();
-      const categoryColors = {
-        'security': 'text-red-600 bg-red-50',
-        'admin': 'text-purple-600 bg-purple-50',
-        'auth': 'text-blue-600 bg-blue-50',
-        'data': 'text-green-600 bg-green-50',
-        'system': 'text-gray-600 bg-gray-50'
-      };
-      const colorClass = categoryColors[category as keyof typeof categoryColors] || 'text-gray-600 bg-gray-50';
-      return (
-        <span className={`px-2 py-1 rounded text-xs font-medium ${colorClass}`}>
-          {category.toUpperCase()}
-        </span>
-      );
+      return category.charAt(0).toUpperCase() + category.slice(1);
     }, sortable: true },
-    { headerName: 'Resource Type', field: 'resourceType', minWidth: 120, cellRenderer: (params: any) => (
-      <span className="text-sm text-gray-700">{params.value || '-'}</span>
-    ), sortable: true },
-    { headerName: 'Resource ID', field: 'resourceId', minWidth: 120, cellRenderer: (params: any) => (
-      <span className="text-sm text-gray-600 font-mono">{params.value || '-'}</span>
-    ), sortable: true },
+    { headerName: 'Resource Type', field: 'resourceType', minWidth: 120, sortable: true },
+    { headerName: 'Resource ID', field: 'resourceId', minWidth: 120, sortable: true },
     { headerName: 'Actions', field: 'fileUrl', minWidth: 100, cellRenderer: (params: any) => (
       params.value ? (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={async () => {
+            try {
+              // For contract generation logs, try to regenerate the download URL
+              if (params.data.action === 'CONTRACT_GENERATED') {
+                const parsed = params.data.details ? (() => { 
+                  try { 
+                    return JSON.parse(params.data.details || '{}'); 
+                  } catch { 
+                    return {}; 
+                  } 
+                })() : {};
+                
+                if (parsed.providerId && parsed.templateId) {
+                  const contractYear = parsed.contractYear || new Date().getFullYear().toString();
+                  const contractId = parsed.providerId + '-' + parsed.templateId + '-' + contractYear;
+                  
                   try {
-                    // If the URL starts with https://, it's likely an S3 signed URL
-                    if (params.value.startsWith('https://')) {
-                      // Try to open the URL directly first
-                      window.open(params.value, '_blank', 'noopener,noreferrer');
-                    } else {
-                      // If it's just a filename, try to regenerate the download URL
-                      const parsed = params.data.details ? (() => { 
-                        try { 
-                          return JSON.parse(params.data.details || '{}'); 
-                        } catch { 
-                          return {}; 
-                        } 
-                      })() : {};
-                      
-                      if (parsed.providerId && parsed.templateId) {
-                        const contractYear = parsed.contractYear || new Date().getFullYear().toString();
-                        const contractId = parsed.providerId + '-' + parsed.templateId + '-' + contractYear;
-                        const result = await regenerateContractDownloadUrl(contractId, params.value);
-                        window.open(result.url, '_blank', 'noopener,noreferrer');
-                      } else {
-                        throw new Error('Unable to regenerate download URL - missing contract information');
-                      }
+                    const result = await regenerateContractDownloadUrl(contractId, params.value);
+                    // Force download by creating a blob and downloading it
+                    const response = await fetch(result.url);
+                    if (!response.ok) {
+                      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
-                  } catch (error) {
-                    console.error('Failed to download file:', error);
-                    alert('Failed to download file. The file may no longer be available or there was an error accessing the storage.');
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = params.value || 'contract.docx';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                  } catch (downloadError) {
+                    console.error('Download failed:', downloadError);
+                    alert('File not found or no longer available. The contract may have been deleted or moved.');
                   }
-                }}
-                className="text-blue-600 hover:text-blue-700"
-              >
-                <Download className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              Download {params.data.outputType} file
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : <span className="text-gray-400">-</span>
+                } else {
+                  alert('Unable to download - missing contract information');
+                }
+              } else {
+                // For other types, try direct download
+                try {
+                  const response = await fetch(params.value);
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                  }
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = params.value.split('/').pop() || 'file';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  window.URL.revokeObjectURL(url);
+                } catch (fetchError) {
+                  console.error('Fetch failed:', fetchError);
+                  alert('Unable to download file. The file may no longer be available.');
+                }
+              }
+            } catch (error) {
+              console.error('Failed to download file:', error);
+              alert('Failed to download file. The file may no longer be available.');
+            }
+          }}
+          className="text-blue-600 hover:text-blue-700"
+        >
+          <Download className="w-4 h-4" />
+        </Button>
+      ) : <span className="text-gray-400">No file</span>
     ) },
   ];
 
@@ -563,99 +594,89 @@ export default function AuditPage() {
           </div>
           
           {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                placeholder="Search providers, templates, users..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                {uniqueStatuses.map(status => (
-                  <SelectItem key={status} value={status}>
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex gap-3">
+              <Select value={yearFilter} onValueChange={setYearFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Year" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {uniqueYears.map(year => (
+                    <SelectItem key={year} value={year}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select value={templateFilter} onValueChange={setTemplateFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by template" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Templates</SelectItem>
-                {uniqueTemplates.map(templateId => {
-                  const template = templates.find(t => t.id === templateId);
-                  return (
-                    <SelectItem key={templateId} value={templateId}>
-                      {template ? template.name : 'Unknown Template'}
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Status" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  {uniqueStatuses.map(status => (
+                    <SelectItem key={status} value={status}>
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
                     </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select value={yearFilter} onValueChange={setYearFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by year" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Years</SelectItem>
-                {uniqueYears.map(year => (
-                  <SelectItem key={year} value={year}>{year}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Select value={templateFilter} onValueChange={setTemplateFilter}>
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Template" className="truncate">
+                    {(() => {
+                      const template = templates.find(t => t.id === templateFilter);
+                      const name = template ? template.name : 'All Templates';
+                      return name.length > 30 ? name.substring(0, 30) + '...' : name;
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Templates</SelectItem>
+                  {uniqueTemplates.map(templateId => {
+                    const template = templates.find(t => t.id === templateId);
+                    return (
+                      <SelectItem key={templateId} value={templateId}>
+                        {template ? template.name : 'Unknown Template'}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Select value={userFilter} onValueChange={setUserFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by user" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Users</SelectItem>
-                {uniqueUsers.map(user => (
-                  <SelectItem key={user} value={user}>{user}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={severityFilter} onValueChange={setSeverityFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by severity" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Severities</SelectItem>
-                {uniqueSeverities.map(severity => (
-                  <SelectItem key={severity} value={severity}>
-                    {severity.charAt(0).toUpperCase() + severity.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {uniqueCategories.map(category => (
-                  <SelectItem key={category} value={category}>
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('all');
+                  setTemplateFilter('all');
+                  setYearFilter('all');
+                }}
+                className="text-gray-600 w-32"
+              >
+                Reset Filters
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleExportCSV}
+                className="bg-gray-900 text-white hover:bg-gray-800 flex items-center gap-2 w-32"
+              >
+                <Download className="w-4 h-4" />
+                Download CSV
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => setShowConfirm(true)}
+                disabled={clearing}
+                className="flex items-center gap-2 w-32"
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Clear Log
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 justify-between">
@@ -665,40 +686,21 @@ export default function AuditPage() {
                 ? 'No activity log entries.'
                 : `Showing ${showingStart}–${showingEnd} of ${agGridRows.length} activity log entr${agGridRows.length === 1 ? 'y' : 'ies'}`}
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleExportCSV} className="text-gray-600">
-                Download CSV
-              </Button>
-            <Button
-              variant="outline"
-                onClick={() => {
-                  setSearchTerm('');
-                  setStatusFilter('all');
-                  setTemplateFilter('all');
-                  setYearFilter('all');
-                  setUserFilter('all');
-                  setSeverityFilter('all');
-                  setCategoryFilter('all');
-                }}
-                className="text-gray-600"
-              >
-                Clear Filters
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => setShowConfirm(true)}
-                disabled={clearing}
-                className="flex items-center gap-2"
-              >
-                <Trash2 className="w-4 h-4 mr-1" />
-              Clear Log
-            </Button>
-            </div>
           </div>
         </div>
 
         {/* AG Grid Table Card */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          {/* Search above table */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search providers, templates, users..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
           <div className="ag-theme-alpine w-full" style={{ fontSize: '14px', fontFamily: 'var(--font-sans, sans-serif)', fontWeight: 400, color: '#111827' }}>
             <AgGridReact
               rowData={pagedRows}
