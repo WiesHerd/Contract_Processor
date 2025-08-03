@@ -63,6 +63,8 @@ export const logSecurityEvent = createAsyncThunk(
     const auditLogInput: CreateAuditLogInput = {
       action,
       user: userEmail,
+      organizationId: 'default-organization', // Set default organization ID
+      organizationGroups: ['Admin'], // Set default groups
       timestamp: new Date().toISOString(),
       details: JSON.stringify({
         originalDetails: details,
@@ -133,6 +135,8 @@ export const logAuthEvent = createAsyncThunk(
     const auditLogInput: CreateAuditLogInput = {
       action,
       user: userEmail,
+      organizationId: 'default-organization', // Set default organization ID
+      organizationGroups: ['Admin'], // Set default groups
       timestamp: new Date().toISOString(),
       details: JSON.stringify({
         originalDetails: details,
@@ -203,6 +207,8 @@ export const logAdminEvent = createAsyncThunk(
     const auditLogInput: CreateAuditLogInput = {
       action,
       user: userEmail,
+      organizationId: 'default-organization', // Set default organization ID
+      organizationGroups: ['Admin'], // Set default groups
       timestamp: new Date().toISOString(),
       details: JSON.stringify({
         originalDetails: details,
@@ -274,6 +280,8 @@ export const logDataEvent = createAsyncThunk(
     const auditLogInput: CreateAuditLogInput = {
       action,
       user: userEmail,
+      organizationId: 'default-organization', // Set default organization ID
+      organizationGroups: ['Admin'], // Set default groups
       timestamp: new Date().toISOString(),
       details: JSON.stringify({
         originalDetails: details,
@@ -343,6 +351,8 @@ export const logFMVOverride = createAsyncThunk(
     const auditLogInput: CreateAuditLogInput = {
       action: 'FMV_OVERRIDE',
       user: userEmail,
+      organizationId: 'default-organization', // Set default organization ID
+      organizationGroups: ['Admin'], // Set default groups
       timestamp: new Date().toISOString(),
       details: JSON.stringify({
         originalDetails: `FMV override for ${providerName}: ${originalValue} → ${overrideValue}`,

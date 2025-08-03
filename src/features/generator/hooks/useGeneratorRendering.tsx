@@ -28,7 +28,8 @@ import {
   AlertCircle,
   Play,
   Settings,
-  FolderOpen
+  FolderOpen,
+  ExternalLink
 } from 'lucide-react';
 import type { Provider } from '@/types/provider';
 import type { Template } from '@/types/template';
@@ -280,6 +281,20 @@ export const useGeneratorRendering = ({
       >
         {bulkOpen ? <ChevronUp className="w-5 h-5 text-blue-600" /> : <ChevronDown className="w-5 h-5 text-blue-600" />}
       </button>
+      
+      {/* Clear All Processed Contracts Button - Only for processed tab */}
+      {statusTab === 'processed' && (
+        <button
+          className="absolute top-4 right-12 p-1 rounded hover:bg-red-100 transition-colors"
+          aria-label="Clear All Processed Contracts"
+          tabIndex={0}
+          onClick={e => { e.stopPropagation(); setShowClearConfirm(true); }}
+          type="button"
+          title="Clear all processed contracts from database"
+        >
+          <AlertTriangle className="w-5 h-5 text-red-600" />
+        </button>
+      )}
       <div className={`overflow-hidden transition-all duration-300 ${bulkOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}> 
         
         {/* Primary Actions */}
@@ -625,6 +640,8 @@ export const useGeneratorRendering = ({
             </Button>
           </div>
         </TabsContent>
+        
+
       </Tabs>
     </div>
   );

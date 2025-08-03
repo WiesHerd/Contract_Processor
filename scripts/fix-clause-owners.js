@@ -3,6 +3,7 @@ import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from '@aws-sdk/lib
 import { config } from 'dotenv';
 
 // Load environment variables
+
 config();
 
 // Initialize DynamoDB client

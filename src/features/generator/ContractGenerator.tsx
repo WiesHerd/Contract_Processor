@@ -885,95 +885,80 @@ export default function ContractGenerator() {
     }
   }, [dispatch]);
 
-  // Optimized filtering logic with memoization
-  const filteredProviders = useMemo(() => {
-    return providers.filter((provider) => {
-      const name = provider.name?.toLowerCase() || '';
-      const specialty = (provider as any).specialty?.toLowerCase() || '';
-      const searchTerm = search.toLowerCase();
-      const matchesSearch = name.includes(searchTerm) || specialty.includes(searchTerm);
-      const matchesSpecialty = selectedSpecialty === "__ALL__" || provider.specialty === selectedSpecialty;
-      const matchesSubspecialty = selectedSubspecialty === "__ALL__" || provider.subspecialty === selectedSubspecialty;
-      const matchesProviderType = selectedProviderType === "__ALL__" || provider.providerType === selectedProviderType;
+  // Pre-compute FTE values to avoid expensive JSON.parse() in filter loop
+  const providersWithFTE = useMemo(() => {
+    return providers.map((provider: ExtendedProvider) => {
+      let fteValue = 0;
       
-      // FTE filter - use the same logic as the grid to ensure consistency
-      const getFTEValue = (provider: any): number => {
-        // Check for totalFTE first (new field), then fallback to fte (old field)
-        if (provider.totalFTE !== undefined && provider.totalFTE !== null) {
-          const value = Number(provider.totalFTE);
-          if (!isNaN(value)) return value;
-        }
-        if (provider.TotalFTE !== undefined && provider.TotalFTE !== null) {
-          const value = Number(provider.TotalFTE);
-          if (!isNaN(value)) return value;
-        }
-        if (provider.fte !== undefined && provider.fte !== null) {
-          const value = Number(provider.fte);
-          if (!isNaN(value)) return value;
-        }
-        // Check dynamicFields as fallback
-        if (provider.dynamicFields) {
-          try {
-            const dynamicFields = typeof provider.dynamicFields === 'string' 
-              ? JSON.parse(provider.dynamicFields) 
-              : provider.dynamicFields;
-            
-            if (dynamicFields.totalFTE !== undefined && dynamicFields.totalFTE !== null) {
-              const value = Number(dynamicFields.totalFTE);
-              if (!isNaN(value)) return value;
-            }
-            if (dynamicFields.TotalFTE !== undefined && dynamicFields.TotalFTE !== null) {
-              const value = Number(dynamicFields.TotalFTE);
-              if (!isNaN(value)) return value;
-            }
-            if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
-              const value = Number(dynamicFields.fte);
-              if (!isNaN(value)) return value;
-            }
-            // Check for "Total FTE" with space
-            if (dynamicFields['Total FTE'] !== undefined && dynamicFields['Total FTE'] !== null) {
-              const value = Number(dynamicFields['Total FTE']);
-              if (!isNaN(value)) return value;
-            }
-          } catch (e) {
-            console.error('Error parsing dynamicFields:', e);
+      // Check for totalFTE first (new field), then fallback to fte (old field)
+      if (provider.totalFTE !== undefined && provider.totalFTE !== null) {
+        const value = Number(provider.totalFTE);
+        if (!isNaN(value)) fteValue = value;
+      } else if (provider.TotalFTE !== undefined && provider.TotalFTE !== null) {
+        const value = Number(provider.TotalFTE);
+        if (!isNaN(value)) fteValue = value;
+      } else if (provider.fte !== undefined && provider.fte !== null) {
+        const value = Number(provider.fte);
+        if (!isNaN(value)) fteValue = value;
+      } else if (provider.dynamicFields) {
+        try {
+          const dynamicFields = typeof provider.dynamicFields === 'string' 
+            ? JSON.parse(provider.dynamicFields) 
+            : provider.dynamicFields;
+          
+          if (dynamicFields.totalFTE !== undefined && dynamicFields.totalFTE !== null) {
+            const value = Number(dynamicFields.totalFTE);
+            if (!isNaN(value)) fteValue = value;
+          } else if (dynamicFields.TotalFTE !== undefined && dynamicFields.TotalFTE !== null) {
+            const value = Number(dynamicFields.TotalFTE);
+            if (!isNaN(value)) fteValue = value;
+          } else if (dynamicFields.fte !== undefined && dynamicFields.fte !== null) {
+            const value = Number(dynamicFields.fte);
+            if (!isNaN(value)) fteValue = value;
+          } else if (dynamicFields['Total FTE'] !== undefined && dynamicFields['Total FTE'] !== null) {
+            const value = Number(dynamicFields['Total FTE']);
+            if (!isNaN(value)) fteValue = value;
           }
+        } catch (e) {
+          console.error('Error parsing dynamicFields:', e);
         }
-        return 0;
-      };
-      
-      const fteValue = getFTEValue(provider);
-      
-      // Debug logging for FTE filtering
-      if (fteValue > 0) {
-        console.log('🔍 [FTE Filter Debug] Provider:', provider.name, 'FTE:', fteValue, 'Range:', selectedFTE, 'Matches:', fteValue >= selectedFTE[0] && fteValue <= selectedFTE[1]);
       }
       
-      // Also log when FTE doesn't match the filter
-      if (fteValue > 0 && !(fteValue >= selectedFTE[0] && fteValue <= selectedFTE[1])) {
-        console.log('❌ [FTE Filter Debug] Provider filtered out:', provider.name, 'FTE:', fteValue, 'Range:', selectedFTE);
-      }
+      return { ...provider, computedFTE: fteValue };
+    });
+  }, [providers]);
+
+  // Memoize filter state to reduce dependency array size
+  const filterState = useMemo(() => ({
+    search: search.toLowerCase(),
+    specialty: selectedSpecialty,
+    subspecialty: selectedSubspecialty,
+    providerType: selectedProviderType,
+    fteRange: selectedFTE,
+    providerTypeFilter: selectedProviderTypeFilter
+  }), [search, selectedSpecialty, selectedSubspecialty, selectedProviderType, selectedFTE, selectedProviderTypeFilter]);
+
+  // Optimized filtering logic with pre-computed FTE values and reduced dependencies
+  const filteredProviders = useMemo(() => {
+    return providersWithFTE.filter((provider: ExtendedProvider) => {
+      const name = provider.name?.toLowerCase() || '';
+      const specialty = provider.specialty?.toLowerCase() || '';
+      const matchesSearch = name.includes(filterState.search) || specialty.includes(filterState.search);
+      const matchesSpecialty = filterState.specialty === "__ALL__" || provider.specialty === filterState.specialty;
+      const matchesSubspecialty = filterState.subspecialty === "__ALL__" || provider.subspecialty === filterState.subspecialty;
+      const matchesProviderType = filterState.providerType === "__ALL__" || provider.providerType === filterState.providerType;
       
-      // Debug: Log the first few providers to see their FTE values
-      if (providers.length > 0 && providers.indexOf(provider) < 3) {
-        console.log('🔍 [FTE Filter Debug] Provider sample:', {
-          name: provider.name,
-          fte: provider.fte,
-          totalFTE: (provider as any).totalFTE,
-          dynamicFields: provider.dynamicFields,
-          calculatedFTE: fteValue
-        });
-      }
-      
-      const matchesFTE = fteValue >= selectedFTE[0] && fteValue <= selectedFTE[1];
+      // Use pre-computed FTE value (no more expensive JSON.parse in filter loop!)
+      const fteValue = (provider as any).computedFTE || 0;
+      const matchesFTE = fteValue >= filterState.fteRange[0] && fteValue <= filterState.fteRange[1];
       
       // Provider Type filter (replacing Admin Role)
       const providerType = provider.providerType || "None";
-      const matchesProviderTypeFilter = selectedProviderTypeFilter === "__ALL__" || providerType === selectedProviderTypeFilter;
+      const matchesProviderTypeFilter = filterState.providerTypeFilter === "__ALL__" || providerType === filterState.providerTypeFilter;
       
       return matchesSearch && matchesSpecialty && matchesSubspecialty && matchesProviderType && matchesFTE && matchesProviderTypeFilter;
     });
-      }, [providers, search, selectedSpecialty, selectedSubspecialty, selectedProviderType, selectedFTE, selectedProviderTypeFilter]);
+  }, [providersWithFTE, filterState]);
 
   // Clear filters function - resets all filter states to default
   const clearFilters = useCallback(() => {
@@ -1517,6 +1502,7 @@ export default function ContractGenerator() {
     gridStyle,
     onGridReady,
     onRowDataUpdated,
+    onRowClicked,
   } = useGeneratorGrid({
     selectedProviderIds,
     setSelectedProviderIds,
@@ -2013,24 +1999,6 @@ export default function ContractGenerator() {
                 </div>
                 
                 <div className="flex gap-2">
-                  <Select
-                    value={selectedProviderType}
-                    onValueChange={val => {
-                      setSelectedProviderType(val);
-                      setPageIndex(0);
-                    }}
-                  >
-                    <SelectTrigger className="w-32 h-9">
-                      <SelectValue placeholder="All Types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__ALL__">All Types</SelectItem>
-                      {providerTypeOptions.filter(s => s && s.trim() !== '').map(s => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  
                   <Button
                     onClick={handleExportCSV}
                     variant="outline"
@@ -2124,7 +2092,7 @@ export default function ContractGenerator() {
                 key={`grid-${statusTab}-${columnOrder.join('-')}`}
               rowData={visibleRows}
               columnDefs={agGridColumnDefs as import('ag-grid-community').ColDef<ExtendedProvider, any>[]}
-              onRowClicked={statusTab === 'processed' ? undefined : handleRowClick}
+              onRowClicked={statusTab === 'processed' ? undefined : onRowClicked}
               onGridReady={onGridReady}
               onRowDataUpdated={onRowDataUpdated}
               {...gridOptions}

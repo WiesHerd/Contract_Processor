@@ -405,6 +405,11 @@ export async function getTemplateMetadata(templateId: string): Promise<Template 
   }
 }
 
+// Alias for loadTemplateFromMetadata - same functionality as getTemplateMetadata
+export async function loadTemplateFromMetadata(templateId: string): Promise<Template | null> {
+  return getTemplateMetadata(templateId);
+}
+
 // Contract operations
 export async function saveContractFile(
   file: File, 

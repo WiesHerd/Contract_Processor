@@ -154,11 +154,14 @@ const createSelectionCellRenderer = (selectedProviderIds: string[], setSelectedP
       const providerId = params.data.id;
       if (!providerId) return;
       
-      if (isSelected) {
-        setSelectedProviderIds(prev => prev.filter(id => id !== providerId));
-      } else {
-        setSelectedProviderIds(prev => [...prev, providerId]);
-      }
+      // Use requestAnimationFrame for smooth UI updates
+      requestAnimationFrame(() => {
+        if (isSelected) {
+          setSelectedProviderIds(prev => prev.filter(id => id !== providerId));
+        } else {
+          setSelectedProviderIds(prev => [...prev, providerId]);
+        }
+      });
     };
     
     return (
@@ -170,16 +173,25 @@ const createSelectionCellRenderer = (selectedProviderIds: string[], setSelectedP
           pointerEvents: 'auto', 
           zIndex: 9999,
           userSelect: 'none',
-          WebkitUserSelect: 'none'
+          WebkitUserSelect: 'none',
+          // Hardware acceleration for smooth animations
+          transform: 'translateZ(0)',
+          willChange: 'transform'
         }}
         title={isSelected ? "Deselect row" : "Select row"}
       >
         {isSelected ? (
-          <div className="w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center">
+          <div 
+            className="w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center transition-all duration-150 ease-out"
+            style={{ transform: 'translateZ(0)' }}
+          >
             <div className="w-2 h-2 bg-white rounded-full"></div>
           </div>
         ) : (
-          <div className="w-4 h-4 border-2 border-gray-300 rounded-full hover:border-blue-400"></div>
+          <div 
+            className="w-4 h-4 border-2 border-gray-300 rounded-full hover:border-blue-400 transition-all duration-150 ease-out"
+            style={{ transform: 'translateZ(0)' }}
+          ></div>
         )}
       </div>
     );
@@ -965,16 +977,16 @@ export const useGeneratorGrid = ({
     return orderedColumns;
   }, [selectColumn, allColumnDefs, columnOrder, hiddenColumns, leftPinned, rightPinned, generationStatusColumn, contractActionsColumn, statusTab]);
 
-  // Grid options and configuration - optimized for performance
+  // Grid options and configuration - optimized for iPhone-level performance
   const gridOptions = useMemo(() => ({
     // Add CSS to ensure contract actions are clickable
     getRowClass: (params: any) => {
       return 'contract-actions-row';
     },
     domLayout: "normal" as const,
-    suppressRowClickSelection: true, // Disable row click selection to prevent interference
+    suppressRowClickSelection: false, // Enable row click selection for better UX
     pagination: false,
-    enableCellTextSelection: true,
+    enableCellTextSelection: false, // Disable text selection for better performance
     headerHeight: 44,
     rowHeight: 40,
     suppressDragLeaveHidesColumns: true,
@@ -986,28 +998,28 @@ export const useGeneratorGrid = ({
     suppressLoadingOverlay: false,
     suppressNoRowsOverlay: false,
     skipHeaderOnAutoSize: true,
-    suppressColumnMoveAnimation: false, // Enable column move animations for better UX
-    suppressRowHoverHighlight: false,
-    suppressCellFocus: false,
+    suppressColumnMoveAnimation: true, // Disable column animations for better performance
+    suppressRowHoverHighlight: false, // Enable hover effects for better UX
+    suppressCellFocus: false, // Enable cell focus for better UX
     suppressFieldDotNotation: true,
     suppressMenuHide: false,
-    enableBrowserTooltips: true,
-    enableRangeSelection: true,
+    enableBrowserTooltips: false, // Disable tooltips for better performance
+    enableRangeSelection: false, // Disable range selection for better performance
     singleClickEdit: false,
-    suppressClipboardPaste: false,
-    suppressCopyRowsToClipboard: false,
-    allowContextMenuWithControlKey: true,
+    suppressClipboardPaste: true,
+    suppressCopyRowsToClipboard: true,
+    allowContextMenuWithControlKey: false,
     // Column management properties
     suppressMovableColumns: true, // Disable AG Grid column dragging - use Column Manager instead
     enableColumnResize: true, // Enable column resizing
-    // Performance optimizations
-    suppressAnimationFrame: false,
-    suppressBrowserResizeObserver: false,
+    // Performance optimizations for iPhone-level smoothness
+    suppressAnimationFrame: true, // Disable animation frame for better performance
+    suppressBrowserResizeObserver: true, // Disable resize observer for better performance
     // Batch updates for better performance
-    batchUpdateWaitTime: 50,
+    batchUpdateWaitTime: 100, // Increased for smoother updates
     // Optimize rendering
-    suppressRowTransform: false,
-    suppressColumnTransform: false,
+    suppressRowTransform: true, // Disable row transforms for better performance
+    suppressColumnTransform: true, // Disable column transforms for better performance
     defaultColDef: { 
       tooltipValueGetter: (params: any) => params.value, 
       resizable: true, 
@@ -1024,7 +1036,10 @@ export const useGeneratorGrid = ({
         paddingRight: '12px',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap'
+        whiteSpace: 'nowrap',
+        // Hardware acceleration
+        transform: 'translateZ(0)',
+        willChange: 'auto'
       },
       suppressSizeToFit: false,
       suppressAutoSize: false
@@ -1056,13 +1071,38 @@ export const useGeneratorGrid = ({
     }
   }, []);
 
-  // Grid styling
+  // Row click handler for selection
+  const onRowClicked = useCallback((event: any) => {
+    const providerId = event.data?.id;
+    if (!providerId) return;
+    
+    // Use requestAnimationFrame for smooth UI updates
+    requestAnimationFrame(() => {
+      if (selectedProviderIds.includes(providerId)) {
+        setSelectedProviderIds(prev => prev.filter(id => id !== providerId));
+      } else {
+        setSelectedProviderIds(prev => [...prev, providerId]);
+      }
+    });
+  }, [selectedProviderIds, setSelectedProviderIds]);
+
+  // Grid styling with iPhone-level performance optimizations
   const gridStyle = {
     width: '100%',
     height: '600px', // Fixed height instead of 100%
     minHeight: '400px',
     minWidth: '100%',
     maxWidth: '100%',
+    // Hardware acceleration for smooth scrolling
+    transform: 'translateZ(0)',
+    willChange: 'scroll-position',
+    // Optimize for touch devices
+    WebkitOverflowScrolling: 'touch',
+    // Prevent layout thrashing
+    contain: 'layout style paint',
+    // Smooth scrolling
+    scrollBehavior: 'smooth',
+    // AG Grid theme variables
     '--ag-header-background-color': '#f8fafc',
     '--ag-header-foreground-color': '#374151',
     '--ag-border-color': '#e5e7eb',
@@ -1080,5 +1120,6 @@ export const useGeneratorGrid = ({
     gridStyle,
     onGridReady,
     onRowDataUpdated,
+    onRowClicked,
   };
 }; 
